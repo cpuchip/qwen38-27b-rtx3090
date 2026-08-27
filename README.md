@@ -29,7 +29,6 @@ docker compose --profile batch  up -d    # API backend, many concurrent requests
 | single-stream (C1) decode rate, realistic prompts | 46 tok/s | MTP: **121** tok/s at default sampling, **120** greedy (`CTX=fast`, 64k; 96 / 102 with `CTX=long`, 150k). DFlash2 (`SPEC=dflash2`): **127** default, **130** greedy |
 | reproducing its own context (quoting a document, applying an edit) | 46 tok/s | **381 tok/s** at 25k context — 15.0 tokens per verify step, drafted straight from the prompt (`SPEC=dflash2` + `DFLASH_TOKENS=15`) |
 | trick | 16-bit recurrent state + int8 tensor-core GEMMs | MTP speculation with 4 cheap drafts, a draft vocabulary that covers what the model says, calibrated int4 lm_head/drafter, split-KV verify attention; optionally native vLLM 0.28.0 DFlash2 (7 drafts in one pass, int4-requantized) with a verify block the context fills |
-
 <sub>Single-stream numbers re-measured 2026-08-22 on current main with
 `bash bench/run_benchmarks.sh single` — `vllm bench serve`, the 8 prompts in
 `bench/prompts_real.jsonl`, 1024 output tokens, C1, decode rate taken as
@@ -37,9 +36,8 @@ docker compose --profile batch  up -d    # API backend, many concurrent requests
 length is not measuring the same thing, and mixing the two is how
 [#3](https://github.com/syv-ai/qwen38-27b-rtx3090/issues/3) got confusing.</sub>
 
-> Version note: the install below now pins vLLM 0.28.0. The throughput and quality
-> tables are v0.27.1 baselines and need to be re-benchmarked on a GPU after this
-> upgrade; this environment validated patch application and Python compilation only.
+> Version note: this branch pins vLLM 0.28.0; the throughput and quality tables are
+> retained as reference baselines while the v0.28.0 GPU matrix is being re-measured.
 
 Both modes share one install — the mode is just which launch script you run.
 Speculation wins below ~8 concurrent users on short prompts, plain batching above;
