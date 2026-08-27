@@ -5,7 +5,7 @@ The fused_recurrent / fused_sigmoid_gating / causal_conv1d / selective-scan
 kernels index the recurrent-state slot with (num_accepted_tokens - 1) without
 checking it against the row width; stale or oversized counts produce wild GPU
 addresses. Vendored here (kernel hunks only; the mamba_utils.py prefix-caching
-hunks of the PR do not apply to 0.27.1 and are not needed with prefix caching
+hunks of the PR are not needed with this repo's v0.28.0 prefix-caching
 off) because we hit illegal-memory-access crashes with several concurrent MTP
 requests. Note: it does NOT fix the k=4 crash described in single-user/README.md.
 

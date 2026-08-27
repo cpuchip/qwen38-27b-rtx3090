@@ -1,68 +1,12 @@
-Lookup-augmented block drafting (LABD) for DFlash2: draft from the context, not from the
-drafter, when the context already contains the answer -- and let the verify block be longer
-than the drafter's when it does.
+DFlash2 candidate-head quantization and lookup drafting ported to vLLM 0.28.0.
 
-A block drafter guesses the next 7 tokens from a 2,048-token attention window. When the model
-is quoting, listing, editing or otherwise reproducing something it was given -- which is most
-of what a long-context assistant does -- those tokens are already sitting verbatim in the
-prompt, tens of thousands of tokens back, where the drafter cannot see them. This finds them:
-one Triton program per request scans the request's own token history (the int32 buffer vLLM
-already maintains, `req_states.all_token_ids`) for the most recent occurrence of the longest
-suffix (nmin..nmax tokens) of what has been generated, and proposes the tokens that followed
-it. An nmin-token reject test runs before any candidate is extended, so the scan costs a
-fraction of a millisecond whatever the batch size.
+This replaces the pre-0.28 DFlash2 backport: 0.28.0 already ships the native DFlash2 model and selector, so this patch layers the repo's quantized candidate selection, trained draft-block sizing, lookup augmentation, and runner wiring on top.
 
-Four things decide what that is worth.
+--- generated against the v0.28.0 source after the non-DFlash patches ---
 
-1. The verify block is decoupled from the drafter's block. `dflash_config.block_size` is a
-   property of the checkpoint (8 = 1 anchor + 7 mask tokens), and vLLM made it the target's
-   verify length as well, so a verbatim copy could never exceed 8 tokens per step -- and it
-   sat on that ceiling (7.83 of 8 accepted while reproducing a document's first 60 lines).
-   `DFlashSpeculator.draft_block` now describes the draft model's own query layout while
-   `num_speculative_tokens` describes the proposal handed to the target; the positions in
-   between are filled by the lookup. They cost the drafter nothing: no extra mask tokens, no
-   extra pass of the candidate head.
-
-2. The long block is only scheduled while the lookup is firing. Extra verify positions cost
-   about 1 ms of attention each at 25k context, so `DFlash2Speculator.next_num_draft_tokens`
-   tells the model runner how many of the proposals the scheduler should put up for
-   verification next step: the drafter's 7 normally, the whole block when the lookup has a
-   match (VLLM_DFLASH2_LOOKUP_ADAPTIVE=0 always asks for the whole block). Reading the
-   per-request match flags costs one small device-to-host read per step -- an async copy
-   into pinned memory would avoid the synchronise, but measured as not delivering the flags
-   in time on this path, and a long block that is never scheduled is worth much less than a
-   few percent of a step.
-   NOTE: vLLM only feeds draft token ids back to the scheduler on the synchronous scheduling
-   path, so this needs --no-async-scheduling (single-user/start_qwen.sh sets it; measured
-   cost at batch 1 is under 1%).
-
-3. The proposal is fused with the drafter's rather than substituted for it: a match of at
-   least VLLM_DFLASH2_LOOKUP_NSTRONG tokens is taken on its own, a shorter one only if the
-   drafter independently proposed the same first VLLM_DFLASH2_LOOKUP_AGREE tokens. Two
-   independent sources agreeing is a cheap confidence signal -- the drafter looked at the
-   hidden state, the lookup looked at the text.
-
-4. A match may overlap the suffix it matched, so a repeating pattern (a list marker, an
-   indent, a fence) is proposed from its own period instead of missed.
-
-The proposal stays lossless. For greedy requests the draft distribution is never read. For
-sampling requests every position the lookup filled gets a point mass on the proposed token,
-which is a legal proposal distribution for vLLM's rejection sampler: the acceptance
-probability becomes p(x) and the residual (p - q)+ is computed from the same buffer, so the
-output distribution is unchanged. The rewrite keeps the sparse draft-logit cache's invariant
-(every finite entry of a row is listed in `_cached_candidate_ids`, so the next step erases
-it) and reads the token back from `draft_tokens`, so q always describes what is verified.
-
-Requires patches/dflash2-backport.patch, and patches/spec-decode-attn.patch for a verify
-block longer than 10 query tokens (FlashAttention-2 does not split the KV sequence for
-multi-query decode; falling back to it doubles the step at 25k context).
-Apply from the installed vllm package directory:
-  patch -p1 -d venv/lib/python3.12/site-packages/vllm < patches/dflash2-lookup-drafting.patch
-
-Written against vLLM 0.27.1.
 --- a/model_executor/models/qwen3_dflash2.py
 +++ b/model_executor/models/qwen3_dflash2.py
-@@ -182,8 +182,15 @@
+@@ -127,8 +127,15 @@
              hidden_size=config.hidden_size,
              taps=int(draft_config["conv_kernel_size"]),
              group_size=int(draft_config["conv_group_size"]),
@@ -89,10 +33,11 @@ Written against vLLM 0.27.1.
  from collections.abc import Mapping
  from typing import Any
  
-@@ -42,8 +43,36 @@
+@@ -41,9 +42,37 @@
+ 
          # Multimodal inputs not currently supported.
          self.supports_mm_inputs = False
- 
++
 +        # The drafter emits the block it was trained for (dflash_config.block_size - 1);
 +        # the *verify* block may be longer than that, with the extra positions filled from
 +        # the request's own context (dflash2/lookup.py). Everything describing the draft
@@ -120,7 +65,7 @@ Written against vLLM 0.27.1.
 +                self.num_speculative_steps - self.draft_block,
 +                self.num_speculative_steps,
 +            )
-+
+ 
          # Each request emits exactly (bonus + N mask) query tokens per step.
 -        self.num_query_per_req = 1 + self.num_speculative_steps
 +        self.num_query_per_req = 1 + self.draft_block
@@ -136,7 +81,7 @@ Written against vLLM 0.27.1.
          self.sample_indices = torch.zeros(
              max_num_sampled_tokens, dtype=torch.int64, device=device
          )
-@@ -91,7 +120,7 @@
+@@ -93,7 +122,7 @@
          # [0, 1, ..., N-1, 0, 1, ..., N-1, ...] -> the per-token column index into
          # draft_logits[req, step, :].
          self.sample_col = torch.arange(
@@ -146,9 +91,9 @@ Written against vLLM 0.27.1.
  
          self.query_cudagraph_manager: DFlashCudaGraphManager | None = None
 @@ -258,7 +287,7 @@
+             num_tokens_across_dp,
              cudagraph_runtime_mode,
          )
- 
 -        num_sample = num_reqs * self.num_speculative_steps
 +        num_sample = num_reqs * self.draft_block
          sample_hidden_states = last_hidden_states[self.sample_indices[:num_sample]]
@@ -188,14 +133,21 @@ Written against vLLM 0.27.1.
                  self.max_model_len,
 --- a/v1/worker/gpu/spec_decode/dflash2/speculator.py
 +++ b/v1/worker/gpu/spec_decode/dflash2/speculator.py
-@@ -7,11 +7,19 @@
+@@ -1,17 +1,26 @@
+ # SPDX-License-Identifier: Apache-2.0
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ 
++import os
+ from typing import Any
+ 
  import torch
  
- from vllm.config import VllmConfig
-+from vllm.logger import init_logger
+-from vllm.config import VllmConfig
  from vllm.config.compilation import CUDAGraphMode
- from vllm.triton_utils import tl, tldevice, triton
- from vllm.v1.worker.gpu.sample.gumbel import tl_rand32, tl_rand64
++from vllm.config import VllmConfig
++from vllm.logger import init_logger
+ from vllm.triton_utils import tl, triton
+ from vllm.v1.worker.gpu.sample.gumbel import gumbel_noised_argmax
  from vllm.v1.worker.gpu.spec_decode.dflash.speculator import DFlashSpeculator
  
 +logger = init_logger(__name__)
@@ -204,11 +156,83 @@ Written against vLLM 0.27.1.
 +    fuse_draft,
 +    suffix_lookup,
 +)
-+
  
++
  @triton.jit
  def _selector_walk_kernel(
-@@ -113,6 +121,7 @@
+     scores_ptr,
+@@ -22,11 +31,14 @@
+     seeds_ptr,
+     tokens_ptr,
+     realized_scores_ptr,
++    req_top_p_ptr,
++    req_top_k_ptr,
+     num_steps: tl.constexpr,
+     top_k: tl.constexpr,
+     BLOCK_K: tl.constexpr,
+     SAMPLE_PROBABILISTIC: tl.constexpr,
+     USE_FP64: tl.constexpr,
++    TRUNCATE: tl.constexpr,
+ ):
+     row = tl.program_id(0)
+     offsets = tl.arange(0, BLOCK_K)
+@@ -35,6 +47,9 @@
+     valid = req_state >= 0
+     temperature = tl.load(temperature_ptr + req_state, mask=valid, other=0.0)
+     seed = tl.load(seeds_ptr + req_state, mask=valid, other=0)
++    if TRUNCATE:
++        req_top_p = tl.load(req_top_p_ptr + req_state, mask=valid, other=1.0)
++        req_top_k = tl.load(req_top_k_ptr + req_state, mask=valid, other=BLOCK_K)
+     previous = 0
+     for step in range(num_steps):
+         flat = row * num_steps + step
+@@ -43,7 +58,7 @@
+             scores_ptr + score_base + offsets,
+             mask=mask & valid,
+             other=float("-inf"),
+-        ).to(tl.float64 if USE_FP64 else tl.float32)
++        ).to(tl.float32)
+         candidate_base = flat * top_k
+         candidates = tl.load(
+             candidate_ptr + candidate_base + offsets,
+@@ -51,7 +66,20 @@
+             other=0,
+         )
+ 
+-        # Candidate ids key the noise, matching the target's own sampling.
++        if SAMPLE_PROBABILISTIC and temperature != 0.0 and TRUNCATE:
++            # Apply the request's top-k/top-p to the proposal distribution over the
++            # candidates. The rejection sampler consumes pre-temperature logits, so keep
++            # the original scores and use -inf to represent the truncated support.
++            scaled_scores = scores / temperature
++            mx = tl.max(scaled_scores, axis=0)
++            probs = tl.exp(scaled_scores - mx)
++            probs = probs / tl.sum(probs, axis=0)
++            greater = scaled_scores[None, :] > scaled_scores[:, None]
++            rank = tl.sum(greater.to(tl.int32), axis=1)
++            mass_before = tl.sum(tl.where(greater, probs[None, :], 0.0), axis=1)
++            keep = mask & (rank < req_top_k) & (mass_before < req_top_p)
++            scores = tl.where(keep, scores, -float("inf"))
++
+         position = tl.load(sample_pos_ptr + flat) - 1
+         _, index = gumbel_noised_argmax(
+             scores,
+@@ -62,10 +90,12 @@
+             temperature if SAMPLE_PROBABILISTIC else 0.0,
+             USE_FP64=USE_FP64,
+         )
+-
++        # vLLM 0.28.0's rejection sampler expects pre-temperature logits. With TRUNCATE
++        # the cached row is the truncated proposal (-inf outside the kept support).
++        realized = scores
+         tl.store(
+             realized_scores_ptr + candidate_base + offsets,
+-            scores,
++            realized,
+             mask=mask & valid,
+         )
+         token = tl.load(candidate_ptr + candidate_base + index, mask=valid, other=0)
+@@ -83,6 +113,7 @@
      draft_logits_stride_0,
      draft_logits_stride_1,
      num_steps: tl.constexpr,
@@ -216,7 +240,7 @@ Written against vLLM 0.27.1.
      top_k: tl.constexpr,
      BLOCK_K: tl.constexpr,
  ):
-@@ -122,7 +131,9 @@
+@@ -92,7 +123,9 @@
      offsets = tl.arange(0, BLOCK_K)
      mask = (req_state >= 0) & (offsets < top_k)
      candidate_base = flat * top_k
@@ -227,7 +251,7 @@ Written against vLLM 0.27.1.
      old_token_ids = tl.load(cached_candidate_ptr + cache_base + offsets, mask=mask)
      logits_base = (
          draft_logits_ptr
-@@ -137,6 +148,9 @@
+@@ -107,6 +140,9 @@
  
  
  class DFlash2Speculator(DFlashSpeculator):
@@ -237,11 +261,10 @@ Written against vLLM 0.27.1.
      _speculator_name = "DFlash2"
  
      def __init__(self, vllm_config: VllmConfig, device: torch.device):
-@@ -147,10 +161,14 @@
+@@ -117,23 +153,180 @@
              torch.arange(self.max_num_reqs, dtype=torch.int64, device=device)
              * self.num_query_per_req
          )
--        self._selector_tokens = torch.empty_like(self.draft_tokens)
 +        self._selector_tokens = torch.empty(
 +            (self.max_num_reqs, self.draft_block),
 +            dtype=self.draft_tokens.dtype,
@@ -254,23 +277,18 @@ Written against vLLM 0.27.1.
              self.selector_top_k,
              dtype=torch.float32,
              device=device,
-@@ -167,14 +185,160 @@
-             dtype=torch.float32,
-             device=device,
          )
-+        # Spans the verify block: the point-mass rewrite keeps the same erase invariant
-+        # for the positions the lookup fills beyond the drafter's own block.
          self._cached_candidate_ids = torch.zeros(
 -            self._selector_scores.shape, dtype=torch.int64, device=device
 +            (self.max_num_reqs, self.num_speculative_steps, self.selector_top_k),
 +            dtype=torch.int64,
 +            device=device,
          )
-         # Request top_p/top_k buffers ([max_num_reqs], indexed by request state), handed
-         # over by the model runner; VLLM_DFLASH2_DRAFT_TOPK_TOPP=0 disables the truncation.
-         self._req_top_p: torch.Tensor | None = None
-         self._req_top_k: torch.Tensor | None = None
-         self._truncate = os.environ.get("VLLM_DFLASH2_DRAFT_TOPK_TOPP", "1") == "1"
++        # Request top_p/top_k buffers ([max_num_reqs], indexed by request state), handed
++        # over by the model runner; VLLM_DFLASH2_DRAFT_TOPK_TOPP=0 disables the truncation.
++        self._req_top_p: torch.Tensor | None = None
++        self._req_top_k: torch.Tensor | None = None
++        self._truncate = os.environ.get("VLLM_DFLASH2_DRAFT_TOPK_TOPP", "1") == "1"
 +        # Lookup-augmented block drafting: propose the continuation of an earlier
 +        # occurrence of the current suffix instead of the model's guess (lookup.py).
 +        self._lookup = os.environ.get("VLLM_DFLASH2_LOOKUP", "0") == "1"
@@ -350,7 +368,11 @@ Written against vLLM 0.27.1.
 +        # an otherwise identical 4-way batch, and reproducibly did not with STICKY=0.
 +        self._lookup_sticky = int(os.environ.get("VLLM_DFLASH2_LOOKUP_STICKY", "3"))
 +        self._sticky = 0
-+
+ 
+-    def draft_logits_spec(self, vllm_config: VllmConfig) -> tuple[torch.dtype, float]:
+-        # fp32 so the walk and the rejection that checks it read the same
+-        # distribution; -inf because the cache kernel writes only the K
+-        # candidates.
 +        if self._lookup:
 +            logger.info(
 +                "DFlash2 lookup-augmented drafting on (k=%d nmin=%d nmax=%d nstrong=%d "
@@ -413,19 +435,57 @@ Written against vLLM 0.27.1.
 +    def set_req_states(self, req_states) -> None:
 +        """The token history the lookup matches against (set by the model runner)."""
 +        self._req_states = req_states
++
++    def draft_logits_spec(self, vllm_config: VllmConfig) -> tuple[torch.dtype, float]:
++        # The v0.28 rejection sampler divides cached logits by temperature itself.
++        # -inf is required because the sparse cache kernel only writes the K candidates.
+         return torch.float32, -float("inf")
  
-     def set_sampling_states(self, sampling_states) -> None:
-         self._req_top_p = sampling_states.top_p.gpu
-@@ -199,7 +363,7 @@
++    def set_sampling_states(self, sampling_states) -> None:
++        self._req_top_p = sampling_states.top_p.gpu
++        self._req_top_k = sampling_states.top_k.gpu
++
+     def _sample_path(
+         self,
+         candidate_ids: torch.Tensor,
+@@ -141,6 +334,7 @@
+         num_reqs: int,
+     ) -> None:
+         block_k = triton.next_power_of_2(self.selector_top_k)
++        truncate = self._truncate and self._req_top_p is not None
+         _selector_walk_kernel[(num_reqs,)](
+             scores.contiguous(),
+             candidate_ids.contiguous(),
+@@ -148,19 +342,25 @@
+             self.sample_idx_mapping,
+             self.temperature,
+             self.seeds,
+-            self.draft_tokens,
++            self._selector_tokens,
              self._selector_scores,
-             self._req_top_p if truncate else self.temperature,
-             self._req_top_k if truncate else self.sample_idx_mapping,
 -            num_steps=self.num_speculative_steps,
++            self._req_top_p if truncate else self.temperature,
++            self._req_top_k if truncate else self.sample_idx_mapping,
 +            num_steps=self.draft_block,
              top_k=self.selector_top_k,
              BLOCK_K=block_k,
+             SAMPLE_PROBABILISTIC=self.draft_logits is not None,
              USE_FP64=self.use_fp64_gumbel,
-@@ -219,7 +383,8 @@
++            TRUNCATE=truncate,
+             num_warps=1,
+         )
+ 
+     def _cache_draft_logits(self, candidate_ids: torch.Tensor, num_sample: int) -> None:
+         draft_logits = self.draft_logits
+-        assert draft_logits is not None
++        if draft_logits is None:
++            # Greedy rejection sampling never reads q; the token fusion above is still
++            # useful because it supplies the proposal handed to the target.
++            return
+         block_k = triton.next_power_of_2(self.selector_top_k)
+         _cache_draft_logits_kernel[(num_sample,)](
+             draft_logits,
+@@ -170,7 +370,8 @@
              self.sample_idx_mapping,
              draft_logits.stride(0),
              draft_logits.stride(1),
@@ -435,7 +495,7 @@ Written against vLLM 0.27.1.
              top_k=self.selector_top_k,
              BLOCK_K=block_k,
              num_warps=1,
-@@ -241,15 +406,15 @@
+@@ -192,15 +393,15 @@
              num_tokens_across_dp,
              cudagraph_runtime_mode,
          )
@@ -454,11 +514,10 @@ Written against vLLM 0.27.1.
          )
          unary_logits = unary_logits.view_as(candidate_ids)
          anchor_token_ids = self.input_buffers.input_ids[self._anchor_indices[:num_reqs]]
-@@ -261,4 +426,67 @@
-         )
+@@ -213,3 +414,68 @@
          self._sample_path(candidate_ids, scores, num_reqs)
-         self._cache_draft_logits(candidate_ids, num_sample)
--        self.draft_tokens[:num_reqs].copy_(self._selector_tokens[:num_reqs])
+         if self.draft_logits is not None:
+             self._cache_draft_logits(candidate_ids, num_sample)
 +        self.draft_tokens[:num_reqs, : self.draft_block].copy_(
 +            self._selector_tokens[:num_reqs]
 +        )
@@ -506,7 +565,8 @@ Written against vLLM 0.27.1.
 +            take_flags=self._take_flags[:num_reqs],
 +        )
 +        draft_logits = self.draft_logits
-+        assert draft_logits is not None
++        if draft_logits is None:
++            return
 +        block_k = triton.next_power_of_2(self.selector_top_k)
 +        _point_mass_draft_logits_kernel[(num_reqs * self.num_speculative_steps,)](
 +            draft_logits,
@@ -523,7 +583,7 @@ Written against vLLM 0.27.1.
 +            BLOCK_K=block_k,
 +            num_warps=1,
 +        )
---- a/v1/worker/gpu/spec_decode/dflash2/lookup.py
+--- /dev/null
 +++ b/v1/worker/gpu/spec_decode/dflash2/lookup.py
 @@ -0,0 +1,330 @@
 +"""Lookup-augmented block drafting (LABD).
@@ -877,40 +937,9 @@ Written against vLLM 0.27.1.
          if not input_batch.has_structured_output_reqs:
              # No draft token validation needs to be performed by
              # the scheduler for this batch.
---- a/v1/worker/gpu/model_runner.py
-+++ b/v1/worker/gpu/model_runner.py
-@@ -244,6 +244,9 @@
-             device=self.device,
-             num_prefill_lookahead=num_prefill_lookahead,
-         )
-+        if self.speculator is not None and hasattr(self.speculator, "set_req_states"):
-+            # Lookup-augmented drafting reads the request token history.
-+            self.speculator.set_req_states(self.req_states)
-         self.input_buffers = InputBuffers(
-             max_num_reqs=self.max_num_reqs,
-             max_num_tokens=self.max_num_tokens,
-@@ -1605,9 +1608,18 @@
-         if self.num_speculative_steps > 0:
-             # Spec-decode and diffusion LLMs both use draft tokens but the latter does
-             # not have a speculator (i.e. self.speculator is None)
-+            num_draft = None
-+            if self.speculator is not None and hasattr(
-+                self.speculator, "next_num_draft_tokens"
-+            ):
-+                # Lookup-augmented drafting proposes a long block only while the request
-+                # is reproducing its context; the rest of the time it asks the scheduler
-+                # to verify the drafter's own (much cheaper) block.
-+                num_draft = self.speculator.next_num_draft_tokens()
-             self.draft_tokens_handler.set_draft_tokens(
-                 input_batch,
-                 self.req_states.draft_tokens[input_batch.idx_mapping],
-+                num_draft=num_draft,
-             )
- 
-         # Post-step KV connector related operations.
 --- a/v1/worker/gpu/cudagraph_utils.py
 +++ b/v1/worker/gpu/cudagraph_utils.py
-@@ -219,7 +219,34 @@
+@@ -215,7 +215,34 @@
              ]
          else:
              decode_query_lens = [self.decode_query_len]
@@ -919,7 +948,7 @@ Written against vLLM 0.27.1.
 +            # own context) schedules either length, so both need a decode graph. Without
 +            # this the short step -- the one taken on ordinary prose -- runs piecewise.
 +            import os as _os
-+
+ 
 +            if (
 +                speculative_config is not None
 +                and _os.environ.get("VLLM_DFLASH2_GRAPH_BOTH", "1") == "1"
@@ -941,7 +970,48 @@ Written against vLLM 0.27.1.
 +                        "and the full verify block).",
 +                        decode_query_lens,
 +                    )
++
+         capture_varlen_decode = (
+             separate_decode_routine and bool(decode_mode) and self.varlen_decode
+         )
+--- a/v1/worker/gpu/model_runner.py
++++ b/v1/worker/gpu/model_runner.py
+@@ -284,6 +284,9 @@
+             num_prefill_lookahead=num_prefill_lookahead,
+         )
+         self.adaptive_verification: AdaptiveVerificationManager | None = None
++        if self.speculator is not None and hasattr(self.speculator, "set_req_states"):
++            # Lookup-augmented drafting reads the request token history.
++            self.speculator.set_req_states(self.req_states)
+         self.input_buffers = InputBuffers(
+             max_num_reqs=self.max_num_reqs,
+             max_num_tokens=self.max_num_tokens,
+@@ -417,6 +420,9 @@
+                     self.speculative_config,
+                     self.device,
+                 )
++            if self.speculator is not None and hasattr(self.speculator, "set_sampling_states"):
++                # DFlash2 truncates its proposal to the request's top-k/top-p.
++                self.speculator.set_sampling_states(self.sampler.sampling_states)
+             self.prompt_logprobs_worker = PromptLogprobsWorker(
+                 self.max_num_reqs,
+                 logprobs_mode=self.model_config.logprobs_mode,
+@@ -1862,9 +1868,18 @@
+         if self.num_speculative_steps > 0:
+             # Spec-decode and diffusion LLMs both use draft tokens but the latter does
+             # not have a speculator (i.e. self.speculator is None)
++            num_draft = None
++            if self.speculator is not None and hasattr(
++                self.speculator, "next_num_draft_tokens"
++            ):
++                # Lookup-augmented drafting proposes a long block only while the request
++                # is reproducing its context; the rest of the time it asks the scheduler
++                # to verify the drafter's own (much cheaper) block.
++                num_draft = self.speculator.next_num_draft_tokens()
+             self.draft_tokens_handler.set_draft_tokens(
+                 input_batch,
+                 self.req_states.draft_tokens[input_batch.idx_mapping],
++                num_draft=num_draft,
+             )
  
-         for num_tokens, num_active_loras in product(
-             capture_sizes, self.lora_capture_cases
-         ):
+         # Post-step KV connector related operations.
