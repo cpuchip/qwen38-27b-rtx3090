@@ -1,0 +1,83 @@
+--- a/vllm/v1/core/kv_cache_utils.py
++++ b/vllm/v1/core/kv_cache_utils.py
+@@ -2393,6 +2393,80 @@
+                 max_concurrency,
+             )
+ 
++            # (syv-ai stack addition, 2026-08-28) The figure above divides
++            # the pool by a request AT max_model_len, where linear attention
++            # cost dominates the per-sequence constant state (mamba) pages.
++            # At shorter lengths the constant pages do not shrink, so the
++            # pool holds FEWER warm contexts than tokens/length suggests.
++            # Say so at startup, so operators know which regime the number
++            # above describes.
++            def _group_bytes_at(spec, ctx_len):
++                leaves = (
++                    spec.kv_cache_specs.values()
++                    if isinstance(spec, UniformTypeKVCacheSpecs)
++                    else (spec,)
++                )
++                const_b = 0
++                scaled_b = 0
++                for leaf in leaves:
++                    full = leaf.max_memory_usage_bytes(vllm_config)
++                    if "Mamba" in type(leaf).__name__:
++                        const_b += full  # constant per-sequence state
++                    else:
++                        sw = getattr(leaf, "sliding_window", None)
++                        if sw:
++                            scaled_b += (
++                                full
++                                * min(ctx_len, sw)
++                                // max(min(max_model_len, sw), 1)
++                            )
++                        else:
++                            scaled_b += full * ctx_len // max(max_model_len, 1)
++                return const_b, scaled_b
++
++            def _capacity_at(ctx_len):
++                blocks = sum(
++                    cdiv(
++                        sum(_group_bytes_at(g.kv_cache_spec, ctx_len)),
++                        g.kv_cache_spec.page_size_bytes,
++                    )
++                    for g in kv_cache_config.kv_cache_groups
++                )
++                return kv_cache_config.num_blocks / max(blocks, 1)
++
++            _const_total = 0
++            _lin_total = 0
++            for _g in kv_cache_config.kv_cache_groups:
++                _c, _s = _group_bytes_at(_g.kv_cache_spec, max_model_len)
++                _const_total += _c
++                _lin_total += _s
++            _per_tok = _lin_total / max(max_model_len, 1)
++            _fixed_tok_equiv = (
++                int(_const_total / _per_tok) if _per_tok > 0 else 0
++            )
++            _lens = sorted(
++                {min(32768, max_model_len), min(131072, max_model_len),
++                 max_model_len}
++            )
++            logger.info_once(
++                "Warm-context capacity incl. per-sequence state pages "
++                "(constant state ~%s tok-equiv per sequence): %s — the "
++                "%.2fx above is exact only for full-length requests; "
++                "shorter or cached contexts pay the constant pages at "
++                "full price.",
++                f"{_fixed_tok_equiv:,}",
++                " · ".join(
++                    f"~{_capacity_at(_l):.1f}x {_l:,}-tok" for _l in _lens
++                ),
++                max_concurrency,
++            )
++            if vllm_config.kv_transfer_config is None:
++                logger.info_once(
++                    "No KV offload tier configured: evicted contexts fully "
++                    "re-prefill. A CPU tier (OffloadingConnector) converts "
++                    "eviction into a RAM restore."
++                )
++
+     return kv_cache_configs
+ 
+ 
