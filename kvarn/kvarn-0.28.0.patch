@@ -217,3 +217,19 @@ The 0.28 KV cache API uses KVQuantMode values and FullAttentionSpec.state_conten
          return KVQuantMode.FP8_PER_TENSOR
      return KVQuantMode.NONE
 
+--- a/v1/worker/gpu/attn_utils.py
++++ b/v1/worker/gpu/attn_utils.py
+@@ -305,7 +305,15 @@
+         )
+         dtype_size = get_dtype_size(kv_cache_spec.dtype)
+-        page_stride = kv_cache_spec.page_size_bytes // dtype_size
++        if kv_cache_spec.kv_quant_mode.is_kvarn:
++            # KVarN stores one packed tile per block/head. Hybrid page
++            # unification may publish a larger padded page size for the
++            # shared allocation, but KVarN's physical block stride remains
++            # its packed (unpadded) page size.
++            page_stride = kv_cache_spec.real_page_size_bytes // dtype_size
++        else:
++            page_stride = kv_cache_spec.page_size_bytes // dtype_size
+ 
+         num_blocks_dim = inv_order[0]
