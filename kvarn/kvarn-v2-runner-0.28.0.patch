@@ -53,11 +53,12 @@ These changes are applied after the 0.28 KVarN base port and the repo's DFlash2 
      smallest = min(candidates)
 --- a/v1/core/kv_cache_utils.py
 +++ b/v1/core/kv_cache_utils.py
-@@ -635,7 +635,17 @@
+@@ -635,7 +635,19 @@
          if isinstance(g.kv_cache_spec, AttentionSpec)
          else g.kv_cache_spec.block_size
          for g in groups
 +    ]
++    _all_group_block_sizes = list(group_block_sizes)
 +    # Sliding-window groups do not participate in prefix matching. Excluding
 +    # them keeps their small rolling-window block from skewing the scheduler
 +    # LCM and the prefix-hash GCD used by the target group.
@@ -66,6 +67,7 @@ These changes are applied after the 0.28 KVarN base port and the repo's DFlash2 
 +        for g, bs in zip(groups, group_block_sizes)
 +        if not isinstance(g.kv_cache_spec, SlidingWindowSpec)
      ]
++    _hash_gcd_all = math.gcd(*_all_group_block_sizes)
 +    if non_sw:
 +        group_block_sizes = non_sw
      scheduler_block_size = math.lcm(*group_block_sizes)
@@ -80,16 +82,40 @@ These changes are applied after the 0.28 KVarN base port and the repo's DFlash2 
          isinstance(g.kv_cache_spec, MambaSpec)
          and g.kv_cache_spec.mamba_cache_mode != "align"
          for g in groups
+@@ -655,3 +667,3 @@
+         for g in groups
+     ):
+-        return scheduler_block_size, scheduler_block_size
++        return scheduler_block_size, _hash_gcd_all
+@@ -668,4 +680,4 @@
+     requested = cache_config.prefix_match_unit
+     hash_block_size = (
+-        requested if requested is not None else math.gcd(*group_block_sizes)
++        requested if requested is not None else _hash_gcd_all
+     )
 --- a/v1/core/kv_cache_coordinator.py
 +++ b/v1/core/kv_cache_coordinator.py
-@@ -601,7 +601,9 @@
+@@ -86,7 +86,8 @@
+         self.enable_caching = enable_caching
+         # The scheduling granularity (LCM of all group block sizes), must be a multiple
+         # of the hash_block_size and the block size of each group.
+         assert scheduler_block_size % hash_block_size == 0 and all(
+-            scheduler_block_size % g.kv_cache_spec.block_size == 0
++            isinstance(g.kv_cache_spec, SlidingWindowSpec)
++            or scheduler_block_size % g.kv_cache_spec.block_size == 0
+             for g in kv_cache_config.kv_cache_groups
+         )
+@@ -601,7 +601,12 @@
              manager.block_size for manager in self.single_type_managers
          ]
          assert all(
 -            block_size % hash_block_size == 0 for block_size in group_block_sizes
-+            block_size % hash_block_size == 0
++            isinstance(g.kv_cache_spec, SlidingWindowSpec)
++            or block_size % hash_block_size == 0
 +            or hash_block_size % block_size == 0
-+            for block_size in group_block_sizes
++            for g, block_size in zip(
++                kv_cache_config.kv_cache_groups, group_block_sizes
++            )
          ), (
              "Each KV cache group's real block_size must be divisible by "
              f"hash_block_size. block_sizes={group_block_sizes}, "
@@ -191,4 +217,3 @@ These changes are applied after the 0.28 KVarN base port and the repo's DFlash2 
  
      def prepare_inputs(
          self,
-
