@@ -219,7 +219,7 @@ The 0.28 KV cache API uses KVQuantMode values and FullAttentionSpec.state_conten
 
 --- a/v1/worker/gpu/attn_utils.py
 +++ b/v1/worker/gpu/attn_utils.py
-@@ -305,7 +305,15 @@
+@@ -305,5 +305,12 @@
          )
          dtype_size = get_dtype_size(kv_cache_spec.dtype)
 -        page_stride = kv_cache_spec.page_size_bytes // dtype_size
