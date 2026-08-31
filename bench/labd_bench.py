@@ -25,7 +25,21 @@ import sys
 import time
 import urllib.request
 
-KEY = open(os.path.expanduser("~/qwen-serving/api_key.txt")).read().strip()
+def load_key():
+    key = os.environ.get("VLLM_API_KEY")
+    if key:
+        return key
+    for path in (os.path.join(os.path.dirname(os.path.dirname(__file__)), "api_key.txt"),
+                 os.path.expanduser("~/qwen-serving/api_key.txt")):
+        try:
+            with open(path) as f:
+                return f.read().strip()
+        except OSError:
+            pass
+    return ""
+
+
+KEY = load_key()
 BASE = "http://127.0.0.1:18020"
 TAG = sys.argv[1] if len(sys.argv) > 1 else "run"
 
