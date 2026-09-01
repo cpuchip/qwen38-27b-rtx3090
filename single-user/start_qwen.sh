@@ -777,13 +777,6 @@ fi
 BATCHED_TOKENS=${MAX_NUM_BATCHED_TOKENS:-2048}
 CUSTOM_OPS=${CUSTOM_OPS:-[\"+rms_norm\",\"+silu_and_mul\"]}
 
-# Keep the default enabled, but do not pass the same argparse key twice when a
-# user's EXTRA_ARGS already carries it (as the Jarvis .env currently does).
-PROMPT_TOKENS_DETAILS_ARGS=(--enable-prompt-tokens-details)
-case " ${EXTRA_ARGS:-} " in
-  *" --enable-prompt-tokens-details "*) PROMPT_TOKENS_DETAILS_ARGS=() ;;
-esac
-
 exec venv/bin/vllm serve "$MODEL" \
   --chat-template "$CHAT_TEMPLATE" \
   --served-model-name qwen3.8-27b \
@@ -800,7 +793,7 @@ exec venv/bin/vllm serve "$MODEL" \
   --speculative-config "$SPEC_CFG" \
   --compilation-config "{\"max_cudagraph_capture_size\":$CG,\"custom_ops\":$CUSTOM_OPS${CG_MODE}}" \
   --reasoning-parser qwen3 \
-  "${PROMPT_TOKENS_DETAILS_ARGS[@]}" \
+  --enable-prompt-tokens-details \
   "${METRICS_ARGS[@]}" \
   ${TOOL_ARGS} \
   "${KV_TRANSFER_ARGS[@]}" \
