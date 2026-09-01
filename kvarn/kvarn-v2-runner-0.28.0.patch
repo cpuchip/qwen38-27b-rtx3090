@@ -133,7 +133,7 @@ These changes are applied after the 0.28 KVarN base port and the repo's DFlash2 
          assert alignment_tokens % kv_cache_spec.block_size == 0, (
              "SlidingWindowManager does not support fine-grained (partial) cache hits"
          )
-@@ -1105,6 +1110,19 @@
+@@ -1105,6 +1110,24 @@
          window in the future.
          """
          return 0
@@ -146,8 +146,13 @@ These changes are applied after the 0.28 KVarN base port and the repo's DFlash2 
 +    ) -> None:
 +        # Prefix reuse is not meaningful for a rolling window. Skip the write
 +        # path when the SW block and hash unit are not divisible in either
-+        # direction; otherwise resolve_block_hashes would assert later.
-+        if self.block_size % self.block_pool.hash_block_size != 0:
++        # direction, or when the scheduler boundary is finer than the SW
++        # block. The latter would make reachable_block_mask assert before
++        # resolve_block_hashes is reached.
++        if (
++            self.block_size % self.block_pool.hash_block_size != 0
++            or self.scheduler_block_size % self.block_size != 0
++        ):
 +            return
 +        super().cache_blocks(request, num_tokens, retention_interval=retention_interval)
  
