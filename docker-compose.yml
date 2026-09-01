@@ -20,6 +20,9 @@
 # PORT and MODELS_DIR are read here: models live in ./models by default
 # (the same layout as the venv install, so both can share one download).
 # One GPU: run either "single" or "batch", not both.
+# KV_DISK_CACHE_HOST_DIR optionally selects the host directory for the
+# persistent KV/GDN filesystem tier.  Set KV_DISK_CACHE_DIR=/cache/kv-persist
+# as well to enable it; otherwise this mount remains unused.
 
 x-qwen: &qwen
   # Prebuilt on every main push by .github/workflows/docker-image.yml; the
@@ -38,6 +41,11 @@ x-qwen: &qwen
     HOME: /cache
   volumes:
     - ${MODELS_DIR:-./models}:/app/models
+    - ./single-user:/app/single-user
+    - ./batch:/app/batch
+    - ./bench:/app/bench
+    - ./patches:/app/patches
+    - ${KV_DISK_CACHE_HOST_DIR:-./kv-persist-cache}:/cache/kv-persist
     - qwen-cache:/cache
 
 x-serve: &serve

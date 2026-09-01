@@ -34,6 +34,9 @@
 #   ships, or for mtp: VLLM_SPEC_DECODE_ATTN=1 EXTRA_ARGS="--attention-backend
 #   =TRITON_ATTN --kv-cache-dtype=int8_per_token_head" at ~25% wall cost at
 #   depth (23.7 vs 18.9 s for 17.9k in + 256 out, measured).
+# CTX=longfp8: DFlash2 + fp8 KV via FlashInfer, 150k context, 3 drafts. This
+#   is the long-context DFlash2 variant; unlike CTX=long it does not use the
+#   custom Triton int8 KV path.
 # CTX=huge: KVarN 4/2-bit KV cache (kvarn/), 200k context with MTP, at roughly
 #   half the decode rate past 100k — see below and docs/long-context.md.
 #
@@ -73,6 +76,7 @@ if [ -z "$MODEL" ] && [ -d "$REPO/models/Qwen3.8-27B-W4A16-AutoRound-fast" ]; th
   MODEL=$REPO/models/Qwen3.8-27B-W4A16-AutoRound-fast
 fi
 MODEL=${MODEL:-$REPO/models/Qwen3.8-27B-W4A16-AutoRound}
+CHAT_TEMPLATE=${CHAT_TEMPLATE:-$REPO/chat_template-froggeric-v22.4.jinja}
 PORT=${PORT:-18020}
 MAX_SEQS=${MAX_SEQS:-}
 # INT8_ACT=int8 turns on the W4A8 Marlin path (weights stay int4, activations
@@ -119,6 +123,12 @@ GPU_UTIL=${GPU_UTIL:-0.93}
 API_SERVERS=${API_SERVERS:-1}
 # CTX=fast (default): bf16 KV via FlashAttention, ~64k context, 4 drafts (~+7%).
 # CTX=long: fp8 KV via FlashInfer, 150k context, 3 drafts.
+
+if [ ! -f "$CHAT_TEMPLATE" ]; then
+  echo "chat template not found: $CHAT_TEMPLATE" >&2
+  exit 1
+fi
+# CTX=longfp8: same FP8/FlashInfer target path, reserved for SPEC=dflash2.
 # CTX=huge: KVarN 4/2-bit KV cache (kvarn/ in this repo, run kvarn/install.sh
 #           once), 200k context with MTP. The decode tax is a function of context,
 #           not a constant: ~6% on short prompts, but 2.13x at 112k (32.0 vs fp8's
@@ -150,6 +160,10 @@ elif [ "$CTX" = "huge" ]; then
   DRAFT_TOKENS=${DRAFT_TOKENS:-3}
   ATTN_ARGS="--kv-cache-dtype kvarn_k4v2_g128 --block-size 128"
   export KVARN_POOL_MEM_FRAC=${KVARN_POOL_MEM_FRAC:-0.15}
+elif [ "$CTX" = "longfp8" ]; then
+  MAX_LEN=${MAX_LEN:-150000}
+  DRAFT_TOKENS=${DRAFT_TOKENS:-3}
+  ATTN_ARGS="--attention-backend FLASHINFER --kv-cache-dtype fp8"
 else
   MAX_LEN=${MAX_LEN:-150000}
   DRAFT_TOKENS=${DRAFT_TOKENS:-3}
@@ -173,8 +187,8 @@ elif [ "$SPEC" = "dflash2" ] && [ "$CTX" = "huge" ]; then
   # The split-KV verify attention is bf16-KV only -- the KVarN backend brings
   # its own dequant path, so the env stays off here.
   export VLLM_SPEC_DECODE_ATTN=0
-elif [ "$SPEC" = "dflash2" ] && [ "$CTX" != "fast" ]; then
-  echo "SPEC=dflash2 supports CTX=fast (bf16, 64k), CTX=long (int8, 128k) and CTX=huge (KVarN, 240k; kvarn/install.sh); CTX=$CTX keeps SPEC=mtp" >&2
+elif [ "$SPEC" = "dflash2" ] && [ "$CTX" != "fast" ] && [ "$CTX" != "longfp8" ]; then
+  echo "SPEC=dflash2 supports CTX=fast (bf16, 64k), CTX=long (int8, 128k), CTX=longfp8 (fp8, 150k) and CTX=huge (KVarN, 240k; kvarn/install.sh); CTX=$CTX keeps SPEC=mtp" >&2
   SPEC=mtp
 fi
 if [ "$SPEC" = "dflash2" ]; then
@@ -186,8 +200,23 @@ if [ "$SPEC" = "dflash2" ]; then
   [ -n "$DRAFT" ] || { echo "SPEC=dflash2 needs the drafter: venv/bin/python prepare/fetch_dflash2.py" >&2; exit 1; }
   # Lookup-augmented drafting: when the model is reproducing something from its context,
   # draft from the context instead of from the drafter
-  # (patches/dflash2-lookup-drafting.patch).
-  export VLLM_DFLASH2_LOOKUP=${LOOKUP:-1}
+  # (patches/dflash2-lookup-drafting.patch). VLLM_DFLASH2_LOOKUP is the canonical
+  # runtime variable. LOOKUP remains a compatibility alias for older .env files.
+  if [ "${LOOKUP+x}" = x ]; then
+    echo "[start_qwen] LOOKUP is deprecated; use VLLM_DFLASH2_LOOKUP" >&2
+  fi
+  if [ "${VLLM_DFLASH2_LOOKUP+x}" = x ] && [ "${LOOKUP+x}" = x ] \
+     && [ "$VLLM_DFLASH2_LOOKUP" != "$LOOKUP" ]; then
+    echo "LOOKUP and VLLM_DFLASH2_LOOKUP disagree; set only VLLM_DFLASH2_LOOKUP" >&2
+    exit 1
+  fi
+  if [ "${VLLM_DFLASH2_LOOKUP+x}" != x ]; then
+    export VLLM_DFLASH2_LOOKUP="${LOOKUP:-1}"
+  fi
+  case "$VLLM_DFLASH2_LOOKUP" in
+    0|1) ;;
+    *) echo "VLLM_DFLASH2_LOOKUP must be 0 or 1" >&2; exit 1 ;;
+  esac
   # DFLASH_TOKENS is the *verify* block, which no longer has to equal the drafter's: the
   # DFlash2 checkpoint always proposes the 7 tokens it was trained for, and any position
   # past that is filled from the request's own context, costing the drafter nothing. The
@@ -219,7 +248,8 @@ if [ "$SPEC" = "dflash2" ]; then
   # and the constant-length setting is clean at every residue that broke (16/64/96/124),
   # cold and warm, byte-identical.
   #
-  # Note what the earlier controls actually varied: DFLASH_TOKENS=7, LOOKUP=0 and SPEC=mtp
+  # Note what the earlier controls actually varied: DFLASH_TOKENS=7,
+  # VLLM_DFLASH2_LOOKUP=0 and SPEC=mtp
   # all make the block a CONSTANT length, so "clean" there was never evidence about the
   # block being short or the lookup being off. And a wrong draft cannot corrupt greedy
   # output at all -- rejection_sampler.py emits target_argmax whether it accepts or not --
@@ -228,14 +258,36 @@ if [ "$SPEC" = "dflash2" ]; then
   # Pinning the length is not a sacrifice here: 14.71 tok/step is the FASTEST number in the
   # series, above the adaptive path's own 14.29 cold. Root cause still open; this is a
   # correct and fast setting, not a workaround with a cost.
-  if [ -z "${LOOKUP_ADAPTIVE:-}" ] && [ "$VLLM_DFLASH2_LOOKUP" = "1" ] && [ "$DRAFT_TOKENS" -gt 7 ] \
-     && [ "$CTX" = "huge" ] && [ "${PREFIX_CACHE:-0}" = "1" ]; then
-    echo "DFLASH_TOKENS>7 + CTX=huge + PREFIX_CACHE=1: pinning the verify block to" >&2
-    echo "$((DRAFT_TOKENS + 1)) tokens (VLLM_DFLASH2_LOOKUP_ADAPTIVE=0). The adaptive length" >&2
-    echo "corrupts the second turn over a shared prefix on the KVarN cache; pinned is both" >&2
-    echo "correct and faster. LOOKUP_ADAPTIVE=1 asks for the adaptive path anyway." >&2
-    export VLLM_DFLASH2_LOOKUP_ADAPTIVE=0
+  # VLLM_DFLASH2_LOOKUP_ADAPTIVE is canonical. LOOKUP_ADAPTIVE is retained only as a
+  # compatibility alias; unlike the old path, an explicit alias is translated into the
+  # runtime variable instead of merely affecting the huge-mode auto-pin condition.
+  if [ "${LOOKUP_ADAPTIVE+x}" = x ]; then
+    echo "[start_qwen] LOOKUP_ADAPTIVE is deprecated; use VLLM_DFLASH2_LOOKUP_ADAPTIVE" >&2
   fi
+  if [ "${VLLM_DFLASH2_LOOKUP_ADAPTIVE+x}" = x ] \
+     && [ "${LOOKUP_ADAPTIVE+x}" = x ] \
+     && [ "$VLLM_DFLASH2_LOOKUP_ADAPTIVE" != "$LOOKUP_ADAPTIVE" ]; then
+    echo "LOOKUP_ADAPTIVE and VLLM_DFLASH2_LOOKUP_ADAPTIVE disagree; set only the VLLM variable" >&2
+    exit 1
+  fi
+  if [ "${VLLM_DFLASH2_LOOKUP_ADAPTIVE+x}" != x ]; then
+    if [ "${LOOKUP_ADAPTIVE+x}" = x ]; then
+      export VLLM_DFLASH2_LOOKUP_ADAPTIVE="$LOOKUP_ADAPTIVE"
+    elif [ "$VLLM_DFLASH2_LOOKUP" = "1" ] && [ "$DRAFT_TOKENS" -gt 7 ] \
+       && [ "$CTX" = "huge" ] && [ "${PREFIX_CACHE:-0}" = "1" ]; then
+      echo "DFLASH_TOKENS>7 + CTX=huge + PREFIX_CACHE=1: pinning the verify block to" >&2
+      echo "$((DRAFT_TOKENS + 1)) tokens (VLLM_DFLASH2_LOOKUP_ADAPTIVE=0). The adaptive length" >&2
+      echo "corrupts the second turn over a shared prefix on the KVarN cache; pinned is both" >&2
+      echo "correct and faster. Set VLLM_DFLASH2_LOOKUP_ADAPTIVE=1 to force the adaptive path." >&2
+      export VLLM_DFLASH2_LOOKUP_ADAPTIVE=0
+    else
+      export VLLM_DFLASH2_LOOKUP_ADAPTIVE=1
+    fi
+  fi
+  case "$VLLM_DFLASH2_LOOKUP_ADAPTIVE" in
+    0|1) ;;
+    *) echo "VLLM_DFLASH2_LOOKUP_ADAPTIVE must be 0 or 1" >&2; exit 1 ;;
+  esac
   if [ "$VLLM_DFLASH2_LOOKUP" = "1" ] && [ "$DRAFT_TOKENS" -gt 7 ]; then
     # Adaptive block length means the worker tells the scheduler how many draft tokens to
     # put up for verification next step, and vLLM only feeds that back on the synchronous
@@ -329,6 +381,20 @@ if [ "$SPEC" = "dflash2" ]; then
     else
       export VLLM_V2_CUDAGRAPH_MEM_MIB=${VLLM_V2_CUDAGRAPH_MEM_MIB:-1400}
     fi
+  elif [ "$CTX" = "longfp8" ]; then
+    # FP8/FlashInfer keeps the long-context pool at the same 5.2 GiB pin used
+    # by the int8 mode, but avoids the Triton prefill/decode tax. Four slots
+    # leave room for the V2 graphs and the DFlash2 drafter.
+    MAX_SEQS=${MAX_SEQS:-4}
+    MAX_LEN=${DFLASH_MAX_LEN:-150000}
+    KV_MEM=${KV_MEM-5583457484}
+    if [ "$DRAFT_TOKENS" -gt 15 ]; then
+      export VLLM_V2_CUDAGRAPH_MEM_MIB=${VLLM_V2_CUDAGRAPH_MEM_MIB:-2300}
+    elif [ "$DRAFT_TOKENS" -gt 7 ]; then
+      export VLLM_V2_CUDAGRAPH_MEM_MIB=${VLLM_V2_CUDAGRAPH_MEM_MIB:-1900}
+    else
+      export VLLM_V2_CUDAGRAPH_MEM_MIB=${VLLM_V2_CUDAGRAPH_MEM_MIB:-1400}
+    fi
   elif [ "$DRAFT_TOKENS" -gt 7 ]; then
     # 4 slots and 56k instead of 8 and 64k: the aligned state pages and the bigger decode
     # graphs are what the long block costs, and this is where they still fit next to the
@@ -339,7 +405,11 @@ if [ "$SPEC" = "dflash2" ]; then
     # Decode graphs are captured for both block lengths (the drafter's and the full verify
     # block), or the short step -- the common one -- runs piecewise and costs 8%. That is
     # 1.8 GiB of graphs instead of 1.45.
-    export VLLM_V2_CUDAGRAPH_MEM_MIB=${VLLM_V2_CUDAGRAPH_MEM_MIB:-1900}
+    if [ "$DRAFT_TOKENS" -gt 15 ]; then
+      export VLLM_V2_CUDAGRAPH_MEM_MIB=${VLLM_V2_CUDAGRAPH_MEM_MIB:-2300}
+    else
+      export VLLM_V2_CUDAGRAPH_MEM_MIB=${VLLM_V2_CUDAGRAPH_MEM_MIB:-1900}
+    fi
   else
     MAX_LEN=${DFLASH_MAX_LEN:-65536}
     KV_MEM=${KV_MEM-5583457484}
@@ -514,6 +584,73 @@ if [ -n "${CUDAGRAPH_MODE:-}" ] && [ -z "${CG_MODE:-}" ]; then
   CG_MODE=",\"cudagraph_mode\":\"$CUDAGRAPH_MODE\""
 fi
 
+# KV_DISK_CACHE_DIR enables vLLM's native hybrid KV/GDN offload connector.  The
+# filesystem tier is keyed by prefix hashes, so PYTHONHASHSEED must be fixed for
+# a cache to be usable after a process restart.  Keep this opt-in: the normal
+# service still uses the GPU prefix cache only unless this variable is set.
+#
+# DFlash2's hybrid groups contain null/padded blocks.  vLLM 0.28.0's generic
+# transfer path under-counts those blocks when blocks_per_chunk > 1, which can
+# crash a restart during a store flush.  One-block chunks are slower/more
+# numerous on disk, but pass the exact restart test and preserve correctness.
+KV_TRANSFER_ARGS=()
+if [ -n "${KV_DISK_CACHE_DIR:-}" ]; then
+  case "$KV_DISK_CACHE_DIR" in
+    /*) ;;
+    *) echo "KV_DISK_CACHE_DIR must be an absolute in-container path" >&2; exit 1 ;;
+  esac
+  case "${KV_OFFLOAD_CPU_BYTES:-8589934592}" in
+    ''|*[!0-9]*) echo "KV_OFFLOAD_CPU_BYTES must be an integer" >&2; exit 1 ;;
+  esac
+  case "${KV_OFFLOAD_BLOCKS_PER_CHUNK:-1}" in
+    ''|*[!0-9]*|0) echo "KV_OFFLOAD_BLOCKS_PER_CHUNK must be a positive integer" >&2; exit 1 ;;
+  esac
+  case "${KV_OFFLOAD_READ_THREADS:-16}" in
+    ''|*[!0-9]*|0) echo "KV_OFFLOAD_READ_THREADS must be a positive integer" >&2; exit 1 ;;
+  esac
+  case "${KV_OFFLOAD_WRITE_THREADS:-16}" in
+    ''|*[!0-9]*|0) echo "KV_OFFLOAD_WRITE_THREADS must be a positive integer" >&2; exit 1 ;;
+  esac
+  if [ -n "${PYTHONHASHSEED:-}" ] && [ "$PYTHONHASHSEED" != "0" ]; then
+    echo "KV_DISK_CACHE_DIR requires PYTHONHASHSEED=0 for restart-stable prefix hashes" >&2
+    exit 1
+  fi
+  export PYTHONHASHSEED=0
+  export PYTORCH_CUDA_ALLOC_CONF=${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:False}
+  mkdir -p "$KV_DISK_CACHE_DIR"
+  KV_TRANSFER_CONFIG=$("$REPO/venv/bin/python" - \
+    "$KV_DISK_CACHE_DIR" \
+    "${KV_OFFLOAD_CPU_BYTES:-8589934592}" \
+    "${KV_OFFLOAD_BLOCKS_PER_CHUNK:-1}" \
+    "${KV_OFFLOAD_READ_THREADS:-16}" \
+    "${KV_OFFLOAD_WRITE_THREADS:-16}" <<'PY'
+import json
+import sys
+
+root, cpu_bytes, blocks_per_chunk, read_threads, write_threads = sys.argv[1:]
+config = {
+    "kv_connector": "OffloadingConnector",
+    "kv_role": "kv_both",
+    "kv_load_failure_policy": "recompute",
+    "kv_connector_extra_config": {
+        "cpu_bytes_to_use": int(cpu_bytes),
+        "spec_name": "TieringOffloadingSpec",
+        "blocks_per_chunk": int(blocks_per_chunk),
+        "secondary_tiers": [{
+            "type": "fs",
+            "root_dir": root,
+            "n_read_threads": int(read_threads),
+            "n_write_threads": int(write_threads),
+        }],
+    },
+}
+print(json.dumps(config, separators=(",", ":")))
+PY
+  )
+  KV_TRANSFER_ARGS=(--kv-transfer-config "$KV_TRANSFER_CONFIG")
+  echo "Persistent KV/GDN offload enabled: $KV_DISK_CACHE_DIR (blocks_per_chunk=${KV_OFFLOAD_BLOCKS_PER_CHUNK:-1}, cpu_bytes=${KV_OFFLOAD_CPU_BYTES:-8589934592})" >&2
+fi
+
 # ASYNC_SCHED=0 (set above for a long DFlash2 verify block) runs the scheduler
 # synchronously, which is the only path on which vLLM lets the worker choose how many draft
 # tokens to put up for verification. Note --async-scheduling is already the default in
@@ -637,7 +774,11 @@ if [ -z "$VLLM_API_KEY" ] && [ -f "$REPO/api_key.txt" ]; then
   export VLLM_API_KEY="$(cat "$REPO/api_key.txt")"
 fi
 
+BATCHED_TOKENS=${MAX_NUM_BATCHED_TOKENS:-2048}
+CUSTOM_OPS=${CUSTOM_OPS:-[\"+rms_norm\",\"+silu_and_mul\"]}
+
 exec venv/bin/vllm serve "$MODEL" \
+  --chat-template "$CHAT_TEMPLATE" \
   --served-model-name qwen3.8-27b \
   --host ${HOST:-0.0.0.0} --port $PORT \
   --gpu-memory-utilization $GPU_UTIL \
@@ -648,11 +789,12 @@ exec venv/bin/vllm serve "$MODEL" \
   $ATTN_ARGS \
   --mamba-ssm-cache-dtype float16 \
   ${ASYNC_ARGS} \
-  --max-num-batched-tokens 2048 \
-  "${SPEC_ARGS[@]}" \
-  --compilation-config "{\"max_cudagraph_capture_size\":$CG,\"custom_ops\":[\"+rms_norm\",\"+silu_and_mul\"]${CG_MODE}}" \
+  --max-num-batched-tokens $BATCHED_TOKENS \
+  --speculative-config "$SPEC_CFG" \
+  --compilation-config "{\"max_cudagraph_capture_size\":$CG,\"custom_ops\":$CUSTOM_OPS${CG_MODE}}" \
   --reasoning-parser qwen3 \
   --enable-prompt-tokens-details \
   "${METRICS_ARGS[@]}" \
   ${TOOL_ARGS} \
+  "${KV_TRANSFER_ARGS[@]}" \
   ${EXTRA_ARGS}

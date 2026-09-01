@@ -223,7 +223,7 @@ did not mix on this path. On WSL2 that showed up as acceptance collapsing to
 about one token per step; on bare metal it also **corrupted the output** —
 special-token ids leaking into the stream, 1 of 1,176 characters matching the
 source instead of all of them. It is the capture rather than the drafter: eager
-is clean, `LOOKUP=0` is not, forcing a fixed verify-block length is not, and
+is clean, `VLLM_DFLASH2_LOOKUP=0` is not, forcing a fixed verify-block length is not, and
 PIECEWISE — which keeps the compiled graphs and leaves only the multi-query
 verify uncaptured — restored both the speed and the correctness on both machines.
 
@@ -668,7 +668,7 @@ greedy):
 | + GPTQ-int4 lm_head (calibrated) | 109 / 112 | 2.8 / 2.8 | 73% / 73% |
 | + GPTQ-int4 MTP module (**fast variant, shipped**) | **~114 / 118-124** | 2.8 / 2.9-3.0 | 74% / 77% |
 | DFlash2 block drafter instead of MTP (`SPEC=dflash2`, int4-requantized) | **118 / 126** | 3.14 / 3.34 | ~75% / ~78% |
-| + drafting from the context (`LOOKUP=1`, on by default) | **130** at C1, up to **259** where the model reproduces its context | 3.3-7.8 | |
+| + drafting from the context (`VLLM_DFLASH2_LOOKUP=1`, on by default) | **130** at C1, up to **259** where the model reproduces its context | 3.3-7.8 | |
 | + a 16-token verify block the context fills (`DFLASH_TOKENS=15`) | **133** at C1, up to **381** reproducing context | 3.4-15.0 | |
 
 (Steps 4-6 are the same 8-prompt protocol; greedy is deterministic for a
@@ -767,6 +767,12 @@ and follow its README:
 
 - **[batch/](batch/)** — throughput. `bash batch/start_qwen.sh`
 - **[single-user/](single-user/)** — latency. `bash single-user/start_qwen.sh`
+
+Both launchers use the bundled Froggeric Qwen 3.8 v22.3 chat template
+(`chat_template-froggeric-v22.4.jinja`) with native XML tool calls. Set
+`CHAT_TEMPLATE=/path/to/another.jinja` to A/B-test or roll back the template
+without changing the model files. The bundled file is pinned to Froggeric
+Hugging Face revision `756cfb69d742355fd310b4ba9d50815a27d9d241` (Froggeric v22.4).
 
 First start takes a few minutes (torch.compile, CUDA graph capture, flashinfer
 JIT). Test it:

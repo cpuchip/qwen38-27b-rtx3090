@@ -17,3 +17,5 @@ ninja==1.13.0
 # members are for HF-hosted --dataset-name values and the plotting subcommands,
 # and this repo's scripts use only `random` and `custom`.
 pandas==3.0.5
+# Required by bench/quality_battery.py for GSM8K/parquet datasets.
+pyarrow==25.0.1

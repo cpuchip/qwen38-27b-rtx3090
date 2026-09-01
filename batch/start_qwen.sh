@@ -45,9 +45,15 @@ REPO="$(dirname "$DIR")"
 cd "$REPO"
 
 MODEL=${MODEL:-$REPO/models/Qwen3.8-27B-W4A16-AutoRound}
+CHAT_TEMPLATE=${CHAT_TEMPLATE:-$REPO/chat_template-froggeric-v22.4.jinja}
 PORT=${PORT:-18020}
 MAX_SEQS=${MAX_SEQS:-64}
 API_SERVERS=${API_SERVERS:-1}
+
+if [ ! -f "$CHAT_TEMPLATE" ]; then
+  echo "chat template not found: $CHAT_TEMPLATE" >&2
+  exit 1
+fi
 # KV=fp8 (default): FlashInfer fp8 KV cache, 150k context, fastest.
 # KV=kvarn: the KVarN 4-bit-key / 2-bit-value cache (kvarn/ in this repo,
 # needs `bash kvarn/install.sh` once): 262k context, ~2x the token capacity,
@@ -176,7 +182,15 @@ if [ -z "$VLLM_API_KEY" ] && [ -f "$REPO/api_key.txt" ]; then
   export VLLM_API_KEY="$(cat "$REPO/api_key.txt")"
 fi
 
+# Expose the two throughput-profiled ceilings for controlled A/B tests.  Keep
+# the historical values as defaults; changing them is intentionally opt-in.
+# Use a batch-specific name because the shared .env's MAX_NUM_BATCHED_TOKENS
+# is the proven 4096 setting for the single-user long-context service.
+BATCHED_TOKENS=${BATCH_MAX_NUM_BATCHED_TOKENS:-2048}
+CG=${CG:-64}
+
 exec venv/bin/vllm serve "$MODEL" \
+  --chat-template "$CHAT_TEMPLATE" \
   --served-model-name qwen3.8-27b \
   --host 0.0.0.0 --port $PORT \
   --gpu-memory-utilization $GPU_UTIL \
@@ -187,8 +201,8 @@ exec venv/bin/vllm serve "$MODEL" \
   $KV_ARGS \
   --mamba-ssm-cache-dtype float16 \
   --async-scheduling \
-  --max-num-batched-tokens 2048 \
-  --compilation-config "{\"max_cudagraph_capture_size\":64,\"custom_ops\":[\"+rms_norm\",\"+silu_and_mul\"]}" \
+  --max-num-batched-tokens $BATCHED_TOKENS \
+  --compilation-config "{\"max_cudagraph_capture_size\":$CG,\"custom_ops\":[\"+rms_norm\",\"+silu_and_mul\"]}" \
   --reasoning-parser qwen3 \
   --enable-prompt-tokens-details \
   "${METRICS_ARGS[@]}" \

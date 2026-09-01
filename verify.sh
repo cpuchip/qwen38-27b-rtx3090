@@ -20,8 +20,18 @@ warn() { printf "  WARN  %s\n" "$1"; }
 fail() { printf "  FAIL  %s\n" "$1"; FAILS=$((FAILS+1)); }
 MODEL=${MODEL:-$HERE/models/Qwen3.8-27B-W4A16-AutoRound}
 PY=${PY:-$HERE/venv/bin/python}
+CHAT_TEMPLATE=${CHAT_TEMPLATE:-$HERE/chat_template-froggeric-v22.4.jinja}
 
 echo "== environment"
+if [ -f "$CHAT_TEMPLATE" ]; then
+  if grep -q 'template_version = "qwen3.8-froggeric-v22.4"' "$CHAT_TEMPLATE"; then
+    ok "chat template: $CHAT_TEMPLATE (Froggeric v22.4)"
+  else
+    ok "chat template: $CHAT_TEMPLATE (custom)"
+  fi
+else
+  fail "missing chat template: $CHAT_TEMPLATE"
+fi
 [ -x "$PY" ] && ok "python: $PY" || { fail "no $PY (see README Setup)"; exit 1; }
 VER=$($PY -c "import vllm; print(vllm.__version__)" 2>/dev/null | tail -n1)
 [ "$VER" = "0.28.0" ] && ok "vllm $VER" || warn "vllm ${VER:-missing} (patches were written against 0.28.0)"
