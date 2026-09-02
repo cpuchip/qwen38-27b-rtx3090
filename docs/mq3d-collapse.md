@@ -148,3 +148,30 @@ Running, fresh containers on card 1 with the connector and a churn side-load tha
 between turns: int4 3D on, bf16, int4 3D off, int8, and the current image. If bf16 collapses too,
 the KV tier is out of it entirely and the defect is the connector's reload against this hybrid
 model's Mamba state; if only the per-token-head tiers collapse, the tier is still in the chain.
+
+## The engine died where the collapse was expected (23:03Z)
+
+First connector arm, fresh container, production image, int4, 3D on, prefix cache on, pool pinned to
+35,313 tokens, CPU region 1.5 GB, a side-load of 21,000-token prompts every few seconds so the
+conversation's blocks leave the GPU between turns and come back from CPU:
+
+- Run 1 (side-load mis-sized, only three reloads): 15/18, no repetition.
+- Run 2 (side-load live, one 21k prompt every ~14 s): the engine core died in the scheduler, in
+  `kv_cache_manager.truncate_computed_blocks`, at `assert num_blocks <= len(group_blocks)`.
+  Server log: flightbench `results/raw/dave/server-off_int4_3d.log`.
+
+The assert sits in stock vLLM 0.27.1 (no fork patch touches it): when a request's local prefix hit
+ends in a partial block and the connector reports a strictly longer external hit, the scheduler
+truncates the local hit to the block boundary across every KV group. On this hybrid model the
+attention group and the Mamba group do not hit to the same depth (the Mamba group can only resume
+at a retained state snapshot; the scheduler calls this a diverged hit), so the Mamba group's
+block list is shorter than the truncation point, and the assert fires. The neighbouring branch is
+the one to watch: a diverged hit with external tokens present is accepted as is, on the assumption
+that the connector's load carries a valid Mamba state for the deeper boundary. If it does not, the
+request resumes with attention KV for a span whose recurrent state is wrong, silently. That is a
+candidate mechanism for the collapse: it needs prefix caching, a hybrid model, the connector's
+loads, and a diverged hit at the same time, which is why a fresh container rarely shows it and a
+server that has served for hours does. It does not depend on the KV tier or the 3D path.
+
+Still running: the connector with the whale's own pool (no pin), then bf16, int4 with 3D off, int8,
+and the current image (whose #52 patch changes snapshot retention, not this reconciliation).
