@@ -178,6 +178,14 @@ sized from the start (2.4 GB CPU region, one 21k-token prompt every ~14 s), died
 the same line during its first mission run, eight minutes after serving. Server log:
 `results/raw/dave/server-off_int4_3d_b.log` in flightbench.
 
+n=3 (23:36Z): int4 with the 3D path off, same connector and pin, same assert, first run, four minutes
+after serving. The 3D path is out of the crash. n=4 (23:44Z): the int8 per-token-head tier (the
+other launcher, `start_qwen.sh CTX=long`, no pad, 12k-token side-load) died in the same family but
+at a second site: the connector's own scheduler, `offloading/scheduler.py` `update_state_after_alloc`,
+`assert num_locally_computed_tokens <= num_locally_computed_gpu_blocks * tokens_per_block`, walking
+the KV groups with one local token count. Same shape as the first: a single count aligned to the
+scheduler's block, asserted per group on a model whose groups do not agree.
+
 Two additions from an independent read of the same stock files on a second machine (code read,
 not a reproduction): the line above the failing assert, `num_computed_tokens % manager.block_size
 == 0`, is the same shape (one token count aligned to the scheduler's single block size, asserted
