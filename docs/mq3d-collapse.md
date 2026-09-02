@@ -173,6 +173,11 @@ candidate mechanism for the collapse: it needs prefix caching, a hybrid model, t
 loads, and a diverged hit at the same time, which is why a fresh container rarely shows it and a
 server that has served for hours does. It does not depend on the KV tier or the 3D path.
 
+Reproduced (23:28Z, n=2): a second fresh int4 container, same connector and pin, the side-load correctly
+sized from the start (2.4 GB CPU region, one 21k-token prompt every ~14 s), died on the same assert at
+the same line during its first mission run, eight minutes after serving. Server log:
+`results/raw/dave/server-off_int4_3d_b.log` in flightbench.
+
 Two additions from an independent read of the same stock files on a second machine (code read,
 not a reproduction): the line above the failing assert, `num_computed_tokens % manager.block_size
 == 0`, is the same shape (one token count aligned to the scheduler's single block size, asserted
