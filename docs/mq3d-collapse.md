@@ -72,3 +72,42 @@ cached content. The first places: the 3D kernel's segment reduce (`softmax_segm_
 content, the per-token-head scales on identical rows, and the dispatch reason bits under
 `VLLM_INT4_MQ_3D_DEBUG=1` in the turns before the collapse (a capacity fallback, a buffer
 disagreement, or a `DEGRADED` line would each say something different).
+
+## Narrowed (22:20Z): the current image does not collapse, and the eager kernel is clean
+
+Two runs on the current image (2bbd292, the post-#57 tree), same tier, 3D on: 15/18 and 17/18,
+every reply finish=stop, no repetition. The collapse reproduces on the production image (ff41191)
+and not on the image four commits later. Five patches sit between them. Two are no-ops in this
+launch (marlin-tune-table needs an extension that is not installed; triton-prefill-attn-int8 is
+opt-in and unset), so three candidates remain:
+
+- spec-decode-scratch-token-units (#57, Patch A): scratch sized in tokens, 8 rows to 32 on this
+  config; the old check was memory-safe (total tokens against rows), so the old image routed only
+  batches of 8 tokens or fewer to 3D, a subset of what the current image routes there.
+- spec-sampler-prewarm (#48): the rejection sampler's Triton kernels compile at boot instead of
+  inside the first request that verifies drafts.
+- mamba-align-checkpoint-order (#52): keeps the conversation's mamba state snapshots alive, which
+  changes what a prefix-cache hit resumes from. The one candidate that touches prefix caching.
+
+The kernel sweep (`bench/mq3d_sweep.py`, built on `bench/mq3d_layer2_oracle.py`): the 3D leg, the
+2D leg, and an fp32 dequantized reference, on both images, real geometry (24 query heads, 4 KV
+heads, head size 256), history 48 to 16,384 tokens, batches [1], [8], [8,8], [8,8,8,8],
+[1,1,1,1], two fills (random; a 24-token pattern repeated down the sequence with 2% noise, the
+shape of a polling loop's cached content), plus a phase at the production image's real scratch
+sizing (8 rows, the capture-size snap) with 4,096-element canaries on both sides of every scratch
+buffer. 160 rows per image:
+
+| | 3D vs reference | 2D vs reference | max abs(3D - 2D) | NaN | canary touched |
+|---|---|---|---|---|---|
+| production image (ff41191) | 0.041 | 0.041 | 0.016 | none | none |
+| current image (2bbd292) | 0.041 | 0.041 | 0.016 | none | none |
+
+Identical numbers on both images, at fp16 rounding. The eager kernel does not produce the
+collapse. First control row on the production image with `PREFIX_CACHE=0`, 3D on: 16/18, no
+repetition (one run so far).
+
+Running now, one container at a time, then the production image with each candidate applied at
+boot (`patch -p1` on the installed package): prefix cache off (2 runs), draft width 3 (2), padded
+prefixes 4k and 8k (1 each), Patch A, mamba-align, sampler-prewarm. Whichever arm stops the
+collapse names the fix. The dimension not yet toggled is CUDA graph replay: the eager sweep cannot
+see a captured graph's baked dispatch, and the old sizing was itself shaped by the capture snap.
