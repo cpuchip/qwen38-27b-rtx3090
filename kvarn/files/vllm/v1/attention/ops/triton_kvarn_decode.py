@@ -983,15 +983,17 @@ def kvarn_verify_attention(
 
     # Split-K mirrors the decode driver's heuristic: long context with too few
     # programs to fill the SMs. Verify batches are tiny (NQ <= maxq * B), so
-    # long-context verify nearly always wants the split.
+    # long-context verify nearly always wants the split.  The one-stage
+    # VQ_INDIRECT kernel is not numerically safe for this long-context regime
+    # on sm86: it can return finite but incorrect logits for a multi-token
+    # verify step.  Keep `KVARN_SPLIT_K=1` as an explicit force, but do not
+    # allow `KVARN_SPLIT_K=0` to disable the correctness-required auto split.
     sm_count = getattr(impl, "_sm_count", 0) or torch.cuda.get_device_properties(
         device).multi_processor_count
     _sw = int(getattr(impl, "sliding_window", 0) or 0)
     _sk_env = os.environ.get("KVARN_SPLIT_K")
-    if _sk_env is not None:
-        split_k = _sk_env == "1"
-    else:
-        split_k = (_sw <= 0) and (max_ctx_blocks >= 16) and (NQ * Hk <= sm_count)
+    auto_split = (_sw <= 0) and (max_ctx_blocks >= 16) and (NQ * Hk <= sm_count)
+    split_k = _sk_env == "1" or auto_split
 
     if not split_k:
         _kvarn_fused_decode_kernel[(NQ, Hk)](
