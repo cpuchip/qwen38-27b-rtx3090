@@ -173,5 +173,14 @@ candidate mechanism for the collapse: it needs prefix caching, a hybrid model, t
 loads, and a diverged hit at the same time, which is why a fresh container rarely shows it and a
 server that has served for hours does. It does not depend on the KV tier or the 3D path.
 
+Two additions from an independent read of the same stock files on a second machine (code read,
+not a reproduction): the line above the failing assert, `num_computed_tokens % manager.block_size
+== 0`, is the same shape (one token count aligned to the scheduler's single block size, asserted
+against every group's own block size), so a reproduction may land on either; and the connector's
+only guard is at construction (its config asserts that hybrid models enable prefix caching "to
+align block sizes"), which cannot see a hit that diverges forty turns in. Nothing in this path is
+the fork's: the #46 and #57 lineage is not in it. The report, if one is written, is against
+vLLM, not this repository.
+
 Still running: the connector with the whale's own pool (no pin), then bf16, int4 with 3D off, int8,
 and the current image (whose #52 patch changes snapshot retention, not this reconciliation).
