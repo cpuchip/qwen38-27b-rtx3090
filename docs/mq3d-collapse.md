@@ -130,11 +130,21 @@ Struck, and replaced by what the new arms say:
   collapse). Its connector counters moved during that run: CPU-to-GPU load batches 33 to 37.
 
 The connector's load path is the one condition present in every collapse and absent from every
-clean row. A relevant number: for the int4 per-token-head tier the KV spec's page size is 32,768
-bytes per 16-token block while the kernel's block is 16,896 bytes (4 KV heads x 16 slots x 264
-bytes: 128 packed bytes and a 4-byte scale per half). The runner and the offload worker both
-address blocks by the spec's page, so by reading they agree; the arms decide. Queued, fresh
-containers on card 1 with the connector and a churn side-load that forces reloads between turns:
-int4 3D on, bf16, int4 3D off, int8, and the current image. If bf16 collapses too, the defect is
-the connector against this hybrid model; if only the per-token-head tiers collapse, it is the
-tiers' cache layout under the connector's block copy.
+clean row.
+
+~~A relevant number: for the int4 per-token-head tier the KV spec's page size is 32,768 bytes per
+16-token block while the kernel's block is 16,896 bytes.~~ Struck (23:05Z): that number came from
+a hand-built spec at a 16-token block. A native boot with the connector and a print in the offload
+worker's cache registration, at the shipped 1,696-token scheduler block, shows the spec's page
+(1,790,976 bytes = 4 heads x 1,696 slots x 264 bytes) equal to the kernel view's block stride and
+to the copy stride on all 21 attention layers, non-packed (block_stride 0). The tier's layout is
+not what the connector's copy breaks. The same boot recorded two facts about the configuration:
+the connector requires prefix caching on this hybrid model (its config asserts it, to align block
+sizes across the Mamba and attention groups), and the engine logs that prefix caching in Mamba
+cache "align" mode is experimental. So the region is align-mode Mamba prefix caching plus the
+connector's CPU-to-GPU reloads, on a fresh container as much as on the long-running one.
+
+Running, fresh containers on card 1 with the connector and a churn side-load that forces reloads
+between turns: int4 3D on, bf16, int4 3D off, int8, and the current image. If bf16 collapses too,
+the KV tier is out of it entirely and the defect is the connector's reload against this hybrid
+model's Mamba state; if only the per-token-head tiers collapse, the tier is still in the chain.
