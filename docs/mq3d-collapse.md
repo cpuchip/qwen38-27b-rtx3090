@@ -111,3 +111,30 @@ boot (`patch -p1` on the installed package): prefix cache off (2 runs), draft wi
 prefixes 4k and 8k (1 each), Patch A, mamba-align, sampler-prewarm. Whichever arm stops the
 collapse names the fix. The dimension not yet toggled is CUDA graph replay: the eager sweep cannot
 see a captured graph's baked dispatch, and the old sizing was itself shaped by the capture snap.
+
+## Correction (22:45Z): the 3D split was confounded; the collapse has only ever been observed in one container
+
+Every collapse row so far came from one long-running production container: the one that also
+serves the KV-tier comparisons' "int4" column. That container runs the CPU offload KV connector
+(`--kv-transfer-config OffloadingConnector`, 20 GB of pinned CPU memory) and had been serving for
+20 hours. No control arm had the connector: the 2D arm, the KV-tier arms, and every matrix arm
+were fresh containers without it. So the earlier sentence "the defect is the MQ-3D verify path"
+rested on a comparison that moved two things at once (the 3D switch, and the container).
+
+Struck, and replaced by what the new arms say:
+
+- Production image, 3D on, prefix cache on, fresh container, padded prefix 4k: 15/18, no
+  repetition (the plain condition the collapse was attributed to, without the connector).
+- Production image, 3D on, prefix cache off: 16/18 and 16/18.
+- The long-running container, same hour, 3D on: 10/18 with the eight LOI-and-after misses (the
+  collapse). Its connector counters moved during that run: CPU-to-GPU load batches 33 to 37.
+
+The connector's load path is the one condition present in every collapse and absent from every
+clean row. A relevant number: for the int4 per-token-head tier the KV spec's page size is 32,768
+bytes per 16-token block while the kernel's block is 16,896 bytes (4 KV heads x 16 slots x 264
+bytes: 128 packed bytes and a 4-byte scale per half). The runner and the offload worker both
+address blocks by the spec's page, so by reading they agree; the arms decide. Queued, fresh
+containers on card 1 with the connector and a churn side-load that forces reloads between turns:
+int4 3D on, bf16, int4 3D off, int8, and the current image. If bf16 collapses too, the defect is
+the connector against this hybrid model; if only the per-token-head tiers collapse, it is the
+tiers' cache layout under the connector's block copy.
