@@ -186,6 +186,8 @@ at a second site: the connector's own scheduler, `offloading/scheduler.py` `upda
 the KV groups with one local token count. Same shape as the first: a single count aligned to the
 scheduler's block, asserted per group on a model whose groups do not agree.
 
+n=5 (23:52Z): the current image (2bbd292, with the #52 snapshot-retention patch, Patch A and the sampler prewarm), int4, 3D on: same assert, same line, first run. None of the patches between the images touches this.
+
 Two additions from an independent read of the same stock files on a second machine (code read,
 not a reproduction): the line above the failing assert, `num_computed_tokens % manager.block_size
 == 0`, is the same shape (one token count aligned to the scheduler's single block size, asserted
