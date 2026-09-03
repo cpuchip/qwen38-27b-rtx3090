@@ -198,7 +198,7 @@ side-load. Run 1: no assert, 106 CPU-to-GPU load batches during the run, 13/18, 
 and finish=stop through turn 8, then the descent polling loop ran to the tool-call cap (the same shape
 as clean 0.27.1 rows without the connector), no repetition, no truncation. Consistent with the tag's
 code: #51468 clamps the Mamba group in the truncation, and #50344 sends the offloading connector down
-the fixed-point lookup, so no diverged local hit exists to assert on. One run; the second is running.
+the fixed-point lookup, so no diverged local hit exists to assert on. Run 2: 13/18 with the same five misses, 106 more load batches (212 total), no assert, no repetition. Two runs, identical to the decision, under heavier reload traffic than the production server saw in twenty hours.
 
 Two additions from an independent read of the same stock files on a second machine (code read,
 not a reproduction): the line above the failing assert, `num_computed_tokens % manager.block_size
