@@ -190,6 +190,8 @@ n=5 (23:52Z): the current image (2bbd292, with the #52 snapshot-retention patch,
 
 Second machine (00:46Z): the same recipe on a native RTX 3090 under Ubuntu, no container, no WSL2, died on the same assert 13 requests and about seven minutes in. Container, WSL2 and card are out. The stack itself proves the connector reported a strictly longer external hit: the scheduler calls `truncate_computed_blocks` only inside the branch guarded by `partial_tail and ext_tokens > partial_tail`.
 
+n=6 (01:01Z): bf16, stock FlashAttention, `start_qwen.sh CTX=fast`, no fork KV tier, pool pinned to 20,264 tokens, no pad, 10k-token side-load: died at the second site (the connector scheduler's per-group assert) 15 requests in. The KV tier is out of it entirely; nothing this repository ships is in the path. A speculation-off arm with the same connector completed two runs clean (14/18) but with zero reloads (its pool doubled to 71k tokens without the drafter's Mamba state), so it does not yet say whether the drafter is load-bearing; a retry with a smaller pin is queued.
+
 Two additions from an independent read of the same stock files on a second machine (code read,
 not a reproduction): the line above the failing assert, `num_computed_tokens % manager.block_size
 == 0`, is the same shape (one token count aligned to the scheduler's single block size, asserted
