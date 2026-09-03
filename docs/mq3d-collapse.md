@@ -209,5 +209,5 @@ align block sizes"), which cannot see a hit that diverges forty turns in. Nothin
 the fork's: the #46 and #57 lineage is not in it. The report, if one is written, is against
 vLLM, not this repository.
 
-Still running: the connector with the whale's own pool (no pin), then bf16, int4 with 3D off, int8,
+Still running: the connector with the production instance's own pool (no pin), then bf16, int4 with 3D off, int8,
 and the current image (whose #52 patch changes snapshot retention, not this reconciliation).
