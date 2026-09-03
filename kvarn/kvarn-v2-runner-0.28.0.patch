@@ -51,6 +51,20 @@ These changes are applied after the 0.28 KVarN base port and the repo's DFlash2 
      if not candidates:
          return fallback
      smallest = min(candidates)
+@@ -619,6 +636,13 @@
+             # bytes per block. Otherwise (page_size_padded is None) the smallest
+             # block is fine — ``unify`` scales it up by an integer ratio.
+             shared_page = vllm_config.cache_config.skip_page_size_padded
++            # port(kvarn-v2): hybrid without skip layers: pad the drafter's
++            # SW pages to the mamba/primary page instead of wasting 16-token
++            # blocks inside 1.8 MB uniform pages (26x overhead).
++            if shared_page is None and str(
++                vllm_config.cache_config.cache_dtype
++            ).startswith("kvarn"):
++                shared_page = vllm_config.cache_config.mamba_page_size_padded
+             # The backend owns its packing
+             sw_per_token = self.attn_backend.customize_spec(
+                 SlidingWindowSpec(
 --- a/v1/core/kv_cache_utils.py
 +++ b/v1/core/kv_cache_utils.py
 @@ -635,7 +635,19 @@
