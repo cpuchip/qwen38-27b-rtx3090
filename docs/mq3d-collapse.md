@@ -192,6 +192,14 @@ Second machine (00:46Z): the same recipe on a native RTX 3090 under Ubuntu, no c
 
 n=6 (01:01Z): bf16, stock FlashAttention, `start_qwen.sh CTX=fast`, no fork KV tier, pool pinned to 20,264 tokens, no pad, 10k-token side-load: died at the second site (the connector scheduler's per-group assert) 15 requests in. The KV tier is out of it entirely; nothing this repository ships is in the path. A speculation-off arm with the same connector completed two runs clean (14/18) but with zero reloads (its pool doubled to 71k tokens without the drafter's Mamba state), so it does not yet say whether the drafter is load-bearing; a retry with a smaller pin is queued.
 
+vLLM 0.28.0 (01:20Z, the fork's PR #43 branch built locally; its newest patch needed two hunk headers
+recounted and one hunk dropped to apply to the 0.28.0 wheel): same connector, pin (36,739 tokens),
+side-load. Run 1: no assert, 106 CPU-to-GPU load batches during the run, 13/18, every reply coherent
+and finish=stop through turn 8, then the descent polling loop ran to the tool-call cap (the same shape
+as clean 0.27.1 rows without the connector), no repetition, no truncation. Consistent with the tag's
+code: #51468 clamps the Mamba group in the truncation, and #50344 sends the offloading connector down
+the fixed-point lookup, so no diverged local hit exists to assert on. One run; the second is running.
+
 Two additions from an independent read of the same stock files on a second machine (code read,
 not a reproduction): the line above the failing assert, `num_computed_tokens % manager.block_size
 == 0`, is the same shape (one token count aligned to the scheduler's single block size, asserted
