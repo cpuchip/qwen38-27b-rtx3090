@@ -1,0 +1,16 @@
+--- a/v1/worker/gpu/model_states/mamba_hybrid.py
++++ b/v1/worker/gpu/model_states/mamba_hybrid.py
+@@ -100,11 +100,8 @@
+         self.num_accepted_tokens_gpu[req_index].fill_(1)
+         if self._align_mode:
+             # Seed the running state block from the resumed/prefilled position.
+-            mamba_bs = (
+-                self._mamba_spec.block_size
+-                if self._mamba_spec is not None
+-                else self.cache_config.block_size
+-            )
++            mamba_bs = self.cache_config.mamba_block_size
++            assert mamba_bs is not None
+             self._mamba_state_idx_gpu[req_index].fill_(
+                 (new_req_data.num_computed_tokens - 1) // mamba_bs
+             )
