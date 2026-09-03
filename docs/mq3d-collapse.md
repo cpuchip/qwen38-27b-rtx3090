@@ -188,6 +188,8 @@ scheduler's block, asserted per group on a model whose groups do not agree.
 
 n=5 (23:52Z): the current image (2bbd292, with the #52 snapshot-retention patch, Patch A and the sampler prewarm), int4, 3D on: same assert, same line, first run. None of the patches between the images touches this.
 
+Second machine (00:46Z): the same recipe on a native RTX 3090 under Ubuntu, no container, no WSL2, died on the same assert 13 requests and about seven minutes in. Container, WSL2 and card are out. The stack itself proves the connector reported a strictly longer external hit: the scheduler calls `truncate_computed_blocks` only inside the branch guarded by `partial_tail and ext_tokens > partial_tail`.
+
 Two additions from an independent read of the same stock files on a second machine (code read,
 not a reproduction): the line above the failing assert, `num_computed_tokens % manager.block_size
 == 0`, is the same shape (one token count aligned to the scheduler's single block size, asserted
