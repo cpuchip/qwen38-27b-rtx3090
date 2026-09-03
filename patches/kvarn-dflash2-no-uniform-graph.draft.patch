@@ -1,0 +1,13 @@
+Diagnostic only: force real batches off the uniform captured decode route while leaving dummy capture runs intact.
+
+Apply from the installed vllm package directory after kvarn-v2-runner-0.28.0.patch. Setting CUDAGRAPH_MODE=PIECEWISE is the no-patch equivalent for the server cell.
+
+--- a/v1/worker/gpu/model_runner.py
++++ b/v1/worker/gpu/model_runner.py
+@@ -1120,5 +1120,5 @@
+         if uniform_decode_token_count is not None and batch_state.has_prefill:
+             uniform_decode_token_count = None
+-        return batch_state, uniform_decode_token_count
++        return batch_state, None
+ 
+     def prepare_inputs(

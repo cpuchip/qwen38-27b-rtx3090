@@ -1,0 +1,15 @@
+Diagnostic only: restore the 0.27.1 runner patch's live total-computed prefill test in the 0.28 batch-state path.
+
+Apply from the installed vllm package directory after kvarn-v2-runner-0.28.0.patch.
+
+--- a/v1/worker/gpu/model_runner.py
++++ b/v1/worker/gpu/model_runner.py
+@@ -1078,6 +1078,7 @@
+         num_computed_prefill_tokens_np = self.req_states.num_computed_prefill_tokens[
+             idx_mapping_np
+         ]
+         is_prefilling_np = num_computed_prefill_tokens_np < prefill_len_np
++        is_prefilling_np |= self.req_states.num_computed_tokens_np[idx_mapping_np] < prefill_len_np
+ 
+         if self.adaptive_verification is not None and draft_tokens:
+             num_toks = self.adaptive_verification.get_num_tokens(
