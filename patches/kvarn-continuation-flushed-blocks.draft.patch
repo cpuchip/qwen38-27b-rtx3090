@@ -1,0 +1,60 @@
+UNAPPLIED DRAFT. Correctness/diagnostic hunk for the GPU validation box.
+
+The round-three debug line was before allocation, so slot=None described the
+old residency, not the write target. KVarN already chooses re-staging: every
+block touched by this step is in blocks_needed and receives a pool slot before
+do_kv_cache_update. Make that transition explicit and observable. Clear a
+newly assigned slot so a partial rewrite can never expose its previous owner's
+rows, and report the post-allocation slot under the existing debug gate.
+
+Apply after patches/kvarn-continuation-slow-path.draft.patch with:
+  patch -p1 -d site-packages/vllm < patches/kvarn-continuation-flushed-blocks.draft.patch
+
+--- a/v1/attention/backends/kvarn_attn.py
++++ b/v1/attention/backends/kvarn_attn.py
+@@ -876,6 +876,7 @@ class KVarNMetadataBuilder(AttentionMetadataBuilder[KVarNMetadata]):
+                     if bid < b2s_t.shape[0]:
+                         b2s_t[bid] = -1
+ 
++            newly_staged: dict[int, int] = {}
+             # (3) Allocate slots for any new block_ids (sinks + new tails).
+             for bid in blocks_needed:
+                 if bid not in dict_map:
+@@ -907,10 +908,36 @@ class KVarNMetadataBuilder(AttentionMetadataBuilder[KVarNMetadata]):
+                         )
+                     slot = free_slots.pop()
+                     dict_map[bid] = slot
++                    newly_staged[bid] = slot
+                     if bid < b2s_t.shape[0]:
+                         b2s_t[bid] = slot
+                     KVarNAttentionImpl._max_known_block_id[gk] = max(
+                         KVarNAttentionImpl._max_known_block_id.get(gk, 0), bid
+                     )
++
++            # A slot can contain the previous owner's fp16 rows. Current rows
++            # are scattered below by do_kv_cache_update; zeroing makes the
++            # slot's ownership transition complete before that captured write.
++            # It is cheap on the rare prefix-continuation allocation path and
++            # harmless for a full rewrite.
++            if newly_staged:
++                slots = list(newly_staged.values())
++                for impl in group_impls:
++                    tail_k = getattr(impl, "_tail_K_pool", None)
++                    tail_v = getattr(impl, "_tail_V_pool", None)
++                    if tail_k is not None:
++                        tail_k[slots].zero_()
++                        tail_v[slots].zero_()
++
++            if (newly_staged
++                    and os.environ.get("KVARN_CONTINUATION_DEBUG", "0") == "1"):
++                post_rows = [
++                    {"block": bid, "slot": dict_map.get(bid)}
++                    for bid in newly_staged
++                ]
++                print(
++                    f"KVARN_CONTINUATION_DEBUG post_allocate={post_rows}",
++                    flush=True,
++                )
+ 
+         # ── Persistent cu_seqlens buffers (in-place updated) ─────────────
+         # A captured graph bakes in tensor addresses, so cu_seqlens MUST live
