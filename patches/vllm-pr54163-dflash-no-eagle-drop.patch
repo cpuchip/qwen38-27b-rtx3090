@@ -1,0 +1,41 @@
+vLLM PR #54163 compatibility patch for the 0.28.0 wheel.
+
+This patch has not been applied in this checkout because the wheel/venv is not
+installed here. Apply with:
+
+  patch -p1 -d site-packages/vllm < patches/vllm-pr54163-dflash-no-eagle-drop.patch
+
+--- a/v1/core/sched/scheduler.py
++++ b/v1/core/sched/scheduler.py
+@@ -247,6 +247,11 @@
+                     vllm_max_batch_size=self.scheduler_config.max_num_seqs,
+                     vllm_num_speculative_tokens=self.num_spec_tokens,
+                 )
+             self.use_eagle = speculative_config.use_eagle()
++            # DFlash/DSpark consume target hidden states but do not write
++            # Eagle-style draft KV into the target's last full-attention block.
++            drop_eagle_block = self.use_eagle and not (
++                speculative_config.use_dflash() or speculative_config.use_dspark()
++            )
+             if self.use_eagle:
+                 self.num_prefill_lookahead = (
+                     self.num_spec_tokens
+@@ -262,7 +267,7 @@
+             max_in_flight_tokens=vllm_config.max_in_flight_tokens,
+             enable_caching=self.cache_config.enable_prefix_caching,
+-            use_eagle=self.use_eagle,
++            use_eagle=drop_eagle_block if speculative_config is not None else False,
+             num_prefill_lookahead=self.num_prefill_lookahead,
+             log_stats=self.log_stats,
+             enable_kv_cache_events=self.enable_kv_cache_events,
+@@ -368,7 +373,10 @@
+         # block to avoid a Mamba cache miss.
+         last_cache_position = request.num_tokens - request.num_tokens % block_size
+-        if self.use_eagle:
++        if self.use_eagle and not (
++            self.vllm_config.speculative_config.use_dflash()
++            or self.vllm_config.speculative_config.use_dspark()
++        ):
+             last_cache_position = max(last_cache_position - block_size, 0)
+         end = start + num_new_tokens
+         # Invariant: slot p holds the state after exactly (p + 1) * block_size

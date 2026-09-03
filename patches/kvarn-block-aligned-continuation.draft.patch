@@ -1,0 +1,34 @@
+UNAPPLIED DRAFT. Diagnostic/correctness hunk for the GPU validation box.
+
+Do not flush or reclaim KVarN fp16 staging blocks before a cached continuation
+whose query is wider than the speculative-decode classification threshold. The
+next ordinary verify/decode build sees the continuation tokens as committed and
+can flush them after do_kv_cache_update has actually written them.
+
+--- a/v1/attention/backends/kvarn_attn.py
++++ b/v1/attention/backends/kvarn_attn.py
+@@ -621,5 +621,12 @@ class KVarNMetadataBuilder(AttentionMetadataBuilder[KVarNMetadata]):
+         else:
+             query_lens_cpu = [1] * len(seq_lens_cpu)
++        block_aligned_continuation = any(
++            ql > self.reorder_batch_threshold and sl > ql
++            for sl, ql in zip(seq_lens_cpu, query_lens_cpu)
++        )
++        allow_flush_this_build = (
++            _allow_flush and not block_aligned_continuation
++        )
+         # block_table as a numpy 2-D array (C-backed, lazy element access) rather
+         # than .tolist(): the full B×max_blocks nested-list build was ~7 ms/step
+         # at B=256 and dominated build() once the flush was vectorized (issue #15).
+@@ -798,1 +805,1 @@ class KVarNMetadataBuilder(AttentionMetadataBuilder[KVarNMetadata]):
+-            for b in (range(B) if _allow_flush else ()):
++            for b in (range(B) if allow_flush_this_build else ()):
+@@ -827,7 +834,7 @@ class KVarNMetadataBuilder(AttentionMetadataBuilder[KVarNMetadata]):
+             discard_ids: list[int] = []
+             for bid in ([b for b in dict_map
+                          if b not in blocks_needed and b not in flush_seen]
+-                        if _allow_flush else ()):   # port(0.27.1): see (2)
++                        if allow_flush_this_build else ()):  # diagnostic
+                 full = self._block_fill.get(bid, 0) >= GROUP
+                 if full and bid in sinks:
+                     self._retired_sinks[bid] = None   # idempotent re-insert
