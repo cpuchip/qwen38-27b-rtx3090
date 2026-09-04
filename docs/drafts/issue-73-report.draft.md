@@ -47,9 +47,17 @@ Drafted tokens per round is unchanged across versions on both boxes, so this is 
 
 **Request order changes measured block length.** The long block is sticky and coasts on prior state without consulting the emitted-token count, so per-request drafted-token counts are not independent within a boot and per-request acceptance figures are only comparable within a fixed running order. Anything that scores per-request acceptance picks this up silently.
 
-## What we could not settle
+## The residual, and why one bisect cell saw it and another did not
 
-The residual above the field effect is unexplained. Reverse-applying `dflash2-z-adaptive-emitted.patch` changed nothing on the 3090, and the instrumented block-length sequences show why: that patch can only change behaviour when the emitted count is the deciding term, which needs the lookup to qualify twice in succession and acceptance low enough to fall under the threshold. Neither test case was in that regime, so this is not a failure to reproduce your 2.66 to 2.79; it is a demonstration that those cells could not have shown it. Worth noting for anyone reversing it that the patch touches two files and only one is live in this configuration, since the other sits in a chain path that is off by default.
+`dflash2-z-adaptive-emitted.patch` is real and its effect is workload-dependent, which reconciles your 2.66 to 2.79 with a null on another box.
+
+Instrumenting the predicate per step rather than per round shows why. The patch changes the emitted-token count that the block-length policy reads, and the policy compares it against one plus the drafted block. The two definitions can only disagree in a narrow band: the step has to sample at least eight tokens and reject enough of them to fall back under eight. That needs a long block and moderate rejection at the same time. Over 99 logged steps on a short single-prompt cell, the predicate differed on exactly one step, and block entry requires two qualifying steps in succession, so a single flip changes nothing and every counter matches.
+
+A cohort at 1024 output tokens spends far more steps in the long block, so it lands in that band far more often. That is the difference between a box that measures a quarter of the gap from this patch and one that measures nothing, and it is exposure rather than disagreement.
+
+Two notes for anyone reversing it. The patch touches two files and only one is live in this configuration, since the other sits in a chain path that is off by default. And the block-length policy is sticky: once entered it coasts on prior state without consulting the emitted count at all, so those steps are patch-independent by construction.
+
+The general lesson cost us several hours and is worth stating: **when a mechanism turns on a threshold, instrument the distribution and not the mean.** Every wrong reading we produced about this patch came from reasoning about per-round averages toward a per-step predicate.
 
 ## The one thing that would help most
 
