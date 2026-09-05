@@ -927,7 +927,9 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     consulting the emitted count, so a request that follows a long-block request inherits some of its
     block length; and a different block length is a different verify batch shape, which on a
     numerically knife-edged model can flip a near-tie token even with the seed fixed. Prefix caching
-    adds a third when requests share a prompt. What follows is the same either way: hold the request
+    was the obvious third candidate, since the requests share a prompt; with the engine started
+    `--no-enable-prefix-caching` and the log confirming it, the order effect was unchanged, so it
+    is not the driver. What follows is the same either way: hold the request
     order fixed within a comparison, report tokens per step rather than acceptance per drafted token,
     and treat per-request figures from a sequence as dependent samples, never as independent ones.
 
