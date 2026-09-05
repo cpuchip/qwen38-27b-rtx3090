@@ -22,6 +22,18 @@ Is DFlash2's lead over MTP real, or a property of these cards, and is 3.3 of 7 l
 | VLLM_TRITON_FORCE_FIRST_CONFIG | 2x slower at the default on the 4090, boots diverge more under it, and it flips which seeds terminate immediately (prompt 5, seeds 2 and 3, empty on both cards; clean at greedy on the 3090) | a caution, not a defect |
 | Cross-box acceptance levels | inside one box's own sampling spread (row sd 0.98, cross-box gap 0.14); withdrawn | the greedy texts agree for the first 30 to 60 tokens on 7 of 8 prompts, then part at a near-tie |
 
+## The two cards in one table
+
+Matched configurations at the launcher default, steady step cost:
+
+| factor | native 3090 | this card (4090 under WSL2) |
+|---|---|---|
+| CUDA graph capture, none against default | 50.5 against 25.1 ms, 2.01x | 33.7 against 23.2 ms, 1.45x |
+| Triton kernel configuration, first-listed against autotuned | 25.4 against 25.0 ms, 1.02x | 46.0 against 23.2 ms, 1.98x |
+| split-KV verify attention at width 15, on against off | 25.7 against 26.5 ms, nothing | 56.5 against 23.6 ms, 2.4x |
+
+On bare metal graph capture is worth 2x and the kernel choice is free; on the 4090 under WSL2 the kernel choice is worth 2x and capture matters less. The first-listed Triton configuration with full graph capture is slower on this card than autotuned kernels with no capture at all. Neither of those is a property of the fork; the third row is, and it has a switch.
+
 ## Determinism
 
 The launcher default replays across boots to the token on both boxes (five boots here, sampled pairs on the native 3090). On the 3090 that is not the prefix cache hiding anything: with the cache off and the mamba align mode kept, two boots are still identical on every prompt; with the align mode off they differ on every prompt. So on this hybrid model `--mamba-cache-mode align` is the determinism flag, and the launcher sets it only as a side effect of PREFIX_CACHE=1, which is item 10 of the note for Mads. On this box's card 1 at width 15 the prefix cache alone still moved reproducibility (29 to 17 of 32 with align kept); whether that is the card or the width is one queued cell (width 7, cache off, align kept). Reproduction mode does not: five width-15 boots form exactly two trajectories on card 0, differing on the same ten rows; card 1 gives more than two groups; and the native 3090 at width 15 shows one trajectory across eight boots with prefix caching on and two groups across three with it off. The Triton autotune race is excluded as the source (skipping it makes boots diverge more) and so is prefix caching (turning it off does the same); whatever the binary boot state is, its footprint grows with how much a boot computes from scratch, and it never flips a greedy argmax. Issue 75 narrows to the width-15 path.
