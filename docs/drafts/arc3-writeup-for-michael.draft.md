@@ -18,6 +18,10 @@ Everything below is in docs/v0.28-validation.md from the heading "Arc three: dra
 - **The one illegal memory access** (the block-16 drafter with the fork's verify kernel on, card 0, the over-committed pin) did not reproduce once the pin fit: the same boot with the kernel on served. That was the memory state, not the kernel.
 - **Lookup drafting at width 7** is worth between about minus 4 and plus 2 percent of accepted tokens on this cohort at unchanged step cost, the two boxes disagreeing on the sign inside that band (one boot per arm each). Not a finding; a sentence beside item 6 of the note.
 
+## Three tiers of numbers on this box, stated
+
+The spill moves a working set into host memory; it does not change the computation, so it affects step costs and not acceptance. Every acceptance column in this arc stands as read, including the trained-tail result the answer rests on, and only the step costs of spilled cells are void. Card 0's numbers now come in three tiers: measured clean under the adapter counters (the DFlash2 head and the block-16 drafter at the fitting pin; the re-checks below when they land); measured spilled (the over-committed boots, whose step costs are void and whose acceptance is intact); and measured before the counters existed, which is the largest tier and includes all of arc two. Those are not wrong, they are unchecked, and the check is now cheap: the three arc-two numbers that carry the most weight (the width-15 kernel cost, the default, the forced slow boot) are being re-measured under the counters with an idle gate before each boot, and the rest are marked unverified rather than implied clean. The 3090 has no third tier: it cannot spill, so every native number in both arcs was taken in a state the counters would call clean, which is why its results serve as controls; not because the card is faster or slower, but because its failure mode is loud.
+
 ## Still running
 
 - Card 0: the width-11 re-run with the client that now records the engine's error when a request fails (two cells ended on an HTTP 500 in the second seed's pass); the DSpark boots on the renamed copy.
