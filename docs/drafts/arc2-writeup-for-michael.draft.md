@@ -40,7 +40,7 @@ The launcher default replayed to the token in every boot tested on both boxes: n
 
 ## Still queued (card 0 then card 1)
 
-- Card 0: the default width with SPEC_ATTN=0 (any cost of the kernel at width 7, running), then two default boots with the compile cache disabled (whether a compiling boot can land slow, or only a boot that loads an artefact), then a second SPEC_ATTN=0 boot at width 15 with every completion length read (the switch's timing and its output).
+- Card 0: the default width with SPEC_ATTN=0 landed (23.6 against 23.2 ms per step, tokens per step 3.813 against 3.798, no one-token row: the kernel costs about 0.4 ms at width 7 and nothing in acceptance, so the width-15 cost is the query maximum, not the kernel as such); then two default boots with the compile cache disabled (whether a compiling boot can land slow, or only a boot that loads an artefact), then a second SPEC_ATTN=0 boot at width 15 with every completion length read (the switch's timing and its output).
 - Card 1: two more cache-off boots at width 15 (the group count at one exact configuration), then width 7 with the cache off and align kept (card or width).
 
 ## What goes to Mads, with your pen
