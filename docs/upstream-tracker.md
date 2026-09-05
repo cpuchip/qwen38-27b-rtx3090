@@ -1,6 +1,6 @@
 # Upstream tracker: syv-ai/qwen38-27b-rtx3090
 
-Generated 2026-09-05 08:55Z by `scripts/track_upstream.py`. Regenerate rather than hand-edit;
+Generated 2026-09-05 09:10Z by `scripts/track_upstream.py`. Regenerate rather than hand-edit;
 the notes section below the table is the part that is written by hand.
 
 ## Ball in our court
