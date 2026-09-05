@@ -890,7 +890,7 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     the card) and *shared* (host memory the driver backs GPU allocations
     with). On two RTX 4090s under WSL2 the dedicated figure tops out at about
     23,371 MiB of a 24,564 MiB card, where a bare-metal 3090 of the same size
-    sees 23,859 MiB free at boot. The default `SPEC=dflash2 CTX=fast` boot
+    reports 23.3 GiB free at boot (the engine's log figure), about 490 MiB more. The default `SPEC=dflash2 CTX=fast` boot
     lands about 50 MiB under the ceiling. Anything that adds to the working
     set crosses it, and crossing it does not fail: the remainder lands in
     host shared memory and the step runs two to six times slower, with
