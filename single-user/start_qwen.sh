@@ -382,8 +382,9 @@ if [ "$SPEC" = "dflash2" ]; then
   # gigabyte to spare on a 24 GiB card, and none of them knows the drafter's size. A bf16
   # community drafter (3.5 to 4.0 GiB) does not fit them at any context: the floor is the
   # per-request state, not the token count, and a bigger drafter is charged twice, as
-  # weights and as a larger per-request KV requirement (4.97 GiB per 65536-token request
-  # beside the shipped head, 7.05 beside a 3.5 GiB one, both at the shipped pin). None of
+  # weights and as a larger per-request KV requirement (about 4.97 GiB per 65536-token
+  # request beside the shipped head, derived from a served boot's pool of 68,605 tokens at
+  # the 5.2 GiB pin; 7.05 GiB beside a 3.5 GiB drafter, logged at the refusal). None of
   # the engine's error messages names the pin, the reservation or DFLASH_MAX_LEN, so say
   # it here instead of after seven boots (#25, items 13 and 14). Measured to serve both
   # community drafters on 24 GiB: KV_MEM=3000000000 DFLASH_MAX_LEN=8192 (pinned, 4090), or
