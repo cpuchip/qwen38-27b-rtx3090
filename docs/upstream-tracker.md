@@ -1,6 +1,6 @@
 # Upstream tracker: syv-ai/qwen38-27b-rtx3090
 
-Generated 2026-09-05 00:13Z by `scripts/track_upstream.py`. Regenerate rather than hand-edit;
+Generated 2026-09-05 00:23Z by `scripts/track_upstream.py`. Regenerate rather than hand-edit;
 the notes section below the table is the part that is written by hand.
 
 ## Ball in our court
@@ -9,15 +9,13 @@ the notes section below the table is the part that is written by hand.
   - mhenrichsen, 2026-09-03T06:58: Tracking update, 2026-09-03. **Landed since the last one** - **#63 fixed** (`dfee877`): a promoted drafter KV block has to *divide* the primary block, not merely cover it. `DFLASH_TOKENS` above 7 boots on the int4 path n
   - mhenrichsen, 2026-09-04T08:01: Tracking update, 2026-09-04. **vLLM 0.28.0 is merged** (#43, `cd2fa94`). The blocker that held it for three rounds — `CTX=huge` + DFlash2 producing garbage from the second turn — was a single hunk dropped when the V2-run
   - mhenrichsen, 2026-09-04T18:21: Tracking update, 2026-09-04 (evening). **Production on this box now runs main: vLLM 0.28.0.** **#73 closed — and it was the last blocker.** The 16% DFlash2 acceptance regression on 0.28 was `draft_sample_method` missing 
-- **#75 Autotune nondeterminism decides the trajectory: a bench row needs its **
-  - mhenrichsen, 2026-09-04T18:21: Corroborating this from the other end of the stack, because I hit the same property measuring memory rather than trajectories, and did not connect the two until your issue. **The compile-cache state moves the KV pool by 
 
 ## Every thread we are on
 
 | # | kind | state | ours | unanswered | updated | title |
 |---|---|---|---:|---:|---|---|
+| 75 | issue | open | 2 | 0 | 2026-09-05T00:19 | Autotune nondeterminism decides the trajectory: a bench ro |
 | 25 | issue | open | 3 | 3 | 2026-09-04T18:21 | Known issues and progress: KVarN / DFlash2 / CTX=huge (tra |
-| 75 | issue | open | 1 | 1 | 2026-09-04T18:21 | Autotune nondeterminism decides the trajectory: a bench ro |
 | 73 | issue | closed | 4 | 1 | 2026-09-04T18:20 | DFlash2 acceptance regression on vLLM 0.28.0: 3.19 -> 2.66 |
 | 74 | issue | closed | 0 | 1 | 2026-09-04T18:20 | Retraction: the tool-call cap in my 0.28 validation is my  |
 | 43 | pr | merged | 9 | 0 | 2026-09-04T14:08 | Update vLLM stack to 0.28.0 |
