@@ -25,8 +25,8 @@ The spill moves a working set into host memory; it does not change the computati
 
 ## Still running
 
-- Card 0, in order: the width-15 boot with room (w15p3, the discriminator for item 9), the plain-DFlash boot repeated with its head artefact cached (ap7p3b, the discriminator for item 14), and the width-11 falsifier with the kernel off (ap11p3sa0).
-- 3090: nothing queued; threadchip supplies a native twin for any of the three if it lands in a band that needs one.
+- Card 0, in order: the plain-DFlash boot repeated with its head artefact cached (ap7p3b, on its rows: both artefacts loaded, same memory state as before, same step cost so far, so the boot class was not the residual); the width-11 falsifier with the kernel off (ap11p3sa0); the width-7 query-maximum-16 cell at the fitting profile (q16p3, which decides the provisional clause of the item 9 correction); the block-16 drafter with real room at a 2 GiB pin (ap7p2, the first plain-DFlash boot on this card under the ceiling).
+- 3090: nothing queued; threadchip supplies a native twin for any of these if it lands in a band that needs one.
 
 ## What goes to Mads, with your pen
 
