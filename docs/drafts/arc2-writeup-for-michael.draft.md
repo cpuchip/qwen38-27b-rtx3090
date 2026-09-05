@@ -56,6 +56,7 @@ Every cell of the arc has landed; the record lists them by name with their numbe
 
 - A boot in the slow-boot state at the default width with the fork's verify kernel off (predicted fast on both boxes; tests only this host), and one at width 15 with the kernel on. A result well above 56.5 ms per step would separate the query-maximum cost from the boot-state cost; a result near 56.5 would be consistent with one effect and would not prove it.
 - A much longer prompt on a boot in the slow state, as one way to see whether the cost moves with traffic; it would not by itself distinguish a transfer from kernel work.
+- Text hashes on a boot in the slow state and on the boot that loads what it wrote (the cells keep no text today, so identical text across the speed gap has been shown by nobody; the same recorded signature is consistent with different tokens throughout).
 - The winner pin (one cold boot's autotune winners forced first on a normal cache) to price the cache-disable flag itself.
 - The lineage classification of card 0's five width-15 cache-on boots, the one grouping the record still cannot explain.
 
