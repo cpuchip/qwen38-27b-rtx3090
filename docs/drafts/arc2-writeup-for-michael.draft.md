@@ -28,11 +28,11 @@ Matched configurations at the launcher default, steady step cost:
 
 | factor | native 3090 | this card (4090 under WSL2) |
 |---|---|---|
-| CUDA graph capture, none against default | 50.5 against 25.1 ms, 2.01x | 33.7 against 23.2 ms, 1.45x |
-| Triton kernel configuration, first-listed against autotuned | 25.4 against 25.0 ms, 1.02x | 46.0 against 23.2 ms, 1.98x |
-| split-KV verify attention at width 15, on against off | 25.7 against 26.5 ms, nothing | 56.5 against 23.6 ms, 2.4x |
+| CUDA graph capture, none against default | 50.5 against 25.1 ms, about 2x | 33.7 against 23.2 ms, 1.45x |
+| Triton kernel configuration, first-listed against autotuned | no detectable difference (25.2 and 25.5 inside the autotuned 25.0 to 25.5; resolution about 0.8 ms) | 46.0 against 23.2 ms, 2x, on two boots of two |
+| split-KV verify attention at width 15, on against off | no detectable difference (25.7 against 26.5, one boot each, inside the spread) | 56.5 against 23.6 ms, 2.4x |
 
-On bare metal graph capture is worth 2x and the kernel choice is free; on the 4090 under WSL2 the kernel choice is worth 2x and capture matters less. The first-listed Triton configuration with full graph capture is slower on this card than autotuned kernels with no capture at all. Neither of those is a property of the fork; the third row is, and it has a switch.
+On bare metal graph capture is worth about 2x and the kernel choice makes no detectable difference; on the 4090 under WSL2 the kernel choice is worth 2x and capture matters less. The native box's three nulls each rest on one or two boots per arm with a 0.8 ms resolution floor; they exclude the 2x and 2.4x effects they sit beside and say nothing about a few percent. The first-listed Triton configuration with full graph capture is slower on this card than autotuned kernels with no capture at all. Neither of those is a property of the fork; the third row is, and it has a switch.
 
 ## Determinism
 
