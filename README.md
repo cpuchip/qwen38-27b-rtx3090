@@ -225,7 +225,7 @@ class; the weights are unchanged, so hard-link the safetensors). Then
 `DRAFT=/path/to/that/copy DRAFT_METHOD=dspark KV_MEM=3000000000
 DFLASH_MAX_LEN=8192 SPEC=dflash2 CTX=fast bash single-user/start_qwen.sh`. It
 serves, and loses to the shipped head on the same requests: 3.19 against 3.77
-accepted tokens per step and 115 against 160 tok/s on a 4090, 3.37 against 3.83
+tokens per step (accepted drafts plus the bonus token) and 115 against 160 tok/s on a 4090, 3.37 against 3.83
 and 114 against 150 on a 3090 (issue #25, items 15 and 16). Documented so nobody
 re-derives the two errors, not as a recommendation.
 
