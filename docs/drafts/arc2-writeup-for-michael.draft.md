@@ -24,7 +24,7 @@ Is DFlash2's lead over MTP real, or a property of these cards, and is 3.3 of 7 l
 
 ## Determinism
 
-The launcher default replays across boots to the token on both boxes (five boots here, a sampled pair on the native 3090), all with prefix caching on. Whether that is because the boot state is specific to reproduction mode or because the cache hides it at the default (as it hides the width-15 case on the 3090) is being decided by cache-off pairs at the default on both boxes; the sentence that follows is held until they land. Reproduction mode does not: five width-15 boots form exactly two trajectories on card 0, differing on the same ten rows; card 1 gives more than two groups; and the native 3090 at width 15 shows one trajectory across eight boots with prefix caching on and two groups across three with it off. The Triton autotune race is excluded as the source (skipping it makes boots diverge more) and so is prefix caching (turning it off does the same); whatever the binary boot state is, its footprint grows with how much a boot computes from scratch, and it never flips a greedy argmax. Issue 75 narrows to the width-15 path.
+The launcher default replays across boots to the token on both boxes (five boots here, sampled pairs on the native 3090). On the 3090 that is not the prefix cache hiding anything: with the cache off and the mamba align mode kept, two boots are still identical on every prompt; with the align mode off they differ on every prompt. So on this hybrid model `--mamba-cache-mode align` is the determinism flag, and the launcher sets it only as a side effect of PREFIX_CACHE=1, which is item 10 of the note for Mads. On this box's card 1 at width 15 the prefix cache alone still moved reproducibility (29 to 17 of 32 with align kept); whether that is the card or the width is one queued cell (width 7, cache off, align kept). Reproduction mode does not: five width-15 boots form exactly two trajectories on card 0, differing on the same ten rows; card 1 gives more than two groups; and the native 3090 at width 15 shows one trajectory across eight boots with prefix caching on and two groups across three with it off. The Triton autotune race is excluded as the source (skipping it makes boots diverge more) and so is prefix caching (turning it off does the same); whatever the binary boot state is, its footprint grows with how much a boot computes from scratch, and it never flips a greedy argmax. Issue 75 narrows to the width-15 path.
 
 ## Still running (card 0, card 1 idle)
 
@@ -34,7 +34,7 @@ The launcher default replays across boots to the token on both boxes (five boots
 
 ## What goes to Mads, with your pen
 
-docs/drafts/note-mads-upstream-fixes.draft.md, items 1 to 9. Items 5 to 8 are final; item 9 waits on the cells above. Nothing has been posted.
+docs/drafts/note-mads-upstream-fixes.draft.md, items 1 to 10. Items 5 to 8 and 10 are final; item 9 waits on the cells above. Nothing has been posted.
 
 ## What the night cost and taught
 
