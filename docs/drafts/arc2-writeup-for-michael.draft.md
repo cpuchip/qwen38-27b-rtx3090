@@ -15,7 +15,7 @@ Is DFlash2's lead over MTP real, or a property of these cards, and is 3.3 of 7 l
 | item | result | conditions |
 |---|---|---|
 | Block verification (`rejection_sample_method: "block"`, present upstream, off) | live, worth nothing: +0.4 percent at 15, +0.6 percent at 7, the paper's 5 to 8 percent excluded at both | two boot pairs, 32 rows each, card 0 |
-| Reproduction mode (DFLASH_TOKENS=15) | on this cohort, no gain in accepted tokens; positions 7 to 14 give 1.2 to 1.6 percent of accepted tokens; step cost 2.4x on this host, 0.3 percent on the native 3090 | cause on this host still running (see below) |
+| Reproduction mode (DFLASH_TOKENS=15) | on this cohort, no gain in accepted tokens; positions 7 to 14 give 1.2 to 1.6 percent of accepted tokens; step cost 2.4x on this host on every boot measured, 0.3 percent on the native 3090 | see the bimodal step cost below; cause cells still running |
 | The lookup's first position | a cliff: 5 to 6 percent accepted at position 7, 70 to 96 percent at 8 to 14 once 7 is accepted | forced block, both cards |
 | Async scheduling at width 7 | costs about nothing here, 2.07 percent of throughput natively when lost | direct pairs, engine-confirmed |
 | Async scheduling at width 15 | on: a 9.1 percent loss natively, because padding every step to 15 bypasses the adaptive length; the launcher's coupling is a saving, and its "under 1 percent" comment undersells the reason | KV pin raised 10 MiB to boot it |
@@ -28,7 +28,7 @@ The launcher default replays across boots to the token on both boxes (five boots
 
 ## Still running (card 0, card 1 idle)
 
-- The width-15 step cost on this host: three cells (width 8; width 15 with the race skipped; width 15 with the fork's split-KV verify attention off) plus async-on at 15 with the KV pin raised. The lookup cannot be switched off at 15 (the engine crashes; your issue 73 incidental says so). The note to Mads gets the mechanism when these land.
+- The width-15 step cost on this host, now read beside the bimodal default: three cells (width 8; width 15 with the race skipped; width 15 with the fork's split-KV verify attention off) plus async-on at 15 with the KV pin raised, all with the autotune winners printed, and four default boots with the winners printed to tie the slow side to a kernel. The lookup cannot be switched off at 15 (the engine crashes; your issue 73 incidental says so). The note to Mads gets the mechanism when these land.
 - Greedy under the flag on this card (the inverse case only).
 - Two more cache-off boots on card 1 (group count).
 
@@ -38,4 +38,4 @@ docs/drafts/note-mads-upstream-fixes.draft.md, items 1 to 9. Items 5 to 8 are fi
 
 ## What the night cost and taught
 
-Instruments were corrected three times: the launcher inside the image is the fork's (LOOKUP is the alias it honours), the engine's own non-default-args line is the resolved configuration, and two engines on this host slow each other through the WSL2 GPU path (a fast cell on card 1 doubled card 0's step cost with the counters unchanged), so wall clocks here are clean only one engine at a time. Journal lessons 49 to 68.
+Instruments were corrected four times: the launcher inside the image is the fork's (LOOKUP is the alias it honours); the engine's own non-default-args line is the resolved configuration; a rule that two engines on this host slow each other was written from one boot pair and withdrawn when the repeat landed on the other side with the neighbour idle; and the step cost at the default on this card is bimodal per boot, 23 or 45 ms with clocks, link and graph capture identical, four slow boots of ten, the forced first kernel config always slow. That last one is issue 75's shape measured at the configuration users run, and four more default boots with the Triton autotune winners printed are running to tie the slow side to a kernel. Journal lessons 49 to 70.
