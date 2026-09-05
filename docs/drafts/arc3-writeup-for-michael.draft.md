@@ -27,7 +27,9 @@ The spill moves a working set into host memory; it does not change the computati
 
 Every cell on both boxes has landed; card 0 is idle and threadchip's last native cell (the kernel-off twin) landed with the first native on-card margin figure in the record.
 
-## What goes to Mads, with your pen
+## What went to Mads, on your word at 18:29Z
+
+Posted: the corrections to items 9 and 11 as replies on their threads with the originals struck in place, and items 13 to 16 on issue 25 (item 16, the drafters measured, was written for the post from the record's numbers; you had not read it, so strike anything you would not have said). The paragraphs below were the plan as it stood before the post.
 
 **Corrections to posted items 9 and 11 come first.** Item 9's 4090 headline ("reproduction mode's step cost on a 4090 is the split-KV verify attention, and its query maximum is the configuration variable", 2.4x at width 15) was a memory artefact: the width-15 working set crossed the host's usable dedicated memory by about 420 MB and ran partly from host memory, which the counters now show and the fitting-pin boot removes. The 3090 half of the item (flat) was right, the boundary-seed and KV-edge observations survive, and the mechanism sentence should read: on WSL2 the usable dedicated memory is about half a gigabyte less than the card's size, the shipped configuration sits about 50 MB under that line, and anything larger runs partly from host memory at two to three times the step cost instead of failing. Item 11 (the slow-boot class, posted on issue 75) gets the same correction: the class carries about 300 MB more working set, which crosses the line at the defaults and does not with room, and the class itself costs nothing on any card. The draft texts are in docs/drafts/note-mads-upstream-fixes.draft.md under "DRAFT CORRECTIONS to posted items 9 and 11"; each should be posted as a reply on its own thread with the original struck in place, not edited away.
 
