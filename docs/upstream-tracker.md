@@ -1,6 +1,6 @@
 # Upstream tracker: syv-ai/qwen38-27b-rtx3090
 
-Generated 2026-09-05 01:59Z by `scripts/track_upstream.py`. Regenerate rather than hand-edit;
+Generated 2026-09-05 02:31Z by `scripts/track_upstream.py`. Regenerate rather than hand-edit;
 the notes section below the table is the part that is written by hand.
 
 ## Ball in our court
@@ -11,9 +11,9 @@ Nothing open is waiting on a reply from us.
 
 | # | kind | state | ours | unanswered | updated | title |
 |---|---|---|---:|---:|---|---|
+| 80 | pr | open | 1 | 0 | 2026-09-05T02:30 | gotchas: five from the 0.28 acceptance bisect |
 | 79 | pr | open | 1 | 0 | 2026-09-05T01:57 | dflash2-z-adaptive-emitted: keep the code, fix the comment |
 | 25 | issue | open | 4 | 0 | 2026-09-05T01:08 | Known issues and progress: KVarN / DFlash2 / CTX=huge (tra |
-| 80 | pr | open | 0 | 0 | 2026-09-05T01:08 | gotchas: five from the 0.28 acceptance bisect |
 | 75 | issue | open | 2 | 0 | 2026-09-05T00:19 | Autotune nondeterminism decides the trajectory: a bench ro |
 | 73 | issue | closed | 4 | 1 | 2026-09-04T18:20 | DFlash2 acceptance regression on vLLM 0.28.0: 3.19 -> 2.66 |
 | 74 | issue | closed | 0 | 1 | 2026-09-04T18:20 | Retraction: the tool-call cap in my 0.28 validation is my  |
