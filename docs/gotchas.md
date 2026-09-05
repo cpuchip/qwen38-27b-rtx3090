@@ -916,15 +916,20 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     into the long-block stratum by construction and one such row moved a stratum estimate by
     two tokens per step.
 
-55. **Report tokens per step, not accepted per drafted token: the denominator depends on what
-    ran before the request.** Same build, same seeds, one boot, only the request order changed:
-    drafts and accepted tokens came back identical on every seed, and drafted tokens did not.
-    The long block is sticky and coasts on prior state without consulting the emitted count,
-    so a request that follows a long-block request inherits some of its block length.
-    `1 + accepted / drafts` is a property of the trajectory and repeats exactly; `accepted /
-    drafted` has an order-dependent denominator and does not. Per-request acceptance figures
-    are only comparable within a fixed running order, and anything scoring them across runs
-    picks this up silently.
+55. **Per-request acceptance figures depend on what ran before the request, and on some boxes the
+    request's whole trajectory does.** Two observations, two boxes. On a quiet native 3090, same
+    build, same seeds, one boot, only the request order changed: drafts and accepted tokens came back
+    identical on every seed and drafted tokens did not, so `1 + accepted / drafts` repeated exactly
+    while `accepted / drafted` had an order-dependent denominator. On an RTX 4090 under WSL2 with a
+    prompt that keeps the long block engaged, the same design changed drafts and accepted tokens too
+    on four of six seeds, one seed by a factor of two, so there tokens per step itself moved with
+    order. Two mechanisms, both real: the long block is sticky and coasts on prior state without
+    consulting the emitted count, so a request that follows a long-block request inherits some of its
+    block length; and a different block length is a different verify batch shape, which on a
+    numerically knife-edged model can flip a near-tie token even with the seed fixed. Prefix caching
+    adds a third when requests share a prompt. What follows is the same either way: hold the request
+    order fixed within a comparison, report tokens per step rather than acceptance per drafted token,
+    and treat per-request figures from a sequence as dependent samples, never as independent ones.
 
 56. **At `DFLASH_TOKENS=15` on ordinary text the engine drafts 7 and queries 8, so 15 and 7 are
     the same experiment unless the text repeats.** With the lookup on, the drafter's block is
