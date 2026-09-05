@@ -215,6 +215,20 @@ name: `VLLM_WSL_PIN_MEMORY` is **not** a vLLM variable and setting it does
 nothing — this README named it for 22 minutes on 2026-08-21 (`589daae`, fixed in
 `27f51fa`), so a tree cloned in that window will have it.
 
+**Running a DSpark drafter.** vLLM 0.28.0 can serve RadixArk/Qwen3.8-27B-DSpark
+(bf16, seven drafts per step like the shipped head) once two things are in
+place: `patches/dspark-draft-quant-config.patch` (the loader refuses a bf16
+drafter beside the quantized target without it), and a copy of the checkpoint
+whose `config.json` names the architecture `Qwen3DSparkModel` instead of
+`DSparkDraftModel` (the registry maps the published name to the DeepSeek V4
+class; the weights are unchanged, so hard-link the safetensors). Then
+`DRAFT=/path/to/that/copy DRAFT_METHOD=dspark KV_MEM=3000000000
+DFLASH_MAX_LEN=8192 SPEC=dflash2 CTX=fast bash single-user/start_qwen.sh`. It
+serves, and loses to the shipped head on the same requests: 3.19 against 3.77
+accepted tokens per step and 115 against 160 tok/s on a 4090, 3.37 against 3.83
+and 114 against 150 on a 3090 (issue #25, items 15 and 16). Documented so nobody
+re-derives the two errors, not as a recommendation.
+
 One knob this mode used to set for you, and now sets only for MTP:
 `cudagraph_mode=PIECEWISE`. Prefix caching and a *captured* (FULL) verify step
 did not mix on this path. On WSL2 that showed up as acceptance collapsing to
