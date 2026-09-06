@@ -37,3 +37,5 @@ Every claim below was read on a page fetched this session; dates are the source'
 - Any lossless training-free method with a measured batch-1 gain on a block drafter.
 
 New DFlash-family Qwen3.8-27B checkpoints since 2026-08-16 (community, HF): onewhosighs/Apathy-Qwen3.8-27B-DFlash-drafter-v3 (block 16, bf16 target, 72.2 tok/s on a GB10), rwmacy/qwen3.8-27b-dflash-drafter-fp8-b70 (Intel B70, from the RadixArk DSpark head), mrchuy bootstrap GGUF, HermiHg Q2_K GGUF. The dflash issue #156 layer-id bug (2026-08-17) never fires on shipped checkpoints; vLLM's loader reads `selector_top_k` and `selector_rank` from the checkpoint and derives block size from `num_speculative_tokens` with no assert, unchanged on main.
+
+Note (2026-09-06, 04:42:30Z, the head seat): the 4.80 tokens per step on the official card and the 3.83 here are not known to be the same statistic. The figure here is the mean over the 32 requests of (accepted / drafts + 1); the drafts-weighted figure on the same cohort is 3.48 (soak counters, see spec-decode-frontier-2026-09-06-compared.md). The card does not say which it reports.
