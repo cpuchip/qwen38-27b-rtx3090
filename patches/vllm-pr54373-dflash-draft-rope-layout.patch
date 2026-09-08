@@ -1,0 +1,105 @@
+Backport of vLLM PR #54373 (commit d61b6e187, "Take the DFlash draft's RoPE layout from
+its own config", Aug 31 2026).
+
+The DFlash loader read is_neox_style off the target's first rotary module and stamped it
+onto the draft config. The rotation applies to the draft's own Q/K, so the layout that
+has to hold is the one the head was distilled under, not the target's: upstream's case
+is GLM-5.3, whose drafter needs neox on an interleaved target (acceptance 1.03 against
+7.78 forced to neox), and GLM-5.3-Flash, whose attention has no rope at all so the walk
+found the sparse indexer's. The patch removes the inference; a checkpoint distilled
+interleaved states it in its own config, everything else keeps the neox default.
+
+No behaviour change for Qwen3.8-27B with its DFlash2 drafter: the target's
+Qwen3NextAttention builds its rotary embedding with the default (neox) layout and the
+drafter's config does not set is_neox_style, so both paths resolve to the same value.
+
+--- a/model_executor/models/qwen3_dflash.py
++++ b/model_executor/models/qwen3_dflash.py
+@@ -75,26 +75,6 @@
+     )
+ 
+ 
+-def dflash_target_rope_is_neox_style(target_model: nn.Module) -> bool | None:
+-    """The target's RoPE layout, from its first attention layer.
+-
+-    A DFlash head must rotate Q/K the way the target it was distilled against
+-    does, and a mismatch is silent — acceptance collapses but nothing errors and
+-    the output stays correct. Draft checkpoints do not carry this, so take it
+-    from the target. None if the target uses no RoPE.
+-    """
+-    language_model = (
+-        target_model.get_language_model()
+-        if hasattr(target_model, "get_language_model")
+-        else target_model
+-    )
+-    for module in language_model.modules():
+-        style = getattr(module, "is_neox_style", None)
+-        if isinstance(style, bool):
+-            return style
+-    return None
+-
+-
+ def _get_dflash_fc_input_size(vllm_config: VllmConfig) -> int:
+     spec_config = vllm_config.speculative_config
+     config = spec_config.draft_model_config.hf_config
+@@ -325,11 +305,11 @@
+         # non-causal) from the draft config.
+         sliding_window, causal = _resolve_layer_attention(config, layer_idx)
+ 
+-        # RoPE layout, copied off the target at load time by the draft loader
+-        # (see `dflash_target_rope_is_neox_style`). Checkpoints do not carry it:
+-        # a head distilled from an interleaved-RoPE target must rotate the way
+-        # that target does, or every drafted Q/K is wrong and acceptance
+-        # collapses with no error raised.
++        # RoPE layout. The rotation applies to the draft's own Q/K, so this is
++        # fixed by how the head was distilled, not by the target: a neox-trained
++        # head on an interleaved target still needs neox. A mismatch is silent --
++        # acceptance collapses and nothing errors -- so a checkpoint that was
++        # distilled the other way has to say so here.
+         is_neox_style = getattr(config, "is_neox_style", True)
+ 
+         self.self_attn = DFlashQwen3Attention(
+--- a/v1/spec_decode/dflash.py
++++ b/v1/spec_decode/dflash.py
+@@ -81,21 +81,6 @@
+         )
+ 
+     @override
+-    def load_model(self, target_model: torch.nn.Module) -> None:
+-        from vllm.model_executor.models.qwen3_dflash import (
+-            dflash_target_rope_is_neox_style,
+-        )
+-
+-        draft_model_config = self.speculative_config.draft_model_config
+-        assert draft_model_config is not None
+-        # The drafter must rotate Q/K the way its target does. Take that from the
+-        # built target before super() constructs the draft.
+-        is_neox_style = dflash_target_rope_is_neox_style(target_model)
+-        if is_neox_style is not None:
+-            draft_model_config.hf_config.is_neox_style = is_neox_style
+-        super().load_model(target_model)
+-
+-    @override
+     def _create_draft_vllm_config(self) -> VllmConfig:
+         base = super()._create_draft_vllm_config()
+         # The draft model is text-only — clear the target's multimodal
+--- a/v1/worker/gpu/spec_decode/dflash/utils.py
++++ b/v1/worker/gpu/spec_decode/dflash/utils.py
+@@ -15,17 +15,11 @@
+     from vllm.compilation.backends import set_model_tag
+     from vllm.model_executor.models.qwen3_dflash import (
+         dflash_has_any_non_causal,
+-        dflash_target_rope_is_neox_style,
+     )
+ 
+     speculative_config = vllm_config.speculative_config
+     assert speculative_config is not None
+     draft_model_config = speculative_config.draft_model_config
+-    # The drafter must rotate Q/K the way its target does. Take that from the
+-    # built target before super() constructs the draft.
+-    is_neox_style = dflash_target_rope_is_neox_style(target_model)
+-    if is_neox_style is not None:
+-        draft_model_config.hf_config.is_neox_style = is_neox_style
+     # Select an attention backend that supports the drafter's attention: mixing
+     # a non-causal layer onto a causal-only backend would fail.
+     draft_vllm_config = replace(
