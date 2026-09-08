@@ -1,0 +1,49 @@
+Backport of vLLM PR #54374 (commit 5093e4844, "Drop FlashAttention's AOT schedule for a
+sliding-window DFlash drafter", Sep 4 2026).
+
+FlashAttention's ahead-of-time split schedule is built for one window configuration
+shared by every layer, and whether the drafter's builder keeps it is decided by how many
+distinct configurations the whole model has. Target on FlashAttention plus the drafter
+is two (schedule off, drafter correct by coincidence); target on another backend leaves
+the drafter as the only FlashAttention consumer (schedule on, built for the wrong
+geometry, acceptance collapses to 1.0 under full CUDA graphs). The patch clears
+aot_schedule on the drafter's own builders whenever the group is windowed.
+
+Dormant on the cards this repo targets: aot_schedule is only ever set when FlashAttention
+reports version 3 (Hopper); the 3090 and 4090 report version 2. Carried so the tree
+matches upstream on the mechanism and a Hopper user does not rediscover it.
+
+--- a/v1/worker/gpu/spec_decode/dflash/speculator.py
++++ b/v1/worker/gpu/spec_decode/dflash/speculator.py
+@@ -15,7 +15,10 @@
+ from vllm.triton_utils import tl, triton
+ from vllm.v1.attention.backend import AttentionCGSupport
+ from vllm.v1.attention.backends.utils import PAD_SLOT_ID
+-from vllm.v1.kv_cache_interface import KVCacheConfig
++from vllm.v1.kv_cache_interface import (
++    KVCacheConfig,
++    get_kv_cache_spec_sliding_window,
++)
+ from vllm.v1.worker.gpu.attn_utils import build_slot_mappings_by_layer
+ from vllm.v1.worker.gpu.block_table import BlockTables
+ from vllm.v1.worker.gpu.dp_utils import dispatch_cg_and_sync_dp
+@@ -206,6 +209,19 @@
+             target_attn_groups,
+         )
+ 
++        # FlashAttention's AOT split schedule is wrong for a windowed drafter,
++        # and `_get_sliding_window_configs` leaves it on or off depending on
++        # whether the target also runs FlashAttention. Decide it here instead.
++        for groups in self.attn_groups:
++            for group in groups:
++                builder = group.get_metadata_builder()
++                if getattr(
++                    builder, "aot_schedule", False
++                ) and get_kv_cache_spec_sliding_window(builder.kv_cache_spec):
++                    # `aot_schedule` belongs to FlashAttention's builder, not
++                    # to the base class this loop is typed against.
++                    builder.aot_schedule = False  # type: ignore[attr-defined]
++
+         self.draft_kv_cache_group_ids = [
+             gid for gid, g in enumerate(self.attn_groups) if g
+         ]
