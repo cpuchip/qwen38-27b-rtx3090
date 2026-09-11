@@ -152,9 +152,11 @@ Two patches make that work, and neither changes anything at bf16:
   SPEC=dflash2 CTX=fast EXTRA_ARGS="--attention-backend TRITON_ATTN --kv-cache-dtype fp8 --speculative-config '{\"method\":\"dflash\",\"model\":\"/app/models/Qwen3.8-27B-DFlash2-W4A16\",\"num_speculative_tokens\":7,\"draft_sample_method\":\"probabilistic\",\"attention_backend\":\"TRITON_ATTN\"}'" bash single-user/start_qwen.sh
   ```
 
-  Every number in this row is WSL2 (a 4090 under Docker Desktop); there is no native sm89 row
-  yet, and this repo has been bitten by WSL2-only effects before, so read them as WSL2 numbers
-  until a native card confirms them. Not for the 3090: Triton has no fp8 conversion on sm86.
+  Measured on both a WSL2 4090 (Docker Desktop) and a native one (Ubuntu 24.04, driver 580.159, this
+  image): on native, prose prompts of ~24k / ~50k / ~89k tokens decode 100.6 / 96.0 / 87.4 tok/s with
+  this patch against 68.3 / 49.8 / 34.6 with vLLM's unified attention (median of 3, greedy, 256 out,
+  fresh prefill, `MAX_LEN=120000 PREFIX_CACHE=1 MAX_SEQS=4`), prefill unchanged by the patch on either
+  box (2.4k / 2.0k / 1.6k tok/s native). Not for the 3090: Triton has no fp8 conversion on sm86.
   `INT8_ACT=int8` on the fp8 route is slow with or without this patch (a Marlin variant choice,
   tracked separately): do not stack the two until the memory-pressure question behind it is
   understood.
