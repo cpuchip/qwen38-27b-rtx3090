@@ -84,13 +84,18 @@ def fixed(i):
             + "\n\nIn one sentence, what is the main theme of the document above?")
 
 
+def store_gb(m):
+    return sum(v for k, v in m.items() if "bytes" in k.lower() and ("store" in k.lower() or "GPU_to_CPU" in k)) / 1e9
+
+
+m0 = metrics()  # counters are cumulative for the life of the server; the guard needs the stores of THIS run
 x1 = ask("X-cold", fixed(0))
 for i in range(1, N + 1):
     ask(f"Y{i}", fixed(i))
 x2 = ask("X-again", fixed(0))
 ratio = x2["ttft_s"] / max(x1["ttft_s"], 0.01)
 loads = {k: v for k, v in x2["offload"].items() if "CPU_to_GPU" in k or "load" in k.lower()}
-stores_gb = sum(v for k, v in x2["offload"].items() if "bytes" in k.lower() and ("store" in k.lower() or "GPU_to_CPU" in k)) / 1e9
+stores_gb = store_gb(metrics()) - store_gb(m0)
 TIER_GIB = float(os.environ.get("TIER_GIB", "0") or 0)
 
 
