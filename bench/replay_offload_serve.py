@@ -14,8 +14,9 @@ Prints one JSON line per request and a final verdict line.
 
 Sizing rule (the verdict is meaningless otherwise): the GPU pool must be smaller than the tier IN TOKENS, and the
 evictor traffic must exceed the GPU pool while staying under the tier. A token costs several times more in the tier
-than on the GPU here (measured 37 KB vs 124 KB with DFlash2 k=7 fp8, 13 KB vs 95 KB with MTP k=4), so a tier that is
-3x the pool in bytes can be smaller than it in tokens. If the stores overflow the tier, X is evicted from the tier
+than on the GPU here (37 KB vs 124 KB on a 4090 with DFlash2 k=7 fp8; 6.7 KB vs 80 KB on a 3090 with MTP; these are
+per-configuration ratios, and the GPU pool does not scale linearly with KV_MEM on this model, so read both from the
+boot log and the metrics rather than computing them), so a tier that is 3x the pool in bytes can be smaller than it in tokens. If the stores overflow the tier, X is evicted from the tier
 before X-again and the run reads exactly like the #52735 veto (ratio ~1, zero loads, zero external hits). With
 TIER_GIB set the script refuses that verdict and prints INVALID-TIER-OVERFLOW instead.
 """
