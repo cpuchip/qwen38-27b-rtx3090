@@ -1033,3 +1033,29 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     Measured in the
     [#25](https://github.com/syv-ai/qwen38-27b-rtx3090/issues/25) comments of
     2026-09-05 (items 13 and 14, and the corrections to items 9 and 11).
+
+54. **`verify.sh` reported two patches as not applied on a correctly patched
+    tree, because a `find -name '*.orig' -delete` cleanup removed files the
+    verifier was requiring.** `dflash2-lookup-drafting.patch` and
+    `dflash2-prewarm.patch` carried file-creation hunks for three `.orig`
+    backups of vLLM source (3,685 lines of copied upstream that were nobody's
+    patch). `patches/_check_applied.py` builds its file list from every `+++`
+    line in a patch, so those backup paths became files that had to exist in
+    the installed tree. Delete the junk and the verifier calls the patch
+    missing:
+
+    ```
+    dflash2-lookup-drafting: applied(0)      # patched tree, .orig present
+    --- find -name '*.orig' -delete ---
+    dflash2-lookup-drafting: NOT applied(1)  # same tree, unchanged code
+    ```
+
+    It cost a cross-card comparison in
+    [#89](https://github.com/syv-ai/qwen38-27b-rtx3090/pull/89), where a real
+    paired result on the native 3090 was discounted as "not like-for-like"
+    on the strength of that false negative. Fixed in
+    [#92](https://github.com/syv-ai/qwen38-27b-rtx3090/pull/92): the hunks are
+    gone, the installed tree no longer collects them, and a box that ran the
+    cleanup verifies green. The general rule is that a patch which creates a
+    file makes that file part of what verification demands, so a patch should
+    only create files it means to own.
