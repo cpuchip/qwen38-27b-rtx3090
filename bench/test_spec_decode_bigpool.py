@@ -48,6 +48,8 @@ def run(dtype_name, L=20000, q_len=8):
     e = (out.float() - r).abs().max().item()
     print(f"  {dtype_name}: pool {NB} blocks, request on blocks {NB-nb_req}..{NB-1}, L={L}: max|ours-ref|={e:.4f} {'OK' if e < 0.05 else 'FAIL'}", flush=True)
     return e < 0.05
+print("  (pre-fix expectation: without the int64 cast this next line dies with a CUDA illegal", flush=True)
+print("   memory access and no assertion prints -- that killed process IS the bug, not a broken test)", flush=True)
 results = [run("bf16")]
 torch.cuda.empty_cache()   # the bf16 pool and its reference are gone with run()'s frame; give the fp8 half a clean card
 # The fp8 half has exactly two designed skips; anything else is a failure of the run, not a skip.
