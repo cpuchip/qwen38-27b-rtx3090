@@ -9,8 +9,15 @@ Sequence against a running server:
   3. request X again: if the tier serves, TTFT is a fraction of (1) and the CPU->GPU counter grows; if the tier stores
      but never serves (the #52735 defect), TTFT is a full re-prefill and the counter stays put.
 
-    python replay.py TAG PORT DEPTH_CHARS N_EVICTORS
+    TIER_GIB=<--kv-offloading-size> python replay.py TAG PORT DEPTH_CHARS N_EVICTORS
 Prints one JSON line per request and a final verdict line.
+
+Sizing rule (the verdict is meaningless otherwise): the GPU pool must be smaller than the tier IN TOKENS, and the
+evictor traffic must exceed the GPU pool while staying under the tier. A token costs several times more in the tier
+than on the GPU here (measured 37 KB vs 124 KB with DFlash2 k=7 fp8, 13 KB vs 95 KB with MTP k=4), so a tier that is
+3x the pool in bytes can be smaller than it in tokens. If the stores overflow the tier, X is evicted from the tier
+before X-again and the run reads exactly like the #52735 veto (ratio ~1, zero loads, zero external hits). With
+TIER_GIB set the script refuses that verdict and prints INVALID-TIER-OVERFLOW instead.
 """
 import glob
 import json
@@ -82,4 +89,21 @@ for i in range(1, N + 1):
 x2 = ask("X-again", fixed(0))
 ratio = x2["ttft_s"] / max(x1["ttft_s"], 0.01)
 loads = {k: v for k, v in x2["offload"].items() if "CPU_to_GPU" in k or "load" in k.lower()}
-print(json.dumps({"tag": TAG, "verdict": "SERVED" if ratio < 0.5 else "NOT-SERVED", "cold_ttft_s": x1["ttft_s"], "again_ttft_s": x2["ttft_s"], "ratio": round(ratio, 2), "cached_again": x2["cached"], "loads": loads}), flush=True)
+stores_gb = sum(v for k, v in x2["offload"].items() if "bytes" in k.lower() and ("store" in k.lower() or "GPU_to_CPU" in k)) / 1e9
+TIER_GIB = float(os.environ.get("TIER_GIB", "0") or 0)
+
+
+def verdict(ratio, stores_gb, tier_gib):
+    """SERVED / NOT-SERVED, or INVALID-TIER-OVERFLOW when the stores could not have fit the tier."""
+    if tier_gib and stores_gb > tier_gib * 1.073741824:
+        return "INVALID-TIER-OVERFLOW"
+    return "SERVED" if ratio < 0.5 else "NOT-SERVED"
+
+
+V = verdict(ratio, stores_gb, TIER_GIB)
+if V == "INVALID-TIER-OVERFLOW":
+    print(f"INVALID: {stores_gb:.2f} GB stored into a {TIER_GIB:g} GiB tier; X left the tier before X-again, so this run cannot "
+          "tell a veto from an eviction. Shrink the GPU pool or the evictor count, or grow the tier.", file=sys.stderr)
+print(json.dumps({"tag": TAG, "verdict": V, "stores_gb": round(stores_gb, 2), "tier_gib": TIER_GIB, "cold_ttft_s": x1["ttft_s"], "again_ttft_s": x2["ttft_s"], "ratio": round(ratio, 2), "cached_again": x2["cached"], "loads": loads}), flush=True)
+if V == "INVALID-TIER-OVERFLOW":
+    sys.exit(2)
