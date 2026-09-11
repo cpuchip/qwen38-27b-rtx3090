@@ -757,7 +757,7 @@ venv/bin/pip install vllm==0.28.0 huggingface_hub hf_transfer ninja \
 # vLLM's C extension.
 
 # model, ~19.5 GB
-HF_HUB_ENABLE_HF_TRANSFER=1 venv/bin/hf download \
+HF_XET_HIGH_PERFORMANCE=1 venv/bin/hf download \
   dbirks/Qwen3.8-27B-W4A16-AutoRound \
   --local-dir models/Qwen3.8-27B-W4A16-AutoRound
 
