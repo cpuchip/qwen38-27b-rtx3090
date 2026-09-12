@@ -65,9 +65,11 @@ Apply from the repo root, after hybrid-kv-groups-v2-cudagraph.patch:
 Validated against vLLM 0.28.0. Reapply after upgrades.
 
 Ported to 0.29: AttentionSpec no longer carries indexes_kv_by_block_stride (the KVCacheLayout refactor moved block
-strides onto KVCacheTensor placement); the check reads it with getattr, which keeps the 0.28 decision (no attention
-spec ever set it, so the branch was never taken there either). Whether 0.29 should let attention pages pad via
-placement strides is a follow-up, not this port.
+strides onto KVCacheTensor placement, and upstream's own pad branch in unify_kv_cache_spec_page_size now pads any
+non-MLA attention layer). The "can this layer pad" check mirrors that: not isinstance(spec, MLAAttentionSpec).
+(Struck, first port attempt: reading the removed flag with getattr defaulted it to False, which refused the
+promotion on every target layer; on 0.28 attn_utils set the flag from the backend for every attention spec, so the
+branch was taken there. The int4 profile then padded the five drafter layers at block 16 and could not fit 120k.)
 
 --- a/v1/core/kv_cache_utils.py
 +++ b/v1/core/kv_cache_utils.py
@@ -179,7 +181,7 @@ placement strides is a follow-up, not this port.
 +            continue
 +        if new_max % spec.page_size_bytes == 0:
 +            continue
-+        if isinstance(spec, AttentionSpec) and getattr(spec, "indexes_kv_by_block_stride", False):
++        if isinstance(spec, AttentionSpec) and not isinstance(spec, MLAAttentionSpec):
 +            continue
 +        logger.info(
 +            "Not promoting draft block sizes: layer %s can neither scale nor pad "
