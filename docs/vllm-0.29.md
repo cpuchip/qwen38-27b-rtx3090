@@ -25,6 +25,10 @@ Regenerated against the 0.29 tree, same behaviour:
 - `dflash2-prewarm.patch` (the launch path gained the context-parallel arguments)
 - `dflash2-lookup-drafting.patch` (32 hunks; import placement and the selector-walk anchor moved)
 
+Carried from #100's branch: the launcher defaults `expandable_segments` off when a KV connector is
+configured. Main never had it, so the offload profile cannot boot on a native box from main (vLLM refuses a
+KV connector under the VMM allocator); WSL2 does not see it because its default is already off.
+
 Adjusted for 0.29 API changes:
 
 - `ngram-chains`: the `propose` override takes and forwards `dp_sync` (new runner signature).
@@ -58,16 +62,19 @@ Same script on the 0.28.0 image and the 0.29.0 image, fresh cache volume per run
 | huge (KVarN k4v2_g128, dflash2, 262k): block / KV tokens | 2176 / 268,169 | 2176 / 268,169 |
 | huge: ppl en / da, GSM8K n=100 | 10.7674 / 10.9097, 0.89 | 10.7691 / 10.9085, 0.93 |
 | huge: needle at 32k / 90k / 200k (thinking off) | see note | retrieved at all three |
-| huge: request time at 25k / 90k (256 output tokens) | 30.2 s / 125.6 s | 22.4 s / 67.8 s |
+| huge: request time at 25k / 90k, WSL2 4090 (256 output tokens) | 30.2 s / 125.2 s | 22.4 s / 67.8 s |
+| huge on the native 3090: prefill / decode at 25k | 1206 / 74.5 | 1210 / 73.7 |
+| huge on the native 3090: prefill / decode at 90k | 1046 / 38.1 | 1047 / 38.6 |
 
 The 47k decode column is bimodal per prompt slice on both images (rows land near 89 or near 104), so
 the medians differ by draw, not by version; with prefix caching off both images read 102 to 104.
 
-The huge-context rows: the two images compute the same KV geometry and the same drafter acceptance, and
-0.29 finishes both requests sooner; the split of that time between first token and streaming differs
-between the two boots and is being measured with a stream probe (the 0.28 boot's needle answers came
-back empty with thinking left on, which is the probe's default, not the cache's fault). The 0.28 needle
-column is the fixed probe's rerun, pending at the time of writing.
+The huge-context rows: both pins compute the same KV geometry on both cards, and the native 3090 shows no
+timing difference at all. On the WSL2 4090 the 0.28 boot delivers its first token about 16 s after the
+engine's prefill and then streams fast, while the 0.29 boot delivers it early and streams slower, finishing
+sooner at both depths with equal quality (three 0.28 boots across two images agree; the first stream delta
+is content on both pins). Not understood, WSL2-only, not a regression. The needle passcode is retrieved at
+32k, 90k and 200k on both pins (probe with thinking off).
 
 One knob worth knowing: 0.29 defaults `prefix_cache_retention_interval` to dense checkpointing for
 hybrid models with a draft model (the same behaviour 0.28 had). Setting it to 0 on this model halves
