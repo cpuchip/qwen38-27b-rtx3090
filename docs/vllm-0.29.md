@@ -79,3 +79,28 @@ is content on both pins). Not understood, WSL2-only, not a regression. The needl
 One knob worth knowing: 0.29 defaults `prefix_cache_retention_interval` to dense checkpointing for
 hybrid models with a draft model (the same behaviour 0.28 had). Setting it to 0 on this model halves
 the 47k prefill (1303 vs 2323 tok/s). Leave it at the default.
+
+## Porting the next pin (the procedure this port settled on)
+
+Three steps, in this order; skipping one is how this port lost most of a day.
+
+1. **Triage with a dry run.** Install the new wheel in a throwaway container, `patch --dry-run` every file in
+   `patches/` and `kvarn/` against it, and list three things: hunks that fail, hunks that apply with fuzz or a
+   large offset, and files that apply cleanly but sit in a part of the tree the release notes say moved. Only
+   the first list is visible; the other two are where the silent faults live (the block-promotion patch applied
+   cleanly on 0.29 and refused every promotion).
+2. **Read the commits, not the tree.** For every file on any of the three lists, `git log <old-tag>..<new-tag> --
+   vllm/<file>` in a clone of vLLM, then read the commit that broke the hunk. Re-derive the hunk from what
+   upstream changed and write the commit number into the patch preamble; retire a hunk only when a named commit
+   carries the behaviour, and look for the in-tree sibling that had to make the same move (TurboQuant's change
+   inside the layout refactor was the template for KVarN's). A hunk that regenerates cleanly against the new tree
+   without this step is a guess that happens to apply.
+3. **Boot with a control that must fail.** Build the image, run the acceptance profiles on two boxes against a
+   0.28 image built from the same fork commit (the merge base, so the pair differs by the pin alone), and include
+   one boot that is expected to go red (a deliberately wrong layout, a removed flag left in place). A green boot
+   after a red one is evidence; a green boot alone is a build log.
+
+What to read in the numbers: quality and geometry compare across versions; prefill compares by paired rows;
+decode does not at n=3 even on byte-identical prompts, because the continuations differ. Perplexity lanes that
+read the image's own source (the code corpus) never compare across pins. Prompts must be deterministic per row
+(no timestamps in the salt), or no two runs share an input.
