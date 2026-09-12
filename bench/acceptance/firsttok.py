@@ -14,7 +14,7 @@ DEPTHS = [int(x) for x in (sys.argv[3] if len(sys.argv) > 3 else "25000,50000,90
 REPS = int(sys.argv[4]) if len(sys.argv) > 4 else 3
 BASE = f"http://127.0.0.1:{PORT}"
 KEY = os.environ.get("VLLM_API_KEY", "")  # the server key, by env only; keyless servers ignore the header
-CORPUS_GLOB = os.environ.get("DEPTH_CORPUS_GLOB", os.path.expanduser("~/gospel-library/eng/scriptures/**/*.md"))  # any >= 2M chars of varied prose
+CORPUS_GLOB = os.environ["DEPTH_CORPUS_GLOB"]  # any >= 2M chars of varied prose; set by acceptance.sh
 CHARS_PER_TOKEN = 2.7  # the corpus runs 2.5-2.9 chars per token depending on the slice; the count printed is always the server's
 
 def corpus():
