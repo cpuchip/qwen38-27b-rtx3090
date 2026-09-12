@@ -59,6 +59,10 @@ resp = post({
     "model": "qwen3.8-27b",
     "messages": [{"role": "user", "content": prompt}],
     "max_tokens": 32,
+    "temperature": 0,
+    # With --reasoning-parser qwen3 and thinking on, the 32 tokens go to reasoning_content and
+    # "content" comes back empty, which reads as MISSED. Off by default; NEEDLE_THINKING=1 restores it.
+    "chat_template_kwargs": {"enable_thinking": os.environ.get("NEEDLE_THINKING", "0") == "1"},
 })
 elapsed = time.perf_counter() - t0
 
