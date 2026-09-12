@@ -1,7 +1,7 @@
 OffloadingConnector under MTP/EAGLE: serve stored hits instead of vetoing the
 whole request, and read the load boundary from the computed offset.
 
-Backports two merged upstream fixes onto the 0.28.0 tree (both land after the
+Backports three merged upstream fixes onto the 0.28.0 tree (all land after the
 0.28.0 wheel, so this image has neither):
 
   vllm-project/vllm#52771 (merged 2026-09-07) -- OffloadingConnector: stop
@@ -25,6 +25,15 @@ flagged, which is exactly the reporter's boot line in syv-ai#95.
 
 Applies on top of offload-dflash-eagle-groups.patch (the hunks were generated
 against the tree with that patch already applied).
+
+Third fix (upstream #54288, merged 2026-09-06, also absent from 0.29.0): a finished
+request offloaded up to num_tokens, but the final sampled token has no KV of its own (no
+forward pass covers its slot; under spec decode it holds a rejected draft), so a block
+ending there was stored under a hash of legitimate token ids and a later request replaying
+those tokens loaded the unwritten slot. Clamp the finished watermark to num_tokens - 1
+(never below the prompt). Reachable only with offload_prompt_only=false; the default
+clamps to the prompt first. Upstream wrote #52771 against a tree that already had this
+fix, and its EAGLE trailing-block tests fail without it.
 
 --- generated hunks below ---
 --- a/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py
@@ -130,3 +139,15 @@ against the tree with that patch already applied).
  
              # Skip prefix-hit chunks for block-level policy; for
              # request-level, next_stored_chunk_idx stays at 0 so all
+@@ -1305,7 +1322,10 @@
+             if req.status is RequestStatus.FINISHED_ABORTED:
+                 num_tokens_after_batch = req.num_computed_tokens
+             elif req.is_finished():
+-                num_tokens_after_batch = req.num_tokens
++                # Clamp to the GPU prefix cache commit point: the final sampled token
++                # has no KV of its own (under spec decode its slot holds a rejected
++                # draft), so a block ending there must not be stored (vllm #54288).
++                num_tokens_after_batch = max(req.num_prompt_tokens, req.num_tokens - 1)
+             else:
+                 num_scheduled_tokens = scheduler_output.num_scheduled_tokens[req_id]
+                 num_tokens_after_batch = req.num_computed_tokens + num_scheduled_tokens
