@@ -68,6 +68,8 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
+          # This fork's main builds from the vLLM fork branch (docs/fork-workflow.md).
+          file: Dockerfile.fork
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

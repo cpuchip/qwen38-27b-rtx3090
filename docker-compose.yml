@@ -26,9 +26,13 @@ x-qwen: &qwen
   # first `up` pulls it (~9.5 GB, pull_policy below) instead of the 20-minute
   # local build. `docker compose build` (or `up --build`) still builds the
   # identical image under the same tag name. Immutable per-commit tags:
-  # ghcr.io/syv-ai/qwen38-27b-rtx3090:sha-<7>.
-  image: ghcr.io/syv-ai/qwen38-27b-rtx3090:latest
-  build: .
+  # ghcr.io/cpuchip/qwen38-27b-rtx3090:sha-<7>.
+  # This fork's main builds from the vLLM fork branch (Dockerfile.fork, see
+  # docs/fork-workflow.md); the patch-applying Dockerfile stays for the syv-ai view.
+  image: ghcr.io/cpuchip/qwen38-27b-rtx3090:latest
+  build:
+    context: .
+    dockerfile: Dockerfile.fork
   pull_policy: missing
   ipc: host
   env_file:

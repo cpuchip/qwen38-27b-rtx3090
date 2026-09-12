@@ -31,7 +31,9 @@ signature and other WSL2 workarounds are below.
 **The image is prebuilt**: every push to `main` builds and pushes
 `ghcr.io/syv-ai/qwen38-27b-rtx3090:latest` (plus an immutable `sha-<7>` tag
 per commit) from CI, with the Dockerfile's own patch application and
-`verify.sh --install` as the gate — a patch that stops applying fails the
+`verify.sh --install` as the gate (on the cpuchip fork, `main` builds
+`Dockerfile.fork` from the vLLM fork branch instead and pushes to
+`ghcr.io/cpuchip/...`; see [fork-workflow.md](fork-workflow.md)) — a patch that stops applying fails the
 build and nothing is pushed. The first `up` pulls it (~9.5 GB,
 `pull_policy: missing`); to pin a known
 build, set `image: ghcr.io/syv-ai/qwen38-27b-rtx3090:sha-<7>` in a compose
