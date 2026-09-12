@@ -32,7 +32,7 @@ RUN set -e; SP=$(venv/bin/python -c 'import vllm, os; print(os.path.dirname(vllm
       esac; \
       echo "== $p"; patch -p1 -d "$SP" < "$p"; \
     done; \
-    echo "== KVarN (kvarn/install.sh) skipped: its kvarn-0.28.0 patches do not apply on vLLM 0.29 yet (CTX=huge unavailable until KVarN is ported)"; \
+    bash kvarn/install.sh; \
     bash verify.sh --install
 
 # HOME is a volume: torch.compile cache (~/.cache/vllm), Triton (~/.triton),

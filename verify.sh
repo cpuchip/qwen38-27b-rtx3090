@@ -75,12 +75,12 @@ grep -q "VLLM_MARLIN_INT8_INCLUDE_RE" "$SP/envs.py" 2>/dev/null && ok "int8 laye
 
 echo "== KVarN (optional, kvarn/)"
 if [ -f "$SP/v1/attention/backends/kvarn_attn.py" ]; then
-  if patch -p1 -R --dry-run -s -d "$SP" < kvarn/kvarn-0.28.0.patch >/dev/null 2>&1; then
+  if patch -p1 -R --dry-run -s -d "$SP" < kvarn/kvarn-0.29.0.patch >/dev/null 2>&1; then
     $PY -c "from vllm.v1.attention.backends.registry import AttentionBackendEnum; AttentionBackendEnum.KVARN.get_class()" 2>/dev/null && ok "KVarN backend importable, patch applied (KV=kvarn / CTX=huge available)" || fail "KVarN files present but backend does not import"
-  else fail "KVarN modules present but kvarn-0.28.0.patch not applied (bash kvarn/install.sh)"; fi
-  if $PY patches/_check_applied.py kvarn/kvarn-v2-runner-0.28.0.patch "$SP" >/dev/null 2>&1; then
-    ok "kvarn-v2-runner-0.28.0.patch applied (SPEC=dflash2 + CTX=huge available)"
-  else warn "kvarn-v2-runner-0.28.0.patch not applied (re-run bash kvarn/install.sh for DFlash2 at 240k)"; fi
+  else fail "KVarN modules present but kvarn-0.29.0.patch not applied (bash kvarn/install.sh)"; fi
+  if $PY patches/_check_applied.py kvarn/kvarn-v2-runner-0.29.0.patch "$SP" >/dev/null 2>&1; then
+    ok "kvarn-v2-runner-0.29.0.patch applied (SPEC=dflash2 + CTX=huge available)"
+  else warn "kvarn-v2-runner-0.29.0.patch not applied (re-run bash kvarn/install.sh for DFlash2 at 240k)"; fi
 else warn "KVarN not installed (optional; bash kvarn/install.sh for 262k context)"; fi
 
 if [ $INSTALL = 0 ]; then
