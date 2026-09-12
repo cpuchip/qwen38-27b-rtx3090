@@ -1,8 +1,7 @@
-diff --git a/model_executor/models/qwen3_dflash.py b/model_executor/models/qwen3_dflash.py
-index 410204490..03b5dd53d 100644
---- a/model_executor/models/qwen3_dflash.py
-+++ b/model_executor/models/qwen3_dflash.py
-@@ -375,6 +375,37 @@ class DFlashQwen3DecoderLayer(nn.Module):
+diff -ruN a/model_executor/models/qwen3_dflash.py b/model_executor/models/qwen3_dflash.py
+--- a/model_executor/models/qwen3_dflash.py	2026-09-12 06:19:16.350265167 +0000
++++ b/model_executor/models/qwen3_dflash.py	2026-09-12 06:19:16.565161867 +0000
+@@ -355,6 +355,37 @@
          return hidden_states, residual
  
  
@@ -40,7 +39,7 @@ index 410204490..03b5dd53d 100644
  @support_torch_compile
  class DFlashQwen3Model(nn.Module):
      decoder_layer_cls = DFlashQwen3DecoderLayer
-@@ -487,7 +518,7 @@ class DFlashQwen3Model(nn.Module):
+@@ -469,7 +500,7 @@
          self._hidden_norm_weight = self.hidden_norm.weight.data
  
          # KV projection weights: [num_layers * 2 * kv_size, hidden_size]
@@ -49,11 +48,10 @@ index 410204490..03b5dd53d 100644
          self._fused_kv_weight = torch.cat(kv_weights, dim=0)
          if has_bias:
              kv_biases = [a.qkv_proj.bias[a.q_size :] for a in layers_attn]
-diff --git a/model_executor/models/qwen3_dflash2.py b/model_executor/models/qwen3_dflash2.py
-index cb027293f..9aec93037 100644
---- a/model_executor/models/qwen3_dflash2.py
-+++ b/model_executor/models/qwen3_dflash2.py
-@@ -127,8 +127,15 @@ class DFlash2Qwen3DecoderLayer(DFlashQwen3DecoderLayer):
+diff -ruN a/model_executor/models/qwen3_dflash2.py b/model_executor/models/qwen3_dflash2.py
+--- a/model_executor/models/qwen3_dflash2.py	2026-09-12 06:19:16.353224620 +0000
++++ b/model_executor/models/qwen3_dflash2.py	2026-09-12 06:19:16.568164451 +0000
+@@ -127,8 +127,15 @@
              hidden_size=config.hidden_size,
              taps=int(draft_config["conv_kernel_size"]),
              group_size=int(draft_config["conv_group_size"]),
@@ -71,12 +69,11 @@ index cb027293f..9aec93037 100644
              params_dtype=vllm_config.model_config.dtype,
          )
          self.attention_conv = DFlashGroupedConv(
-diff --git a/v1/worker/gpu/cudagraph_utils.py b/v1/worker/gpu/cudagraph_utils.py
-index 8e24a0ee0..959929d98 100644
---- a/v1/worker/gpu/cudagraph_utils.py
-+++ b/v1/worker/gpu/cudagraph_utils.py
-@@ -215,6 +215,33 @@ class CudaGraphManager:
-             ]
+diff -ruN a/v1/worker/gpu/cudagraph_utils.py b/v1/worker/gpu/cudagraph_utils.py
+--- a/v1/worker/gpu/cudagraph_utils.py	2026-09-12 06:19:16.357155420 +0000
++++ b/v1/worker/gpu/cudagraph_utils.py	2026-09-12 06:19:16.572252610 +0000
+@@ -229,6 +229,33 @@
+             )
          else:
              decode_query_lens = [self.decode_query_len]
 +            # A DFlash drafter whose checkpoint block is shorter than the verify block
@@ -109,11 +106,10 @@ index 8e24a0ee0..959929d98 100644
  
          capture_varlen_decode = (
              separate_decode_routine and bool(decode_mode) and self.varlen_decode
-diff --git a/v1/worker/gpu/model_runner.py b/v1/worker/gpu/model_runner.py
-index d68666cf4..dff555c2c 100644
---- a/v1/worker/gpu/model_runner.py
-+++ b/v1/worker/gpu/model_runner.py
-@@ -283,6 +283,9 @@ class GPUModelRunner(LoRAModelRunnerMixin):
+diff -ruN a/v1/worker/gpu/model_runner.py b/v1/worker/gpu/model_runner.py
+--- a/v1/worker/gpu/model_runner.py	2026-09-12 06:19:16.360024218 +0000
++++ b/v1/worker/gpu/model_runner.py	2026-09-12 06:19:16.575162301 +0000
+@@ -306,6 +306,9 @@
              num_prefill_lookahead=num_prefill_lookahead,
          )
          self.adaptive_verification: AdaptiveVerificationManager | None = None
@@ -123,7 +119,7 @@ index d68666cf4..dff555c2c 100644
          self.input_buffers = InputBuffers(
              max_num_reqs=self.max_num_reqs,
              max_num_tokens=self.max_num_tokens,
-@@ -416,6 +419,9 @@ class GPUModelRunner(LoRAModelRunnerMixin):
+@@ -456,6 +459,9 @@
                      self.speculative_config,
                      self.device,
                  )
@@ -133,7 +129,7 @@ index d68666cf4..dff555c2c 100644
              self.prompt_logprobs_worker = PromptLogprobsWorker(
                  self.max_num_reqs,
                  logprobs_mode=self.model_config.logprobs_mode,
-@@ -1848,9 +1854,18 @@ class GPUModelRunner(LoRAModelRunnerMixin):
+@@ -1961,9 +1967,18 @@
          if self.num_speculative_steps > 0:
              # Spec-decode and diffusion LLMs both use draft tokens but the latter does
              # not have a speculator (i.e. self.speculator is None)
@@ -152,18 +148,18 @@ index d68666cf4..dff555c2c 100644
              )
  
          # Post-step KV connector related operations.
-diff --git a/v1/worker/gpu/spec_decode/dflash/speculator.py b/v1/worker/gpu/spec_decode/dflash/speculator.py
-index eb5dc470b..4ad1b10ba 100644
---- a/v1/worker/gpu/spec_decode/dflash/speculator.py
-+++ b/v1/worker/gpu/spec_decode/dflash/speculator.py
-@@ -1,5 +1,6 @@
+diff -ruN a/v1/worker/gpu/spec_decode/dflash/speculator.py b/v1/worker/gpu/spec_decode/dflash/speculator.py
+--- a/v1/worker/gpu/spec_decode/dflash/speculator.py	2026-09-12 06:19:16.363606479 +0000
++++ b/v1/worker/gpu/spec_decode/dflash/speculator.py	2026-09-12 06:19:16.579028852 +0000
+@@ -1,6 +1,7 @@
  # SPDX-License-Identifier: Apache-2.0
  # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ import copy
 +import os
  from collections.abc import Mapping
  from typing import Any
  
-@@ -42,8 +43,36 @@ class DFlashSpeculator(DraftModelSpeculator):
+@@ -44,8 +45,36 @@
          # Multimodal inputs not currently supported.
          self.supports_mm_inputs = False
  
@@ -201,7 +197,7 @@ index eb5dc470b..4ad1b10ba 100644
  
          self.parallel_drafting_token_id = get_parallel_drafting_token_id(
              self.draft_model_config.hf_config
-@@ -77,7 +106,7 @@ class DFlashSpeculator(DraftModelSpeculator):
+@@ -79,7 +108,7 @@
          )
  
          # Per-mask-token sampling buffers. Flattened from (num_reqs, num_spec_tokens).
@@ -210,7 +206,7 @@ index eb5dc470b..4ad1b10ba 100644
          self.sample_indices = torch.zeros(
              max_num_sampled_tokens, dtype=torch.int64, device=device
          )
-@@ -93,7 +122,7 @@ class DFlashSpeculator(DraftModelSpeculator):
+@@ -95,7 +124,7 @@
          # [0, 1, ..., N-1, 0, 1, ..., N-1, ...] -> the per-token column index into
          # draft_logits[req, step, :].
          self.sample_col = torch.arange(
@@ -219,16 +215,16 @@ index eb5dc470b..4ad1b10ba 100644
          ).repeat(self.max_num_reqs)
  
          self.query_cudagraph_manager: DFlashCudaGraphManager | None = None
-@@ -258,7 +287,7 @@ class DFlashSpeculator(DraftModelSpeculator):
+@@ -259,7 +288,7 @@
              num_tokens_across_dp,
              cudagraph_runtime_mode,
          )
 -        num_sample = num_reqs * self.num_speculative_steps
 +        num_sample = num_reqs * self.draft_block
          sample_hidden_states = last_hidden_states[self.sample_indices[:num_sample]]
-         # sample_pos is the predicted token's position Q; verification keys
-         # Gumbel by the predecessor (Q-1). sample_draft adds +1, so pass Q-2.
-@@ -271,8 +300,8 @@ class DFlashSpeculator(DraftModelSpeculator):
+         # sample_pos is the predicted token's position P. Sampling keys a draw
+         # by the position before the sampled token, P-1.
+@@ -272,8 +301,8 @@
              self.sample_col[:num_sample],
              self.draft_logits,
          )
@@ -239,7 +235,7 @@ index eb5dc470b..4ad1b10ba 100644
          )
  
      def _build_draft_attn_metadata(
-@@ -329,6 +358,11 @@ class DFlashSpeculator(DraftModelSpeculator):
+@@ -332,6 +361,11 @@
          is_profile: bool = False,
      ) -> torch.Tensor:
          num_reqs = input_batch.num_reqs
@@ -251,8 +247,8 @@ index eb5dc470b..4ad1b10ba 100644
          num_target_tokens = input_batch.num_tokens
          num_query_tokens = num_reqs * self.num_query_per_req
          max_seq_len = input_batch.seq_lens_cpu_upper_bound[:num_reqs].max().item()
-@@ -395,7 +429,7 @@ class DFlashSpeculator(DraftModelSpeculator):
-                 self.block_tables.kernel_block_sizes[gid],
+@@ -403,7 +437,7 @@
+                 self.block_tables.cp_interleave,
                  self.parallel_drafting_token_id,
                  self.num_query_per_req,
 -                self.num_speculative_steps,
@@ -260,11 +256,9 @@ index eb5dc470b..4ad1b10ba 100644
                  self.max_num_reqs,
                  self.max_num_tokens,
                  self.max_model_len,
-diff --git a/v1/worker/gpu/spec_decode/dflash2/lookup.py b/v1/worker/gpu/spec_decode/dflash2/lookup.py
-new file mode 100644
-index 000000000..0315b6ecb
---- /dev/null
-+++ b/v1/worker/gpu/spec_decode/dflash2/lookup.py
+diff -ruN a/v1/worker/gpu/spec_decode/dflash2/lookup.py b/v1/worker/gpu/spec_decode/dflash2/lookup.py
+--- a/v1/worker/gpu/spec_decode/dflash2/lookup.py	1970-01-01 00:00:00.000000000 +0000
++++ b/v1/worker/gpu/spec_decode/dflash2/lookup.py	2026-09-12 06:19:16.582436409 +0000
 @@ -0,0 +1,330 @@
 +"""Lookup-augmented block drafting (LABD).
 +
@@ -596,10 +590,9 @@ index 000000000..0315b6ecb
 +        BLOCK_KT=triton.next_power_of_2(k),
 +        num_warps=1,
 +    )
-diff --git a/v1/worker/gpu/spec_decode/dflash2/speculator.py b/v1/worker/gpu/spec_decode/dflash2/speculator.py
-index 621afc38c..9d299de5a 100644
---- a/v1/worker/gpu/spec_decode/dflash2/speculator.py
-+++ b/v1/worker/gpu/spec_decode/dflash2/speculator.py
+diff -ruN a/v1/worker/gpu/spec_decode/dflash2/speculator.py b/v1/worker/gpu/spec_decode/dflash2/speculator.py
+--- a/v1/worker/gpu/spec_decode/dflash2/speculator.py	2026-09-12 06:19:16.366700705 +0000
++++ b/v1/worker/gpu/spec_decode/dflash2/speculator.py	2026-09-12 06:19:16.585360876 +0000
 @@ -1,16 +1,25 @@
  # SPDX-License-Identifier: Apache-2.0
  # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
@@ -627,7 +620,7 @@ index 621afc38c..9d299de5a 100644
  
  @triton.jit
  def _selector_walk_kernel(
-@@ -22,11 +31,14 @@ def _selector_walk_kernel(
+@@ -22,11 +31,14 @@
      seeds_ptr,
      tokens_ptr,
      realized_scores_ptr,
@@ -642,7 +635,7 @@ index 621afc38c..9d299de5a 100644
  ):
      row = tl.program_id(0)
      offsets = tl.arange(0, BLOCK_K)
-@@ -35,6 +47,9 @@ def _selector_walk_kernel(
+@@ -35,6 +47,9 @@
      valid = req_state >= 0
      temperature = tl.load(temperature_ptr + req_state, mask=valid, other=0.0)
      seed = tl.load(seeds_ptr + req_state, mask=valid, other=0)
@@ -652,7 +645,7 @@ index 621afc38c..9d299de5a 100644
      previous = 0
      for step in range(num_steps):
          flat = row * num_steps + step
-@@ -43,7 +58,7 @@ def _selector_walk_kernel(
+@@ -43,7 +58,7 @@
              scores_ptr + score_base + offsets,
              mask=mask & valid,
              other=float("-inf"),
@@ -661,11 +654,10 @@ index 621afc38c..9d299de5a 100644
          candidate_base = flat * top_k
          candidates = tl.load(
              candidate_ptr + candidate_base + offsets,
-@@ -51,7 +66,20 @@ def _selector_walk_kernel(
+@@ -51,6 +66,20 @@
              other=0,
          )
  
--        # Candidate ids key the noise, matching the target's own sampling.
 +        if SAMPLE_PROBABILISTIC and temperature != 0.0 and TRUNCATE:
 +            # Apply the request's top-k/top-p to the proposal distribution over the
 +            # candidates. The rejection sampler consumes pre-temperature logits, so keep
@@ -680,11 +672,11 @@ index 621afc38c..9d299de5a 100644
 +            keep = mask & (rank < req_top_k) & (mass_before < req_top_p)
 +            scores = tl.where(keep, scores, -float("inf"))
 +
-         position = tl.load(sample_pos_ptr + flat) - 1
-         _, index = gumbel_noised_argmax(
-             scores,
-@@ -62,10 +90,12 @@ def _selector_walk_kernel(
-             temperature if SAMPLE_PROBABILISTIC else 0.0,
+         # sample_pos is the predicted token's position P. Sampling keys a draw
+         # by the position before the sampled token, P-1.
+         sample_pos = tl.load(sample_pos_ptr + flat) - 1
+@@ -64,10 +93,12 @@
+             IS_DRAFTING=True,
              USE_FP64=USE_FP64,
          )
 -
@@ -698,7 +690,7 @@ index 621afc38c..9d299de5a 100644
              mask=mask & valid,
          )
          token = tl.load(candidate_ptr + candidate_base + index, mask=valid, other=0)
-@@ -83,6 +113,7 @@ def _cache_draft_logits_kernel(
+@@ -85,6 +116,7 @@
      draft_logits_stride_0,
      draft_logits_stride_1,
      num_steps: tl.constexpr,
@@ -706,7 +698,7 @@ index 621afc38c..9d299de5a 100644
      top_k: tl.constexpr,
      BLOCK_K: tl.constexpr,
  ):
-@@ -92,7 +123,9 @@ def _cache_draft_logits_kernel(
+@@ -94,7 +126,9 @@
      offsets = tl.arange(0, BLOCK_K)
      mask = (req_state >= 0) & (offsets < top_k)
      candidate_base = flat * top_k
@@ -717,7 +709,7 @@ index 621afc38c..9d299de5a 100644
      old_token_ids = tl.load(cached_candidate_ptr + cache_base + offsets, mask=mask)
      logits_base = (
          draft_logits_ptr
-@@ -107,6 +140,9 @@ def _cache_draft_logits_kernel(
+@@ -109,6 +143,9 @@
  
  
  class DFlash2Speculator(DFlashSpeculator):
@@ -727,7 +719,7 @@ index 621afc38c..9d299de5a 100644
      _speculator_name = "DFlash2"
  
      def __init__(self, vllm_config: VllmConfig, device: torch.device):
-@@ -117,23 +153,180 @@ class DFlash2Speculator(DFlashSpeculator):
+@@ -119,23 +156,180 @@
              torch.arange(self.max_num_reqs, dtype=torch.int64, device=device)
              * self.num_query_per_req
          )
@@ -913,7 +905,7 @@ index 621afc38c..9d299de5a 100644
      def _sample_path(
          self,
          candidate_ids: torch.Tensor,
-@@ -141,6 +334,7 @@ class DFlash2Speculator(DFlashSpeculator):
+@@ -143,6 +337,7 @@
          num_reqs: int,
      ) -> None:
          block_k = triton.next_power_of_2(self.selector_top_k)
@@ -921,7 +913,7 @@ index 621afc38c..9d299de5a 100644
          _selector_walk_kernel[(num_reqs,)](
              scores.contiguous(),
              candidate_ids.contiguous(),
-@@ -148,19 +342,25 @@ class DFlash2Speculator(DFlashSpeculator):
+@@ -150,19 +345,25 @@
              self.sample_idx_mapping,
              self.temperature,
              self.seeds,
@@ -950,7 +942,7 @@ index 621afc38c..9d299de5a 100644
          block_k = triton.next_power_of_2(self.selector_top_k)
          _cache_draft_logits_kernel[(num_sample,)](
              draft_logits,
-@@ -170,7 +370,8 @@ class DFlash2Speculator(DFlashSpeculator):
+@@ -172,7 +373,8 @@
              self.sample_idx_mapping,
              draft_logits.stride(0),
              draft_logits.stride(1),
@@ -960,7 +952,7 @@ index 621afc38c..9d299de5a 100644
              top_k=self.selector_top_k,
              BLOCK_K=block_k,
              num_warps=1,
-@@ -192,15 +393,15 @@ class DFlash2Speculator(DFlashSpeculator):
+@@ -194,15 +396,15 @@
              num_tokens_across_dp,
              cudagraph_runtime_mode,
          )
@@ -979,7 +971,7 @@ index 621afc38c..9d299de5a 100644
          )
          unary_logits = unary_logits.view_as(candidate_ids)
          anchor_token_ids = self.input_buffers.input_ids[self._anchor_indices[:num_reqs]]
-@@ -213,3 +414,68 @@ class DFlash2Speculator(DFlashSpeculator):
+@@ -215,3 +417,68 @@
          self._sample_path(candidate_ids, scores, num_reqs)
          if self.draft_logits is not None:
              self._cache_draft_logits(candidate_ids, num_sample)
@@ -1048,11 +1040,10 @@ index 621afc38c..9d299de5a 100644
 +            BLOCK_K=block_k,
 +            num_warps=1,
 +        )
-diff --git a/v1/worker/gpu/spec_decode/utils.py b/v1/worker/gpu/spec_decode/utils.py
-index e25672e95..1f712a07d 100644
---- a/v1/worker/gpu/spec_decode/utils.py
-+++ b/v1/worker/gpu/spec_decode/utils.py
-@@ -20,10 +20,16 @@ class DraftTokensHandler:
+diff -ruN a/v1/worker/gpu/spec_decode/utils.py b/v1/worker/gpu/spec_decode/utils.py
+--- a/v1/worker/gpu/spec_decode/utils.py	2026-09-12 06:19:16.369596905 +0000
++++ b/v1/worker/gpu/spec_decode/utils.py	2026-09-12 06:19:16.588226119 +0000
+@@ -20,10 +20,16 @@
          self.num_draft_tokens: int = 0
  
      def set_draft_tokens(
