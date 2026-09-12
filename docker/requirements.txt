@@ -2,7 +2,7 @@
 # measured on the previous v0.27.1 stack and must be re-run after this upgrade.
 # vllm==0.29.0 resolves the compatible torch/cu130, Triton, and FlashInfer set;
 # the rest is pinned to the reference venv resolution.
-vllm==0.28.0
+vllm==0.29.0
 transformers==5.15.0
 tokenizers==0.22.2
 compressed-tensors==0.17.0
