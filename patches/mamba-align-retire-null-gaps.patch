@@ -25,7 +25,9 @@ Applies on top of mamba-align-checkpoint-order.patch.
              self._allocated_block_reqs: set[str] = set()
              # Requests that registered their own last-prompt-boundary partial
 @@ -1469,6 +1470,27 @@
+ 
          return mask
+ 
 +    def _remove_blocks_in_range(
 +        self, request_id: str, first_block: int, last_block: int
 +    ) -> None:
