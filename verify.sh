@@ -24,7 +24,7 @@ PY=${PY:-$HERE/venv/bin/python}
 echo "== environment"
 [ -x "$PY" ] && ok "python: $PY" || { fail "no $PY (see README Setup)"; exit 1; }
 VER=$($PY -c "import vllm; print(vllm.__version__)" 2>/dev/null | tail -n1)
-[ "$VER" = "0.28.0" ] && ok "vllm $VER" || warn "vllm ${VER:-missing} (patches were written against 0.28.0)"
+[ "$VER" = "0.29.0" ] && ok "vllm $VER" || warn "vllm ${VER:-missing} (patches were written against 0.29.0)"
 SP=$($PY -c "import vllm, os; print(os.path.dirname(vllm.__file__))" 2>/dev/null | tail -n1)
 [ -n "$SP" ] && [ -d "$SP" ] && ok "vllm package at $SP" || { fail "cannot import vllm with $PY"; exit 1; }
 if [ $INSTALL = 0 ]; then
@@ -62,7 +62,7 @@ superseded_by() {
 # can no longer be reversed individually once both are applied; then look for their content.
 for p in patches/*.patch; do
   if [ "$(basename "$p")" = "dflash2-backport.patch" ]; then
-    ok "dflash2-backport.patch retired (DFlash2 is native in vLLM 0.28.0)"
+    ok "dflash2-backport.patch retired (DFlash2 is native since vLLM 0.28.0)"
     continue
   fi
   if patch -p1 -R --dry-run -s -d "$SP" < "$p" >/dev/null 2>&1; then ok "$(basename $p) applied"
