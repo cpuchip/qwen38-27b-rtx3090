@@ -34,8 +34,13 @@ Adjusted for 0.29 API changes:
   five drafter layers at block 16 and could not fit 120k tokens; that is the failure to look for if
   the promotion lines stop appearing at boot.
 
-Not ported: KVarN (`kvarn/`, `CTX=huge`). Its 0.28.0 patches do not apply on 0.29 and the Dockerfile
-skips `kvarn/install.sh` with a note. Separate port.
+KVarN (`kvarn/`, `CTX=huge`) is ported: `kvarn-0.29.0.patch` and `kvarn-v2-runner-0.29.0.patch`. The
+layout refactor removed the per-backend shape and stride hooks, so the backend now declares its layout
+(`LBHNC`: heads outside tokens within a block) and folds the runner's 4D per-layer view back into one
+tile per block and head with a `view`, so a wrong layout fails at the first KV update instead of
+returning wrong numbers (the first port declared `LBNHC` and did exactly that; the guard caught it).
+The old strided-view hunk and the four block-size hunks are retired; their reasons are in the patch
+preambles and in `kvarn/README.md`.
 
 ## Acceptance (WSL2 4090, card 1, 2026-09-12)
 
@@ -50,9 +55,19 @@ Same script on the 0.28.0 image and the 0.29.0 image, fresh cache volume per run
 | int4 (`kv_cache_dtype=int4_per_token_head`, 120k): KV tokens, mq3d oracle | 179,701, 8/8 | 173,134, 8/8 |
 | int4 depth 25k / 90k decode tok/s | 42.1 / 19.5 | 43.2 / 19.1 |
 | offload (12 GiB tier, mtp): served after eviction, tier guard | pass | pass |
+| huge (KVarN k4v2_g128, dflash2, 262k): block / KV tokens | 2176 / 268,169 | 2176 / 268,169 |
+| huge: ppl en / da, GSM8K n=100 | 10.7674 / 10.9097, 0.89 | 10.7691 / 10.9085, 0.93 |
+| huge: needle at 32k / 90k / 200k (thinking off) | see note | retrieved at all three |
+| huge: request time at 25k / 90k (256 output tokens) | 30.2 s / 125.6 s | 22.4 s / 67.8 s |
 
 The 47k decode column is bimodal per prompt slice on both images (rows land near 89 or near 104), so
 the medians differ by draw, not by version; with prefix caching off both images read 102 to 104.
+
+The huge-context rows: the two images compute the same KV geometry and the same drafter acceptance, and
+0.29 finishes both requests sooner; the split of that time between first token and streaming differs
+between the two boots and is being measured with a stream probe (the 0.28 boot's needle answers came
+back empty with thinking left on, which is the probe's default, not the cache's fault). The 0.28 needle
+column is the fixed probe's rerun, pending at the time of writing.
 
 One knob worth knowing: 0.29 defaults `prefix_cache_retention_interval` to dense checkpointing for
 hybrid models with a draft model (the same behaviour 0.28 had). Setting it to 0 on this model halves
