@@ -57,6 +57,7 @@ from vllm.v1.attention.backend import (
     CommonAttentionMetadata,
     MultipleOf,
 )
+from vllm.v1.kv_cache_interface import KVCacheLayout
 from vllm.v1.attention.backends.fa_utils import (
     get_flash_attn_version,
     is_flash_attn_varlen_func_available,
@@ -201,6 +202,15 @@ class KVarNAttentionBackend(AttentionBackend):
     @staticmethod
     def get_name() -> str:
         return "KVARN"
+
+    @classmethod
+    def supported_kv_cache_layouts(cls) -> tuple[KVCacheLayout, ...]:
+        # port(0.29): vLLM 0.29 derives every layer's physical layout from its
+        # spec ([B, H, N, C] bytes; get_kv_cache_shape is no longer consulted).
+        # KVarN needs the N per-token slots of one head to sit back to back so
+        # they fold into the one tile per (block, head) its kernels address,
+        # which is the layer-compact blocks/heads/tokens/content order.
+        return (KVCacheLayout.LBNHC,)
 
     @staticmethod
     def get_supported_kernel_block_sizes() -> list[int | MultipleOf]:
@@ -1805,6 +1815,18 @@ class KVarNAttentionImpl(AttentionImpl["KVarNMetadata"]):
     def _hadamard(self, device: torch.device) -> torch.Tensor:
         return _build_hadamard(self.head_size, device)
 
+    @staticmethod
+    def _as_tile_view(kv_cache: torch.Tensor) -> torch.Tensor:
+        """port(0.29): fold the runner's ``[B, H, N, C]`` byte view into the
+        ``(num_blocks, num_kv_heads, tile_bytes_aligned)`` view the kernels and
+        ``_flat_block`` address. The spec publishes one ``tile_bytes_aligned //
+        group`` slot per token, so N * C is exactly one tile; under LBNHC the
+        N and C dims are contiguous, and ``view`` (not ``reshape``) makes a
+        wrong layout fail loudly instead of silently copying."""
+        if kv_cache.dim() == 4:
+            return kv_cache.view(kv_cache.shape[0], kv_cache.shape[1], -1)
+        return kv_cache
+
     def _flat_block(self, kv_cache: torch.Tensor, block_id: int, head: int) -> torch.Tensor:
         """Contiguous ``[tile_bytes_aligned]`` uint8 view for one (block, head).
 
@@ -2139,6 +2161,7 @@ class KVarNAttentionImpl(AttentionImpl["KVarNMetadata"]):
         N = slot_mapping.shape[0]
         if N <= 0:
             return
+        kv_cache = self._as_tile_view(kv_cache)
         device = key.device
         Hk = self.num_kv_heads
         D = self.head_size
@@ -2201,6 +2224,7 @@ class KVarNAttentionImpl(AttentionImpl["KVarNMetadata"]):
     ) -> torch.Tensor:
         num_tokens = query.shape[0]
         device = query.device
+        kv_cache = self._as_tile_view(kv_cache)
 
         if output is None:
             output = torch.zeros(
