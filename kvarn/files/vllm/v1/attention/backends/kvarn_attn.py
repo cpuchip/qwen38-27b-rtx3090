@@ -208,9 +208,11 @@ class KVarNAttentionBackend(AttentionBackend):
         # port(0.29): vLLM 0.29 derives every layer's physical layout from its
         # spec ([B, H, N, C] bytes; get_kv_cache_shape is no longer consulted).
         # KVarN needs the N per-token slots of one head to sit back to back so
-        # they fold into the one tile per (block, head) its kernels address,
-        # which is the layer-compact blocks/heads/tokens/content order.
-        return (KVCacheLayout.LBNHC,)
+        # they fold into the one tile per (block, head) its kernels address:
+        # physical order [L, B, H, N, C], which is LBHNC (the enum letters are
+        # the physical order; LBNHC puts tokens outside heads and the fold's
+        # view() refuses it, which is the intended loud failure).
+        return (KVCacheLayout.LBHNC,)
 
     @staticmethod
     def get_supported_kernel_block_sizes() -> list[int | MultipleOf]:
