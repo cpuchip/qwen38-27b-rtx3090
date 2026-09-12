@@ -16,7 +16,7 @@
 #   ENVFILE    docker --env-file with VLLM_API_KEY (default ./single-user/.env if present)   VLLM_API_KEY  used if no ENVFILE
 #   DEPTH_CORPUS_GLOB  plain-text files for the depth/ladder prompts (required for A B D H P; any >= 2M chars of prose)
 #   PORT       host port for the container's 18020 (default 18031)       OUT          output dir (default bench/acceptance/out-$TAG)
-#   GPU_UTIL   gpu_memory_utilization (default 0.90)                     TIER_GIB     offload tier size for D (default 12)
+#   GPU_UTIL   gpu_memory_utilization (default 0.90; profile A uses GPU_UTIL_A, default 0.93, for the battery)   TIER_GIB  offload tier size for D (default 12)
 #
 # What compares across two images (see docs/vllm-0.29.md): quality en/da and the geometry lines compare outright;
 # prefill compares by paired row (rep i is the same prompt on both); decode at n=3 does not, report it as a band;
@@ -27,6 +27,10 @@ IMAGE=${IMAGE:?set IMAGE}; TAG=${TAG:?set TAG}; PROFILES=${PROFILES:-A B C D}
 HERE="$(cd "$(dirname "$0")" && pwd)"; REPO="$(cd "$HERE/../.." && pwd)"
 OUT=${OUT:-$HERE/out-$TAG}; mkdir -p "$OUT"
 GPU=${GPU:-0}; PORT=${PORT:-18031}; GPU_UTIL=${GPU_UTIL:-0.90}; TIER_GIB=${TIER_GIB:-12}
+# The fast profile boots at 0.93: quality_battery.py needs prompt_logprobs headroom for the perplexity lanes
+# (docs/gotchas.md, gotcha 10). At 0.90 the battery still completes and reads ~0.01 lower on GSM8K (n=100),
+# so both are defensible; this makes the choice explicit rather than rediscovered. GPU_UTIL_A overrides it.
+GPU_UTIL_A=${GPU_UTIL_A:-0.93}
 MODELS=${MODELS:-$REPO/models}; QDATA=${QDATA:-$REPO/bench/quality-data}
 ENVFILE=${ENVFILE:-}; [ -z "$ENVFILE" ] && [ -f "$REPO/single-user/.env" ] && ENVFILE="$REPO/single-user/.env"
 if [ -n "$ENVFILE" ]; then export VLLM_API_KEY="$(grep -E '^VLLM_API_KEY=' "$ENVFILE" | cut -d= -f2-)"; ENVARG=(--env-file "$ENVFILE"); else ENVARG=(-e "VLLM_API_KEY=${VLLM_API_KEY:?set VLLM_API_KEY or ENVFILE}"); fi
@@ -64,7 +68,7 @@ needle(){ # $1 container name, tokens...
   done
 }
 # ---- A: fast (production profile)
-if [[ " $PROFILES " == *" A "* ]] && boot fast "-e SPEC=dflash2 -e CTX=fast -e DFLASH_TOKENS=7 -e PREFIX_CACHE=1 -e MAX_SEQS=4" "exec bash single-user/start_qwen.sh"; then
+if [[ " $PROFILES " == *" A "* ]] && boot fast "-e SPEC=dflash2 -e CTX=fast -e DFLASH_TOKENS=7 -e PREFIX_CACHE=1 -e MAX_SEQS=4 -e GPU_UTIL=$GPU_UTIL_A" "exec bash single-user/start_qwen.sh"; then
   log "=== A quality n=100 (en/da compare across pins; code does not) ==="; quality qwen-acc-fast "acc-$TAG" | tee "$OUT/A-quality.txt"
   log "=== A depth rows 25k/50k x3 ==="; python3 "$HERE/depth.py" "A-$TAG" "$PORT" 25000,50000 3 2>&1 | grep -E "^ROW|^GPU|^MEDIAN|rror" | tee "$OUT/A-ladder.txt" | cut -c1-200
 fi; stop fast
