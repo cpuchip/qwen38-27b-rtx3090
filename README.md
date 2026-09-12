@@ -45,8 +45,10 @@ before exposing the server beyond this machine.
 length is not measuring the same thing, and mixing the two is how
 [#3](https://github.com/syv-ai/qwen38-27b-rtx3090/issues/3) got confusing.</sub>
 
-> Version note: this branch pins vLLM 0.28.0; the throughput and quality tables are
-> retained as reference baselines while the v0.28.0 GPU matrix is being re-measured.
+> Version note: this branch pins vLLM 0.29.0 (ported from 0.28.0; what changed and what was
+> re-measured is in [docs/vllm-0.29.md](docs/vllm-0.29.md)). The throughput and quality tables
+> are retained as reference baselines; the four acceptance profiles matched the 0.28.0 image.
+> KVarN (`CTX=huge`) is not available on this pin until its port lands.
 
 Both modes share one install — the mode is just which launch script you run.
 Speculation wins below ~8 concurrent users on short prompts, plain batching above;
