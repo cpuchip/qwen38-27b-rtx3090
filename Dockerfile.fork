@@ -1,0 +1,54 @@
+# The same image as Dockerfile, built from the vLLM fork branch instead of applying patches/.
+#
+# vLLM's own wheel supplies the compiled libraries and the Rust frontend (VLLM_USE_PRECOMPILED); the
+# Python tree comes from the fork branch, which is the patch series as commits on the release tag
+# (see PATCHES.md and docs/vllm-0.29.md). The two routes produce byte-identical Python trees; this one
+# ports to a new pin with `git rebase` and carries authorship. Nothing in patches/ or kvarn/ is applied
+# here; verify.sh still checks every patch is present in the installed tree, because the content is.
+#
+#   docker build -f Dockerfile.fork -t qwen38-27b-rtx3090:fork-0.29 .
+#   docker build -f Dockerfile.fork --build-arg VLLM_FORK_COMMIT=<sha> .
+FROM nvidia/cuda:13.0.1-base-ubuntu24.04
+
+ENV DEBIAN_FRONTEND=noninteractive PIP_NO_CACHE_DIR=1 PYTHONUNBUFFERED=1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3.12 python3.12-venv python3.12-dev \
+      cuda-nvcc-13-0 cuda-cudart-dev-13-0 libcurand-dev-13-0 \
+      build-essential patch curl ca-certificates git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+RUN python3.12 -m venv venv && venv/bin/pip install --upgrade pip
+COPY docker/requirements.txt docker/requirements.txt
+# The release wheel and its dependency set, exactly as the patch route installs them.
+RUN venv/bin/pip install -r docker/requirements.txt
+
+# The fork: pinned by commit, built as a wheel over the release wheel's compiled parts.
+ARG VLLM_FORK_REPO=https://github.com/cpuchip/vllm
+ARG VLLM_FORK_COMMIT=7eb41354486a926ffd0a784671cb0b2f3a195817
+ARG VLLM_VERSION=0.29.0
+RUN set -e; \
+    venv/bin/pip install "setuptools>=77" setuptools_scm setuptools-rust wheel; \
+    venv/bin/pip download "vllm==${VLLM_VERSION}" --no-deps -d /tmp/wheel; \
+    git clone --filter=blob:none "$VLLM_FORK_REPO" /tmp/vllm-src; \
+    git -C /tmp/vllm-src checkout -q "$VLLM_FORK_COMMIT"; \
+    export VLLM_USE_PRECOMPILED=1 VLLM_PRECOMPILED_WHEEL_LOCATION="$(ls /tmp/wheel/vllm-${VLLM_VERSION}-*.whl)"; \
+    export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_VLLM="$VLLM_VERSION" SETUPTOOLS_SCM_PRETEND_VERSION="$VLLM_VERSION"; \
+    venv/bin/pip wheel --no-deps --no-build-isolation -w /tmp/out /tmp/vllm-src; \
+    SP=$(venv/bin/python -c 'import vllm, os; print(os.path.dirname(vllm.__file__))' | tail -n1); \
+    venv/bin/pip uninstall -y vllm; rm -rf "$SP" "$(dirname "$SP")"/vllm-*.dist-info; \
+    venv/bin/pip install --no-deps /tmp/out/vllm-*.whl; \
+    echo "vllm fork $VLLM_FORK_COMMIT installed as $(venv/bin/python -c 'import vllm; print(vllm.__version__)')"; \
+    rm -rf /tmp/vllm-src /tmp/wheel /tmp/out
+
+COPY . .
+RUN bash verify.sh --install
+
+# HOME is a volume: torch.compile cache (~/.cache/vllm), Triton (~/.triton),
+# FlashInfer JIT (~/.cache/flashinfer), HF hub cache.
+RUN mkdir -p /cache /app/models && chmod 1777 /cache
+ENV HOME=/cache VLLM_NO_USAGE_STATS=1 DO_NOT_TRACK=1 HF_XET_HIGH_PERFORMANCE=1
+VOLUME ["/cache", "/app/models"]
+EXPOSE 18020
+ENTRYPOINT ["bash", "docker/entrypoint.sh"]
+CMD ["single"]
