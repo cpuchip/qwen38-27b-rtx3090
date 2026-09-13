@@ -103,11 +103,19 @@ def main():
     # 3. env knobs read but not registered
     # Only reads that land in vLLM code (patch files, kvarn/) count: a bench or launcher reading an env var is
     # not a kernel knob outside the torch.compile cache key.
+    # The registry itself (envs.py hunks) is the one place a raw read belongs, so a patch's envs.py section is
+    # skipped: track the "+++ b/<file>" header while walking the diff's added lines.
     reads = set()
     for f, lines in added_lines.items():
         if not (f.endswith(".patch") or f.startswith("kvarn/files/")):
             continue
+        in_envs = f.endswith("envs.py")
         for l in lines:
+            if l.startswith("++ b/") or l.startswith("+++ b/"):
+                in_envs = l.rstrip().endswith("envs.py")
+                continue
+            if in_envs:
+                continue
             for m in ENV_READ.finditer(l):
                 reads.add(m.group(2))
     # Bar item 7 says never read a knob with os.environ inside vLLM code, registered or not: the registered
