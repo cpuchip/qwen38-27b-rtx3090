@@ -51,6 +51,19 @@ replace the PR's. It reports FAIL, WARN and OK per check and exits non-zero on a
 configuration, em-dashes and attribution lines), and prints the manual list for 2, 3 and 10. A green gate is
 not a merged PR; it is the wrapping not lagging the code.
 
+## Verification asks, and two rules the second seat paid for
+
+An ask to the verifying seat names the branch head, the exact command, and the expected row. Two rules for
+the row (threadchip, 2026-09-14, on #90 and #93):
+
+- **Run the positive control before the negative.** A row that expects silence ("=0 prints nothing") is
+  satisfied by a check that never fires; the expected string in the row was wrong once and the =1 run showed
+  zero lines, which would have read as a pass on =0 in the other order. The positive run first proves the
+  instrument sees the thing at all.
+- **A sense test for a knob is valid only on a tree where the knob's new reader is installed.** Against a
+  venv that still carries the old reader, "=0 turns it off" passes for the wrong reason. Build the image from
+  the branch, or replace the installed file with the branch's, and say which in the row.
+
 ## Public replies, same bar
 
 A comment on someone's issue or PR is read by the same people with the same care. `scripts/pr-gate/reply_gate.py
