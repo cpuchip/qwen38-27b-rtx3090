@@ -10,7 +10,9 @@ G="git -C $FORK"
 SUBJ=$($G log -1 --format='%s' "$COMMIT"); TOPIC=$(echo "$SUBJ" | sed -nE 's/^\[qwen38\] ([A-Za-z0-9._-]+).*/\1/p')
 [ -n "$TOPIC" ] || { echo "not a topic commit: $SUBJ"; exit 1; }
 [ -n "$OUT" ] || OUT="patches/$TOPIC.patch"
-BODY=$($G log -1 --format='%b' "$COMMIT" | sed -e '/^Source: /,$d' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')
+# The body is prose. A commit imported from an old patch file can carry a stray diff line (a new-file
+# patch's "--- /dev/null" and "@@" preamble boundary); GNU patch would read that as the start of a hunk.
+BODY=$($G log -1 --format='%b' "$COMMIT" | sed -e '/^Source: /,$d' | grep -vE '^(@@ |--- |\+\+\+ |diff --git )' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')
 SHORT=$($G rev-parse --short "$COMMIT")
 {
   printf '%s\n\n' "$BODY"
