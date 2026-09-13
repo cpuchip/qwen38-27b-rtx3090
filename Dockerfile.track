@@ -1,0 +1,61 @@
+# The main-track image: the qwen38 series rebased onto vLLM main, built over vLLM's own nightly wheel.
+#
+# Same route as Dockerfile.fork (the nightly wheel supplies the compiled libraries; the Python tree comes from
+# the fork branch), with two differences. The base is a commit on upstream main, named by the nightly wheel
+# that was built from it (VLLM_NIGHTLY, e.g. 0.29.1rc1.dev5+ge52be1a62 = main at e52be1a62), so the fork branch
+# qwen38/main-track must sit on exactly that commit. And the dependency set is whatever the nightly wheel
+# declares, not docker/requirements.txt, because main moves its pins between releases; transformers and
+# tokenizers stay at the release image's versions so a smoke difference is vLLM's alone.
+#
+# This image is the smoke for the track (docs/fork-workflow.md, "The main track"), never production:
+# verify.sh's patch check is recorded at build time but does not gate the build, because a rebase onto main
+# retires hunks that upstream absorbed, and those patches are then absent from the tree by design. VERIFY=0
+# is the default for the same reason.
+#
+#   docker build -f Dockerfile.track --build-arg VLLM_NIGHTLY=<ver> --build-arg VLLM_FORK_COMMIT=<sha> -t qwen38-27b-rtx3090:track-<sha7> .
+FROM nvidia/cuda:13.0.1-base-ubuntu24.04
+
+ENV DEBIAN_FRONTEND=noninteractive PIP_NO_CACHE_DIR=1 PYTHONUNBUFFERED=1
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      python3.12 python3.12-venv python3.12-dev \
+      cuda-nvcc-13-0 cuda-cudart-dev-13-0 libcurand-dev-13-0 \
+      build-essential patch curl ca-certificates git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+RUN python3.12 -m venv venv && venv/bin/pip install --upgrade pip
+
+ARG VLLM_NIGHTLY_INDEX=https://wheels.vllm.ai/nightly/cu130
+ARG VLLM_NIGHTLY=0.29.1rc1.dev5+ge52be1a62
+ARG VLLM_FORK_REPO=https://github.com/cpuchip/vllm
+ARG VLLM_FORK_COMMIT=169999e70b36709c5b25210cc56ed5a66e4aa6f0
+# The nightly wheel, once: installed with its own dependency set, then reused as the precompiled source.
+RUN set -e; \
+    venv/bin/pip download "vllm==${VLLM_NIGHTLY}" --pre --no-deps --index-url "$VLLM_NIGHTLY_INDEX" -d /tmp/wheel; \
+    venv/bin/pip install /tmp/wheel/vllm-*.whl transformers==5.15.0 tokenizers==0.22.2; \
+    venv/bin/pip install hf_transfer==0.1.9 ninja==1.13.0 pandas==3.0.5; \
+    venv/bin/pip freeze | grep -iE "^(vllm|torch|transformers|tokenizers|compressed-tensors|flashinfer|triton|xformers|huggingface-hub)==" | tee /app/track-deps.txt
+RUN set -e; \
+    venv/bin/pip install "setuptools>=77" setuptools_scm setuptools-rust wheel; \
+    git clone --filter=blob:none "$VLLM_FORK_REPO" /tmp/vllm-src; \
+    git -C /tmp/vllm-src checkout -q "$VLLM_FORK_COMMIT"; \
+    export VLLM_USE_PRECOMPILED=1 VLLM_PRECOMPILED_WHEEL_LOCATION="$(ls /tmp/wheel/vllm-*.whl)"; \
+    export SETUPTOOLS_SCM_PRETEND_VERSION_FOR_VLLM="$VLLM_NIGHTLY" SETUPTOOLS_SCM_PRETEND_VERSION="$VLLM_NIGHTLY"; \
+    venv/bin/pip wheel --no-deps --no-build-isolation -w /tmp/out /tmp/vllm-src; \
+    SP=$(venv/bin/python -c 'import vllm, os; print(os.path.dirname(vllm.__file__))' | tail -n1); \
+    venv/bin/pip uninstall -y vllm; rm -rf "$SP" "$(dirname "$SP")"/vllm-*.dist-info; \
+    venv/bin/pip install --no-deps /tmp/out/vllm-*.whl; \
+    echo "vllm fork $VLLM_FORK_COMMIT installed as $(venv/bin/python -c 'import vllm; print(vllm.__version__)')"; \
+    echo "$VLLM_FORK_COMMIT" > /app/track-commit.txt; \
+    rm -rf /tmp/vllm-src /tmp/wheel /tmp/out
+
+COPY . .
+# Recorded, not gating (see the header): the retired patches are expected to read as missing.
+RUN bash verify.sh --install > /app/track-verify.txt 2>&1 || true; grep -cE "^  PASS" /app/track-verify.txt; grep -E "^  (FAIL|WARN)" /app/track-verify.txt || true
+
+RUN mkdir -p /cache /app/models && chmod 1777 /cache
+ENV HOME=/cache VLLM_NO_USAGE_STATS=1 DO_NOT_TRACK=1 HF_XET_HIGH_PERFORMANCE=1 VERIFY=0
+VOLUME ["/cache", "/app/models"]
+EXPOSE 18020
+ENTRYPOINT ["bash", "docker/entrypoint.sh"]
+CMD ["single"]

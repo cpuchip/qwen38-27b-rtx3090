@@ -74,6 +74,40 @@ and open that PR with the disclosure and trailer. The row in PATCHES.md is updat
 `git log v<old>..v<new> -- <file>`; the two-box acceptance against the control; then the pin moves in `main` and
 the export refreshes `patches/`. The procedure in detail: `docs/vllm-0.29.md`, "Porting the next pin".
 
+## The fourth cadence: the main track
+
+Riding a release tag means every port starts cold: the series meets months of upstream change at once, and the
+retirements, the enum collisions and the moved hunks all arrive together. The main track pays that cost in small
+weekly pieces instead. It is a smoke, not a product: production stays on the tag branches.
+
+- **Branch:** `qwen38/main-track` in cpuchip/vllm, the series rebased onto a commit of `upstream/main`. The base
+  commit is whichever one the nightly index names (`pip download vllm --pre --index-url
+  https://wheels.vllm.ai/nightly/cu130` returns `vllm-0.29.1rc1.dev5+ge52be1a62`: main at e52be1a62), because
+  the nightly wheel is what supplies the compiled libraries, and the fork tree must sit on exactly its commit.
+- **Cadence:** weekly, or when an upstream PR the ledger names merges. `git rebase --onto <new base> <old base>
+  qwen38/main-track`; each stop gets its cause from `git log <old base>..<new base> -- <file>` before it gets a
+  resolution, and the ledger line for a stop says which upstream PR made the hunk redundant, if one did. Two
+  numbers are recorded every time: wall clock, and stops. The first rebase (v0.29.0 to e52be1a62, 601 upstream
+  commits) took 6 minutes and stopped 8 times; 2 topics retired outright, 3 more are retirement candidates
+  pending the smoke. When a release tag arrives, the port is the track's last rebase, already paid.
+- **Image:** `Dockerfile.track` (`--build-arg VLLM_NIGHTLY=<ver> --build-arg VLLM_FORK_COMMIT=<sha>`). The
+  nightly wheel is installed with its own dependency set (transformers and tokenizers pinned to the release
+  image's, so a difference is vLLM's alone), then the fork tree is built over it exactly as `Dockerfile.fork`
+  does. `verify.sh --install` is recorded, not gating: retired patches are absent by design, and `VERIFY=0` is
+  the image default.
+- **Smoke:** one box, `bench/acceptance/acceptance.sh` with `PROFILES="A C P"` (fast profile with the quality
+  battery, the int4 profile for the promotion lines and the mq3d oracle, the fixed-prompt counters). It answers
+  two questions: does the series still boot and hold quality on main, and which retirement candidates can go
+  (the int4 boot's block-size lines for hybrid-sw-block-promote; the P counters and the battery for
+  sampler-small-topk-fast-softmax; the B ladder, when run, for mamba-align-checkpoint-order).
+- **Radar:** `.github/workflows/track-radar.yml` rebases the track onto `upstream/main` in CI every Monday and on
+  dispatch, skipping each conflicting topic and recording it; a red run is the list of topics the next rebase
+  will stop at, a week before anyone sits down to do it.
+- **Rule:** nothing is decided on the track. A retirement, a fix or a pin move happens on `qwen38/<pin>` under the
+  two-box bar; the track only tells us earlier what that work will contain.
+
+Records of each rebase, the ledger and the lessons: `private-workspace/.spec/scratch/vllm-main-track-*/log.md`.
+
 ## What this buys, stated plainly
 
 We can run a fix or a new pin the day we have proven it on two boxes, without waiting for it to be merged

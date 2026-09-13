@@ -1,0 +1,70 @@
+name: track radar
+
+# Rebases the vLLM fork's main-track branch onto today's upstream/main in CI, skipping every topic that
+# conflicts and recording which ones did. A red run is the list of stops the next hand rebase will make;
+# a green run means the series still applies to main as of this morning. Nothing is pushed.
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+    inputs:
+      track_branch:
+        description: fork branch to rebase
+        default: qwen38/main-track
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  rebase:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone the fork (blobless) and fetch upstream main
+        run: |
+          git clone --filter=blob:none --branch "${{ inputs.track_branch || 'qwen38/main-track' }}" https://github.com/cpuchip/vllm fork
+          cd fork
+          git remote add upstream https://github.com/vllm-project/vllm
+          git fetch --filter=blob:none upstream main
+          git config user.name radar; git config user.email radar@invalid
+          echo "track head $(git rev-parse --short HEAD); upstream/main $(git rev-parse --short upstream/main)"
+
+      - name: Find the track's base on upstream and count new upstream commits
+        id: base
+        working-directory: fork
+        run: |
+          base=$(git merge-base HEAD upstream/main)
+          n=$(git rev-list --count "$base"..upstream/main)
+          echo "base=$base" >> "$GITHUB_OUTPUT"; echo "new=$n" >> "$GITHUB_OUTPUT"
+          echo "base $(git rev-parse --short "$base"), $n upstream commits since"
+
+      - name: Rebase, skipping conflicting topics
+        working-directory: fork
+        run: |
+          set +e
+          : > ../stops.txt
+          GIT_EDITOR=true git rebase --onto upstream/main "${{ steps.base.outputs.base }}" >/dev/null 2>&1
+          while [ -d "$(git rev-parse --git-path rebase-merge)" ]; do
+            subj=$(head -1 "$(git rev-parse --git-path rebase-merge)/message")
+            files=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
+            echo "$subj :: $files" >> ../stops.txt
+            GIT_EDITOR=true git rebase --skip >/dev/null 2>&1
+          done
+          echo "stops: $(wc -l < ../stops.txt)"
+
+      - name: Report
+        run: |
+          {
+            echo "## track radar: ${{ inputs.track_branch || 'qwen38/main-track' }} onto upstream/main"
+            echo
+            echo "Base \`$(echo ${{ steps.base.outputs.base }} | cut -c1-12)\`, ${{ steps.base.outputs.new }} upstream commits since."
+            echo
+            if [ -s stops.txt ]; then
+              echo "### Topics that will stop the next rebase"; echo
+              while IFS= read -r l; do echo "- $l"; done < stops.txt
+            else
+              echo "No conflicts: the series applies to today's main."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          cat stops.txt
+          [ ! -s stops.txt ]
