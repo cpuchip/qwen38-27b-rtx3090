@@ -35,7 +35,12 @@ MODELS=${MODELS:-$REPO/models}; QDATA=${QDATA:-$REPO/bench/quality-data}
 ENVFILE=${ENVFILE:-}; [ -z "$ENVFILE" ] && [ -f "$REPO/single-user/.env" ] && ENVFILE="$REPO/single-user/.env"
 if [ -n "$ENVFILE" ]; then export VLLM_API_KEY="$(grep -E '^VLLM_API_KEY=' "$ENVFILE" | cut -d= -f2-)"; ENVARG=(--env-file "$ENVFILE"); else ENVARG=(-e "VLLM_API_KEY=${VLLM_API_KEY:?set VLLM_API_KEY or ENVFILE}"); fi
 export ACC_GPU_SMI=${ACC_GPU_SMI:-0}
-WSL=""; grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null && WSL="-e VLLM_WSL2_ENABLE_PIN_MEMORY=1"
+# Docker Desktop runs the container in WSL2 whether the harness is invoked from a WSL shell (osrelease says
+# microsoft) or from Git Bash on Windows (uname says MINGW/MSYS; /proc/sys/kernel/osrelease does not exist).
+# vLLM main's V2 model runner needs pinned memory (UVA) and refuses to start without it, so the flag matters
+# for every profile there, not only the offload ones. ACC_WSL2=1 forces it; ACC_WSL2=0 suppresses it.
+WSL=""; { grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null || uname -s | grep -qiE "mingw|msys|cygwin"; } && WSL="-e VLLM_WSL2_ENABLE_PIN_MEMORY=1"
+case "${ACC_WSL2:-}" in 1) WSL="-e VLLM_WSL2_ENABLE_PIN_MEMORY=1" ;; 0) WSL="" ;; esac
 log(){ echo "$(date -u +%H:%M:%SZ) [$TAG] $*"; }
 fails=0
 boot(){ # $1 name, $2 extra docker -e args, $3 entry command
