@@ -85,7 +85,13 @@ def fixed(i):
 
 
 def store_gb(m):
-    return sum(v for k, v in m.items() if "bytes" in k.lower() and ("store" in k.lower() or "GPU_to_CPU" in k)) / 1e9
+    # One counter: vllm:kv_offload_store_bytes_total and the GPU_to_CPU leg of vllm:kv_offload_total_bytes_total
+    # report the same bytes under two names, and summing both doubled the stores and falsely invalidated
+    # SERVED runs against the tier size (found by the maintainer on #95).
+    stores = [v for k, v in m.items() if k.startswith("vllm:kv_offload_store_bytes_total")]
+    if not stores:
+        stores = [v for k, v in m.items() if k.startswith("vllm:kv_offload_total_bytes_total") and "GPU_to_CPU" in k]
+    return sum(stores) / 1e9
 
 
 m0 = metrics()  # counters are cumulative for the life of the server; the guard needs the stores of THIS run

@@ -63,6 +63,11 @@ the row (threadchip, 2026-09-14, on #90 and #93):
 - **A sense test for a knob is valid only on a tree where the knob's new reader is installed.** Against a
   venv that still carries the old reader, "=0 turns it off" passes for the wrong reason. Build the image from
   the branch, or replace the installed file with the branch's, and say which in the row.
+- **Prove which module the interpreter loaded before trusting a before-arm.** A stale `.pyc` can run the fixed
+  code under an unfixed source file, making a bug look absent; a one-line guard on the loaded module (line
+  count, or the presence of the fix's own text) turns "no failure" into a measurement (threadchip, #109).
+- **Reset and clean the replay tree between arms**, every time: a tree carrying a partial apply or staged files
+  reports the next arm against the wrong base and looks like a result.
 
 ## Public replies, same bar
 
