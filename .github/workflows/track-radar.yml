@@ -1,8 +1,8 @@
 name: track radar
 
 # Rebases the vLLM fork's main-track branch onto today's upstream/main in CI, skipping every topic that
-# conflicts and recording which ones did. A red run is the list of stops the next hand rebase will make;
-# a green run means the series still applies to main as of this morning. Nothing is pushed.
+# conflicts and recording which ones did. The stops are warnings in the run summary: the list the next hand
+# rebase will make. No stops means the series still applies to main as of this morning. Nothing is pushed.
 on:
   schedule:
     - cron: "0 9 * * 1"
