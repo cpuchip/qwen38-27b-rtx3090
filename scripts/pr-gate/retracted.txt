@@ -1,0 +1,10 @@
+# Phrases we have retracted in review or by measurement. One per line, case-insensitive substring match.
+# The gate fails on any of these in a PR body or in the + lines of a diff. Keep the reason after a tab.
+with decode unchanged	retracted 2026-09-11 on #93: the 4090 repro measured -8 to -13% decode and -22% pool with INT8_ACT
+identical output	the 3D int4 reducer is a different reduction order; greedy-with-speculation is not bit-exact (#93 review)
+3.6x	a 4090/WSL2 headline; the native 3090 range is 1.3x to 2.5x (#93 review)
+byte-identical x5	the accept counters are deterministic per prompt, but this phrasing claimed it for decode rates (2026-09-12)
+rules out a crash	log silence in 0.28.0 does not discriminate; an EngineCore can die leaving nothing (#94, maintainer)
+two merged upstream fixes	#100 carries three fixes since 3284992
+the four hunks from upstream	#100 carries seven hunks since 3284992
+acceptance noise	acceptance is deterministic given the prompt on both sides of #54282 (2026-09-12)
