@@ -68,6 +68,11 @@ returning wrong numbers (the first port declared `LBNHC` and did exactly that; t
 The old strided-view hunk and the four block-size hunks are retired; their reasons are in the patch
 preambles and in `kvarn/README.md`.
 
+Two layout strings one letter apart appear in 0.29 boot logs and both are right: the fast profile's FLASH_ATTN
+path logs "Using LBNHC KV cache layout", KVarN (`CTX=huge`) logs "Using LBHNC". The letters are the physical
+order of the cache tensor for that backend; 0.28 logged no layout line at all. The failure to watch for is the
+reverse, KVarN declaring LBNHC, which the guard refuses at the first KV update.
+
 ## Acceptance (WSL2 4090, card 1, 2026-09-12)
 
 Same script on the 0.28.0 image and the 0.29.0 image, fresh cache volume per run.
