@@ -14,9 +14,13 @@ Apply from the installed vllm package directory:
 
 Validated against vLLM 0.28.0.
 
+--- exported from cpuchip/vllm 28f416553 (marlin-int8-layer-select); regenerate with scripts/export-patch.sh, do not edit ---
+
+diff --git a/envs.py b/envs.py
+index 786864b91..b25601bac 100755
 --- a/envs.py
 +++ b/envs.py
-@@ -177,6 +177,8 @@
+@@ -184,6 +184,8 @@
      VLLM_RAY_EXTRA_ENV_VARS_TO_COPY: str = ""
      VLLM_MARLIN_USE_ATOMIC_ADD: bool = False
      VLLM_MARLIN_INPUT_DTYPE: Literal["int8", "fp8"] | None = None
@@ -25,7 +29,7 @@ Validated against vLLM 0.28.0.
      VLLM_HUMMING_ONLINE_QUANT_CONFIG: dict[str, Any] | None = None
      VLLM_HUMMING_INPUT_QUANT_CONFIG: dict[str, Any] | None = None
      VLLM_HUMMING_USE_F16_ACCUM: bool = False
-@@ -1455,6 +1457,14 @@
+@@ -1502,6 +1504,14 @@
      "VLLM_MARLIN_INPUT_DTYPE": env_with_choices(
          "VLLM_MARLIN_INPUT_DTYPE", None, ["int8", "fp8"]
      ),
@@ -40,6 +44,8 @@ Validated against vLLM 0.28.0.
      # The online quantization dtype for humming kernel
      "VLLM_HUMMING_ONLINE_QUANT_CONFIG": lambda: maybe_convert_json_str_or_file(
          os.environ.get("VLLM_HUMMING_ONLINE_QUANT_CONFIG", None)
+diff --git a/model_executor/layers/quantization/utils/marlin_utils.py b/model_executor/layers/quantization/utils/marlin_utils.py
+index 3658761d6..bcd33934d 100644
 --- a/model_executor/layers/quantization/utils/marlin_utils.py
 +++ b/model_executor/layers/quantization/utils/marlin_utils.py
 @@ -666,7 +666,17 @@
