@@ -42,6 +42,15 @@ Carried after the port, because the 0.29.0 tag does not have them and the fork's
 Both are on the fork branch as commits (`cpuchip/vllm` `qwen38/0.29` at 708d18c64) and exported from there,
 so a pin that carries the upstream change retires the file by dropping the commit.
 
+Every other file in `patches/` was regenerated the same way in this port's last pass. Before that, the shipped
+0.29 image placed nine of them by fuzz (GNU patch's default of two lines of slack when the context does not
+match: hybrid-sw-block-promote, mamba-align-checkpoint-order, offload-dflash-eagle-groups, offload-wsl2-devptr,
+spec-decode-attn, spec-sampler-prewarm, speed-knobs-envs, triton-prefill-attn-int8, vision-tower-cpu-offload;
+found by threadchip replaying the apply loop against a pristine wheel), and nothing reported it because the
+check counted fuzz and offset under one word. The files now apply to v0.29.0 with exact context (30 clean, 1
+at an offset, 0 with fuzz), the tree they produce is byte-identical to the fork branch, and both the Dockerfile
+and `check_vllm_series.sh` run `patch --fuzz 0`, so the next drift fails the build and names the patch.
+
 Adjusted for 0.29 API changes:
 
 - `ngram-chains`: the `propose` override takes and forwards `dp_sync` (new runner signature).

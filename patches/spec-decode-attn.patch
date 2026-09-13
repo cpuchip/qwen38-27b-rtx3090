@@ -29,11 +29,15 @@ block - leaves the captured decode graph reading freed memory.
 Apply from the repo root:
   patch -p1 -d venv/lib/python3.12/site-packages/vllm < patches/spec-decode-attn.patch
 
+--- exported from cpuchip/vllm bc134de8d (spec-decode-attn); regenerate with scripts/export-patch.sh, do not edit ---
+
+diff --git a/v1/attention/backends/flash_attn.py b/v1/attention/backends/flash_attn.py
+index 9a6c66f5e..aaca7cde7 100755
 --- a/v1/attention/backends/flash_attn.py
 +++ b/v1/attention/backends/flash_attn.py
-@@ -1038,6 +1038,37 @@
-                     )
-                     causal = not has_window
+@@ -1159,6 +1159,37 @@
+                     block_table = block_table[:, :num_pages]
+                     num_splits = 1
  
 +                # syv patch: split-KV Triton attention for speculative-decode
 +                # batches (1 < queries/request <= 10). FA2 does not split the KV
@@ -69,7 +73,7 @@ Apply from the repo root:
                  flash_attn_varlen_func(
                      q=query[:num_actual_tokens],
                      k=key_cache,
-@@ -1688,3 +1719,61 @@
+@@ -1832,3 +1863,61 @@
  
      # Merge prefix and suffix outputs, and store the result in output.
      merge_attn_states(output, prefix_output, prefix_lse, suffix_output, suffix_lse)
@@ -131,7 +135,10 @@ Apply from the repo root:
 +        _SPEC_ATTN[key] = att
 +    att.run(q, key_cache, value_cache, out, cu_seqlens_q, seqused_k, block_table, impl.scale,
 +            cu_seqlens_q.shape[0] - 1, max_seqlen_q)
---- a/v1/attention/ops/spec_decode_attn.py
+diff --git a/v1/attention/ops/spec_decode_attn.py b/v1/attention/ops/spec_decode_attn.py
+new file mode 100644
+index 000000000..7b4e7a1bf
+--- /dev/null
 +++ b/v1/attention/ops/spec_decode_attn.py
 @@ -0,0 +1,201 @@
 +"""Split-KV paged attention for speculative-decode batches (a few query tokens per

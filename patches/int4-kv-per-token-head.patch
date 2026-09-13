@@ -53,35 +53,16 @@ carries in hybrid-sw-block-promote.patch (dropped here), plus a mamba
 GCD-hash change whose branch is unreachable under the launchers'
 `--mamba-cache-mode align` (dropped; details in the PR thread).
 
---- generated hunks below ---
-
 Retired on the 0.29 port: mechanism 1 (the padded-page view in v1/worker/gpu/attn_utils.py). vLLM 0.29 builds
 every layer view from placement metadata (KVCacheTensor layer_stride/block_stride, compute_layout_strides with a
 padded_page_size, upstream #51718), so a padded page no longer needs a narrowing view; the flat .view() that
 failed on 0.28 is gone. Mechanisms 2 and 3 below still apply. To be proven by booting the int4 profile
 (single-user/alternative.sh dflash2) on the 0.29 image.
 
---- a/v1/attention/ops/triton_unified_attention.py
-+++ b/v1/attention/ops/triton_unified_attention.py
-@@ -856,9 +856,6 @@
-     # Sub-byte packed mode (INT4) needs a bespoke kernel (split-dot +
-     # sub-byte unpack); everything else goes through the core kernel below.
-     if kv_quant_mode == KVQuantMode.INT4_PER_TOKEN_HEAD:
--        assert use_causal and not use_per_seq_causal, (
--            "INT4_PER_TOKEN_HEAD only supports causal attention"
--        )
-         from vllm.v1.attention.ops.int4_per_token_head import (
-             unified_attention_int4,
-         )
-@@ -891,6 +888,8 @@
-             softmax_segm_output=softmax_segm_output,
-             softmax_segm_max=softmax_segm_max,
-             softmax_segm_expsum=softmax_segm_expsum,
-+            use_causal=use_causal,
-+            per_seq_causal_ptr=per_seq_causal_ptr,
-         )
-         return
- 
+--- exported from cpuchip/vllm bf79e5996 (int4-kv-per-token-head); regenerate with scripts/export-patch.sh, do not edit ---
+
+diff --git a/v1/attention/ops/int4_per_token_head.py b/v1/attention/ops/int4_per_token_head.py
+index 322d32bb8..6e8de7295 100644
 --- a/v1/attention/ops/int4_per_token_head.py
 +++ b/v1/attention/ops/int4_per_token_head.py
 @@ -385,6 +385,9 @@
@@ -141,3 +122,26 @@ failed on 0.28 is gone. Mechanisms 2 and 3 below still apply. To be proven by bo
      )
  
      out_f = single_rht(out.float(), inverse=True) / head_size
+diff --git a/v1/attention/ops/triton_unified_attention.py b/v1/attention/ops/triton_unified_attention.py
+index ce4a85cfe..f4d9ba95f 100644
+--- a/v1/attention/ops/triton_unified_attention.py
++++ b/v1/attention/ops/triton_unified_attention.py
+@@ -856,9 +856,6 @@
+     # Sub-byte packed mode (INT4) needs a bespoke kernel (split-dot +
+     # sub-byte unpack); everything else goes through the core kernel below.
+     if kv_quant_mode == KVQuantMode.INT4_PER_TOKEN_HEAD:
+-        assert use_causal and not use_per_seq_causal, (
+-            "INT4_PER_TOKEN_HEAD only supports causal attention"
+-        )
+         from vllm.v1.attention.ops.int4_per_token_head import (
+             unified_attention_int4,
+         )
+@@ -891,6 +888,8 @@
+             softmax_segm_output=softmax_segm_output,
+             softmax_segm_max=softmax_segm_max,
+             softmax_segm_expsum=softmax_segm_expsum,
++            use_causal=use_causal,
++            per_seq_causal_ptr=per_seq_causal_ptr,
+         )
+         return
+ 

@@ -10,25 +10,31 @@ Apply from the installed vllm package directory:
 
 Validated against vLLM 0.28.0. Reapply after upgrades.
 
+--- exported from cpuchip/vllm a436cf164 (qwen3_5-embed-quant); regenerate with scripts/export-patch.sh, do not edit ---
+
+diff --git a/model_executor/models/qwen3_5.py b/model_executor/models/qwen3_5.py
+index f991f05d7..fe960984b 100644
 --- a/model_executor/models/qwen3_5.py
 +++ b/model_executor/models/qwen3_5.py
-@@ -243,6 +243,8 @@
+@@ -245,6 +245,8 @@
          self.embed_tokens = VocabParallelEmbedding(
              self.vocab_size,
              config.hidden_size,
 +            quant_config=self.quant_config,
 +            prefix=maybe_prefix(prefix, "embed_tokens"),
          )
-
+ 
          def get_layer(prefix: str):
+diff --git a/model_executor/models/qwen3_5_mtp.py b/model_executor/models/qwen3_5_mtp.py
+index 4c064bead..384142f56 100644
 --- a/model_executor/models/qwen3_5_mtp.py
 +++ b/model_executor/models/qwen3_5_mtp.py
-@@ -82,6 +82,8 @@
+@@ -84,6 +84,8 @@
          self.embed_tokens = VocabParallelEmbedding(
              self.vocab_size,
              config.hidden_size,
 +            quant_config=vllm_config.quant_config,
 +            prefix=maybe_prefix(prefix, "embed_tokens"),
          )
-
+ 
          # Workaround: mtp.fc is stored as BF16 in NVFP4 checkpoints but is

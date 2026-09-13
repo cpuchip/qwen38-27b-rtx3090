@@ -2,8 +2,10 @@ Ported to 0.29: the propose() override takes dp_sync (DPSyncState) instead of nu
 runner call and the DFlashSpeculator base (upstream changed the signature in 0.29); the inner draft path still receives
 num_tokens_across_dp from the base.
 
+--- exported from cpuchip/vllm 4aa7a2c65 (dflash2-ngram-chains); regenerate with scripts/export-patch.sh, do not edit ---
+
 diff --git a/v1/worker/gpu/spec_decode/dflash2/speculator.py b/v1/worker/gpu/spec_decode/dflash2/speculator.py
-index 9d299de5a..1371aab30 100644
+index 5a8d24883..22bbfb441 100644
 --- a/v1/worker/gpu/spec_decode/dflash2/speculator.py
 +++ b/v1/worker/gpu/spec_decode/dflash2/speculator.py
 @@ -2,6 +2,7 @@
@@ -14,7 +16,7 @@ index 9d299de5a..1371aab30 100644
  from typing import Any
  
  import torch
-@@ -11,7 +12,10 @@ from vllm.config import VllmConfig
+@@ -11,7 +12,10 @@
  from vllm.logger import init_logger
  from vllm.triton_utils import tl, triton
  from vllm.v1.worker.gpu.sample.gumbel import gumbel_noised_argmax
@@ -26,7 +28,7 @@ index 9d299de5a..1371aab30 100644
  
  logger = init_logger(__name__)
  from vllm.v1.worker.gpu.spec_decode.dflash2.lookup import (
-@@ -255,6 +259,54 @@ class DFlash2Speculator(DFlashSpeculator):
+@@ -258,6 +262,54 @@
          self._lookup_sticky = int(os.environ.get("VLLM_DFLASH2_LOOKUP_STICKY", "3"))
          self._sticky = 0
  
@@ -81,7 +83,7 @@ index 9d299de5a..1371aab30 100644
          if self._lookup:
              logger.info(
                  "DFlash2 lookup-augmented drafting on (k=%d nmin=%d nmax=%d nstrong=%d "
-@@ -277,6 +329,11 @@ class DFlash2Speculator(DFlashSpeculator):
+@@ -280,6 +332,11 @@
          unanimity across the batch. Below CHEAP_CTX tokens of context an extra verify
          position is nearly free (+6% per step at 1.5k against +27% at 25k), so there the
          flag alone is enough."""
@@ -93,7 +95,7 @@ index 9d299de5a..1371aab30 100644
          if not self._adaptive:
              return None
          emitted = getattr(self, "last_num_emitted", None)
-@@ -314,6 +371,251 @@ class DFlash2Speculator(DFlashSpeculator):
+@@ -317,6 +374,251 @@
          self._prev_want = want
          return self.num_speculative_steps if long_block else self.draft_block
  
@@ -345,7 +347,7 @@ index 9d299de5a..1371aab30 100644
      def set_req_states(self, req_states) -> None:
          """The token history the lookup matches against (set by the model runner)."""
          self._req_states = req_states
-@@ -326,6 +628,10 @@ class DFlash2Speculator(DFlashSpeculator):
+@@ -329,6 +631,10 @@
      def set_sampling_states(self, sampling_states) -> None:
          self._req_top_p = sampling_states.top_p.gpu
          self._req_top_k = sampling_states.top_k.gpu
@@ -356,7 +358,7 @@ index 9d299de5a..1371aab30 100644
  
      def _sample_path(
          self,
-@@ -479,3 +785,16 @@ class DFlash2Speculator(DFlashSpeculator):
+@@ -482,3 +788,16 @@
              BLOCK_K=block_k,
              num_warps=1,
          )

@@ -1,6 +1,11 @@
-diff -ruN a/model_executor/models/qwen3_dflash.py b/model_executor/models/qwen3_dflash.py
---- a/model_executor/models/qwen3_dflash.py	2026-09-12 06:19:16.350265167 +0000
-+++ b/model_executor/models/qwen3_dflash.py	2026-09-12 06:19:16.565161867 +0000
+lookup-augmented drafting for DFlash2 (n-gram search over the context)
+
+--- exported from cpuchip/vllm 722ee2721 (dflash2-lookup-drafting); regenerate with scripts/export-patch.sh, do not edit ---
+
+diff --git a/model_executor/models/qwen3_dflash.py b/model_executor/models/qwen3_dflash.py
+index 0a481b382..d38adfc88 100644
+--- a/model_executor/models/qwen3_dflash.py
++++ b/model_executor/models/qwen3_dflash.py
 @@ -355,6 +355,37 @@
          return hidden_states, residual
  
@@ -48,9 +53,10 @@ diff -ruN a/model_executor/models/qwen3_dflash.py b/model_executor/models/qwen3_
          self._fused_kv_weight = torch.cat(kv_weights, dim=0)
          if has_bias:
              kv_biases = [a.qkv_proj.bias[a.q_size :] for a in layers_attn]
-diff -ruN a/model_executor/models/qwen3_dflash2.py b/model_executor/models/qwen3_dflash2.py
---- a/model_executor/models/qwen3_dflash2.py	2026-09-12 06:19:16.353224620 +0000
-+++ b/model_executor/models/qwen3_dflash2.py	2026-09-12 06:19:16.568164451 +0000
+diff --git a/model_executor/models/qwen3_dflash2.py b/model_executor/models/qwen3_dflash2.py
+index cb027293f..9aec93037 100644
+--- a/model_executor/models/qwen3_dflash2.py
++++ b/model_executor/models/qwen3_dflash2.py
 @@ -127,8 +127,15 @@
              hidden_size=config.hidden_size,
              taps=int(draft_config["conv_kernel_size"]),
@@ -69,9 +75,10 @@ diff -ruN a/model_executor/models/qwen3_dflash2.py b/model_executor/models/qwen3
              params_dtype=vllm_config.model_config.dtype,
          )
          self.attention_conv = DFlashGroupedConv(
-diff -ruN a/v1/worker/gpu/cudagraph_utils.py b/v1/worker/gpu/cudagraph_utils.py
---- a/v1/worker/gpu/cudagraph_utils.py	2026-09-12 06:19:16.357155420 +0000
-+++ b/v1/worker/gpu/cudagraph_utils.py	2026-09-12 06:19:16.572252610 +0000
+diff --git a/v1/worker/gpu/cudagraph_utils.py b/v1/worker/gpu/cudagraph_utils.py
+index f6564dadc..76610a4bc 100644
+--- a/v1/worker/gpu/cudagraph_utils.py
++++ b/v1/worker/gpu/cudagraph_utils.py
 @@ -229,6 +229,33 @@
              )
          else:
@@ -106,9 +113,10 @@ diff -ruN a/v1/worker/gpu/cudagraph_utils.py b/v1/worker/gpu/cudagraph_utils.py
  
          capture_varlen_decode = (
              separate_decode_routine and bool(decode_mode) and self.varlen_decode
-diff -ruN a/v1/worker/gpu/model_runner.py b/v1/worker/gpu/model_runner.py
---- a/v1/worker/gpu/model_runner.py	2026-09-12 06:19:16.360024218 +0000
-+++ b/v1/worker/gpu/model_runner.py	2026-09-12 06:19:16.575162301 +0000
+diff --git a/v1/worker/gpu/model_runner.py b/v1/worker/gpu/model_runner.py
+index 0ee05328c..3ce6998ef 100644
+--- a/v1/worker/gpu/model_runner.py
++++ b/v1/worker/gpu/model_runner.py
 @@ -306,6 +306,9 @@
              num_prefill_lookahead=num_prefill_lookahead,
          )
@@ -148,9 +156,10 @@ diff -ruN a/v1/worker/gpu/model_runner.py b/v1/worker/gpu/model_runner.py
              )
  
          # Post-step KV connector related operations.
-diff -ruN a/v1/worker/gpu/spec_decode/dflash/speculator.py b/v1/worker/gpu/spec_decode/dflash/speculator.py
---- a/v1/worker/gpu/spec_decode/dflash/speculator.py	2026-09-12 06:19:16.363606479 +0000
-+++ b/v1/worker/gpu/spec_decode/dflash/speculator.py	2026-09-12 06:19:16.579028852 +0000
+diff --git a/v1/worker/gpu/spec_decode/dflash/speculator.py b/v1/worker/gpu/spec_decode/dflash/speculator.py
+index dd1bfdd5e..c6c57e414 100644
+--- a/v1/worker/gpu/spec_decode/dflash/speculator.py
++++ b/v1/worker/gpu/spec_decode/dflash/speculator.py
 @@ -1,6 +1,7 @@
  # SPDX-License-Identifier: Apache-2.0
  # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
@@ -256,9 +265,11 @@ diff -ruN a/v1/worker/gpu/spec_decode/dflash/speculator.py b/v1/worker/gpu/spec_
                  self.max_num_reqs,
                  self.max_num_tokens,
                  self.max_model_len,
-diff -ruN a/v1/worker/gpu/spec_decode/dflash2/lookup.py b/v1/worker/gpu/spec_decode/dflash2/lookup.py
---- a/v1/worker/gpu/spec_decode/dflash2/lookup.py	1970-01-01 00:00:00.000000000 +0000
-+++ b/v1/worker/gpu/spec_decode/dflash2/lookup.py	2026-09-12 06:19:16.582436409 +0000
+diff --git a/v1/worker/gpu/spec_decode/dflash2/lookup.py b/v1/worker/gpu/spec_decode/dflash2/lookup.py
+new file mode 100644
+index 000000000..0315b6ecb
+--- /dev/null
++++ b/v1/worker/gpu/spec_decode/dflash2/lookup.py
 @@ -0,0 +1,330 @@
 +"""Lookup-augmented block drafting (LABD).
 +
@@ -590,9 +601,10 @@ diff -ruN a/v1/worker/gpu/spec_decode/dflash2/lookup.py b/v1/worker/gpu/spec_dec
 +        BLOCK_KT=triton.next_power_of_2(k),
 +        num_warps=1,
 +    )
-diff -ruN a/v1/worker/gpu/spec_decode/dflash2/speculator.py b/v1/worker/gpu/spec_decode/dflash2/speculator.py
---- a/v1/worker/gpu/spec_decode/dflash2/speculator.py	2026-09-12 06:19:16.366700705 +0000
-+++ b/v1/worker/gpu/spec_decode/dflash2/speculator.py	2026-09-12 06:19:16.585360876 +0000
+diff --git a/v1/worker/gpu/spec_decode/dflash2/speculator.py b/v1/worker/gpu/spec_decode/dflash2/speculator.py
+index 1cd19acda..5a8d24883 100644
+--- a/v1/worker/gpu/spec_decode/dflash2/speculator.py
++++ b/v1/worker/gpu/spec_decode/dflash2/speculator.py
 @@ -1,16 +1,25 @@
  # SPDX-License-Identifier: Apache-2.0
  # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
@@ -1040,9 +1052,10 @@ diff -ruN a/v1/worker/gpu/spec_decode/dflash2/speculator.py b/v1/worker/gpu/spec
 +            BLOCK_K=block_k,
 +            num_warps=1,
 +        )
-diff -ruN a/v1/worker/gpu/spec_decode/utils.py b/v1/worker/gpu/spec_decode/utils.py
---- a/v1/worker/gpu/spec_decode/utils.py	2026-09-12 06:19:16.369596905 +0000
-+++ b/v1/worker/gpu/spec_decode/utils.py	2026-09-12 06:19:16.588226119 +0000
+diff --git a/v1/worker/gpu/spec_decode/utils.py b/v1/worker/gpu/spec_decode/utils.py
+index e25672e95..1f712a07d 100644
+--- a/v1/worker/gpu/spec_decode/utils.py
++++ b/v1/worker/gpu/spec_decode/utils.py
 @@ -20,10 +20,16 @@
          self.num_draft_tokens: int = 0
  
