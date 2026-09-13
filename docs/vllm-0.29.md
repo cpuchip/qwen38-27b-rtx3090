@@ -29,6 +29,19 @@ Carried from #100's branch: the launcher defaults `expandable_segments` off when
 configured. Main never had it, so the offload profile cannot boot on a native box from main (vLLM refuses a
 KV connector under the VMM allocator); WSL2 does not see it because its default is already off.
 
+Carried after the port, because the 0.29.0 tag does not have them and the fork's open PRs do (#100, #101):
+
+- `offload-mtp-serve.patch` (upstream #52771 and #52807, with the finished-request store watermark clamp):
+  all seven hunks apply to the 0.29 tree unchanged. With it the offload profile serves stored hits under
+  MTP/EAGLE on 0.29 as it does on the #100 branch; `bench/replay_offload_serve.py` is the oracle.
+- `mamba-align-retire-null-gaps.patch` (upstream #55450): the `_remove_blocks_in_range` override applies
+  unchanged; the field init and the free-path pop are re-anchored around 0.29's `_num_checkpoint_blocks`.
+  What it buys is peak pool pressure during long align-mode prefills (about one pool token per prompt token
+  on 0.28, both boxes); the long profile's peak rows are the check.
+
+Both are on the fork branch as commits (`cpuchip/vllm` `qwen38/0.29` at 708d18c64) and exported from there,
+so a pin that carries the upstream change retires the file by dropping the commit.
+
 Adjusted for 0.29 API changes:
 
 - `ngram-chains`: the `propose` override takes and forwards `dp_sync` (new runner signature).
