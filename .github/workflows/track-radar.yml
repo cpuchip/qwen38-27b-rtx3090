@@ -43,7 +43,9 @@ jobs:
         run: |
           set +e
           : > ../stops.txt
-          GIT_EDITOR=true git rebase --onto upstream/main "${{ steps.base.outputs.base }}" >/dev/null 2>&1
+          # --autosquash folds "fixup!" commits into their topics first, so a skipped topic does not turn
+          # each of its fixups into a phantom stop (first run, 2026-09-13).
+          GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase --autosquash --onto upstream/main "${{ steps.base.outputs.base }}" >/dev/null 2>&1
           while [ -d "$(git rev-parse --git-path rebase-merge)" ]; do
             subj=$(head -1 "$(git rev-parse --git-path rebase-merge)/message")
             files=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
