@@ -41,7 +41,9 @@ python scripts/pr-gate/pr_gate.py --branch offload-mtp-serve --body body.md   # 
 python scripts/pr-gate/pr_gate.py --pr 100 --pristine /path/to/vllm-v0.28.0   # also run the integrity script
 ```
 
-It reports FAIL, WARN and OK per check and exits non-zero on any FAIL. It checks bar items 1, 4, 5, 6, 7, 8 and
+With `--pr` it refuses to run when the local branch is not at the PR's head (a stale checkout once reported six
+hunks for a seven-hunk head, green); `--local-head` is the pre-push case where the local head is meant to
+replace the PR's. It reports FAIL, WARN and OK per check and exits non-zero on any FAIL. It checks bar items 1, 4, 5, 6, 7, 8 and
 9 as far as text can (counts against hunks, series line, env registration, retracted phrases from
 `scripts/pr-gate/retracted.txt`, capability guards, sibling launchers, promised docs, numbers without a
 configuration, em-dashes and attribution lines), and prints the manual list for 2, 3 and 10. A green gate is

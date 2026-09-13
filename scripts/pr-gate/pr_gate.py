@@ -47,12 +47,20 @@ def main():
     ap.add_argument("--base", default="syv-main")
     ap.add_argument("--git", default=os.path.abspath(os.path.join(HERE, "..", "..")))
     ap.add_argument("--pristine")
+    ap.add_argument("--local-head", action="store_true", help="with --pr: gate the local branch head even though it differs from the PR head (the pre-push case)")
     a = ap.parse_args()
 
     if a.pr:
-        pr = json.loads(run(["gh", "pr", "view", str(a.pr), "-R", a.repo, "--json", "title,body,headRefName,commits"]))
+        pr = json.loads(run(["gh", "pr", "view", str(a.pr), "-R", a.repo, "--json", "title,body,headRefName,headRefOid,commits"]))
         title, body, branch = pr["title"], pr["body"], a.branch or pr["headRefName"]
         lead_commit = pr["commits"][-1]["messageHeadline"] + "\n" + pr["commits"][-1].get("messageBody", "")
+        # The diff is read from the local branch. If that is not the PR's head, every objective check below
+        # (counts, series, env registration) describes a commit the reviewer will never see; say so and stop
+        # (threadchip, 2026-09-13: a worktree one commit behind reported 6 hunks for a 7-hunk head, green).
+        local = git(["rev-parse", branch], a.git).strip()
+        if local != pr["headRefOid"] and not a.local_head:
+            raise SystemExit(f"FAIL stale-diff: local {branch} is at {local[:7]}, PR #{a.pr} head is {pr['headRefOid'][:7]}. "
+                             "Fetch or check out the PR head, or pass --local-head to gate a local head that is meant to replace it.")
     else:
         if not (a.branch and a.body):
             raise SystemExit("need --pr, or --branch and --body")
