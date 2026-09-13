@@ -71,5 +71,7 @@ jobs:
               echo "No conflicts: the series applies to today's main."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
+          # Stops are the radar's reading, not a broken build: annotate, keep the run green. A red run here
+          # means the radar itself failed (clone, fetch, rebase machinery).
+          while IFS= read -r l; do echo "::warning title=track radar::will stop: $l"; done < stops.txt
           cat stops.txt
-          [ ! -s stops.txt ]
