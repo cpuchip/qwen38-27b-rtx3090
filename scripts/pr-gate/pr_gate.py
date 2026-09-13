@@ -111,7 +111,9 @@ def main():
             continue
         in_envs = f.endswith("envs.py")
         for l in lines:
-            if l.startswith("++ b/") or l.startswith("+++ b/"):
+            # A patch file's own headers arrive here with one "+" stripped: "diff --git a/x b/x", "--- a/x";
+            # its "+++ b/x" line is filtered out of the diff as a "+++" line, so key on the other two.
+            if l.startswith("diff --git ") or l.startswith("--- a/") or l.startswith("--- /dev/null"):
                 in_envs = l.rstrip().endswith("envs.py")
                 continue
             if in_envs:
