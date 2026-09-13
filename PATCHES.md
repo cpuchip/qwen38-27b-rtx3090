@@ -24,12 +24,14 @@ the 0.29 port dropped from the file and why (details in `docs/vllm-0.29.md`).
 | hybrid-sw-block-promote | fix | promote a draft SW layer's block to a divisor of the primary block instead of padding its page | none yet (upstream pads) | 0.29.0 (pad check mirrors upstream's non-MLA rule) | upstream PR |
 | int4-kv-per-token-head | feature | int4 per-token-head KV cache with the DFlash2 drafter | none | 0.29.0; padded-page view hunk retired (layout strides) | upstreamed |
 | mamba-align-checkpoint-order | fix | keep reachable Mamba state snapshots alive until request end (fork #52) | vllm #45238 (not merged) | 0.28.0 | check against upstream #52789 (internal prefill checkpoints, in 0.29) at each pin |
+| mamba-align-retire-null-gaps | backport | align mode retires Mamba state blocks across null gaps instead of stopping at the first one (fork #101) | vllm #55450 (merged 2026-09-11, not in 0.29.0) | 0.29.0 (two hunks re-anchored around `_num_checkpoint_blocks`) | the pin that carries #55450 |
 | mamba-chunked-prefill-align | fix | state loss and NaN during chunked prefill on Mamba/GDN | none yet | 0.28.0 | upstream PR |
 | marlin-int8-layer-select | local | env vars to pick which layers run W4A8 with the Marlin kernel | none | 0.28.0 | stays |
 | marlin-int8-negative-scales | fix | Marlin W4A8 reads group scales as unsigned; AutoRound exports negative ones | none yet | 0.28.0 | upstream PR |
 | marlin-repack-staged-sm80 | local | one grow-only staging buffer for the sm80 Marlin repack (fork #27) | none | 0.28.0 | stays |
 | marlin-tune-table | local | wiring for a locally built tunable Marlin extension, off by default | none | 0.27.1 source | stays |
 | offload-dflash-eagle-groups | fix | OffloadingConnector under dflash flagged every KV group as draft attention (fork #33) | none yet | 0.28.0 | upstream PR |
+| offload-mtp-serve | backport | OffloadingConnector serves stored hits under MTP/EAGLE instead of vetoing the request; load boundary from the computed offset; finished-request store watermark clamped (fork #100) | vllm #52771, #52807 (merged, not in 0.29.0) | 0.29.0 (all seven hunks unchanged) | the pin that carries both |
 | offload-wsl2-devptr | local | CPU offload tier device pointers on WSL2 | none | 0.28.0 | stays |
 | qwen3_5-embed-quant | fix | pass `quant_config` to the token embedding (main model and MTP module) | none yet | 0.28.0 | upstream PR |
 | qwen3_5-mtp-draft-vocab | feature | vocab-truncated draft head for MTP | none | 0.28.0 | upstreamed |
