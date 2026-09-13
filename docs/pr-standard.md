@@ -24,7 +24,9 @@ the part a script can check, and prints the part a person has to.
    pristine pin with `--fuzz 0` (`patches/check_vllm_series.sh`).
 7. **A new environment knob is registered in `envs.py`** (via `patches/speed-knobs-envs.patch` or its own
    patch), never read with `os.environ.get` inside a kernel: an unregistered knob is outside the
-   torch.compile cache key, and a warm-cache A/B of it is invalid.
+   torch.compile cache key, and a warm-cache A/B of it is invalid. And a knob that is registered must be read
+   through `envs.<NAME>` everywhere: a raw `os.environ.get` returns the string "0", which is truthy, while the
+   registered bool is False, so the same knob has two senses and its off switch is an on switch (found on #90).
 8. **Benches guard the hardware they need.** A test that requires sm89 skips on sm86 with a line saying so; it
    does not die with a compiler error. A test half that cannot exercise anything on this repo's kernels is
    dropped, not shipped as coverage.

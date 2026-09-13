@@ -110,15 +110,19 @@ def main():
         for l in lines:
             for m in ENV_READ.finditer(l):
                 reads.add(m.group(2))
+    # Bar item 7 says never read a knob with os.environ inside vLLM code, registered or not: the registered
+    # bool and a raw string read disagree at "0" (the string is truthy), so a knob read both ways has two
+    # senses (threadchip on #90, 2026-09-14). Any such read fails; the fix is `envs.<NAME>`.
     if reads:
         all_patches = git(["ls-tree", "-r", "--name-only", branch, "--", "patches"], a.git).split()
         envs_text = "\n".join(head_tree(p) for p in all_patches if p.endswith(".patch"))
         envs_text += head_tree("kvarn/kvarn-0.29.0.patch") + head_tree("kvarn/kvarn-0.28.0.patch")
         unregistered = sorted(k for k in reads if not re.search(rf"^\+.*[\"']{k}[\"']\s*:\s*lambda|^\+\s*{k}\s*:", envs_text, re.M))
-        report("FAIL" if unregistered else "OK", "env-registration",
-               f"read with os.environ but not registered in envs.py: {unregistered}" if unregistered else f"knobs read in the diff are registered: {sorted(reads)}")
+        report("FAIL", "env-registration",
+               f"knobs read with os.environ in vLLM code (read them through envs.<NAME>): {sorted(reads)}"
+               + (f"; also unregistered: {unregistered}" if unregistered else ""))
     else:
-        report("OK", "env-registration", "no new os.environ reads in the diff")
+        report("OK", "env-registration", "no os.environ reads of VLLM_ knobs in the diff")
 
     # 4. retracted phrases
     phrases = []
