@@ -47,11 +47,14 @@ jobs:
           # each of its fixups into a phantom stop (first run, 2026-09-13).
           GIT_EDITOR=true GIT_SEQUENCE_EDITOR=true git rebase --autosquash --onto upstream/main "${{ steps.base.outputs.base }}" >/dev/null 2>&1
           while [ -d "$(git rev-parse --git-path rebase-merge)" ]; do
-            subj=$(head -1 "$(git rev-parse --git-path rebase-merge)/message")
+            # First non-comment line: a folded fixup's message starts with "# This is a combination of..."
+            subj=$(grep -v '^#' "$(git rev-parse --git-path rebase-merge)/message" | grep -m1 .)
             files=$(git diff --name-only --diff-filter=U | tr '\n' ' ')
             echo "$subj :: $files" >> ../stops.txt
             GIT_EDITOR=true git rebase --skip >/dev/null 2>&1
           done
+          # A skipped topic makes its own fixups stop again; one topic is one stop.
+          sort -u -t: -k1,1 ../stops.txt -o ../stops.txt
           echo "stops: $(wc -l < ../stops.txt)"
 
       - name: Report
