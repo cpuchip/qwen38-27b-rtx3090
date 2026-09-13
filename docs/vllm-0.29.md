@@ -68,6 +68,18 @@ returning wrong numbers (the first port declared `LBNHC` and did exactly that; t
 The old strided-view hunk and the four block-size hunks are retired; their reasons are in the patch
 preambles and in `kvarn/README.md`.
 
+On WSL2 the ttft/prefill/decode split of a single long request is unstable across builds while the request
+total is not: the same 25k prompt on the huge profile moved from 9.75 s to first token and 20 tok/s decode
+(0.29 without the backports) to 15.68 s and 78 tok/s (with them) with the total within 8 percent and equal
+quality, and the native 3090 shows neither the split nor the move (16.37 s vs 16.46 s, totals within 1 percent).
+Read totals and counters on WSL2; the split is where the first content byte lands relative to the work, not
+compute (threadchip's reading, 2026-09-13).
+
+Two layout strings one letter apart appear in 0.29 boot logs and both are right: the fast profile's FLASH_ATTN
+path logs "Using LBNHC KV cache layout", KVarN (`CTX=huge`) logs "Using LBHNC". The letters are the physical
+order of the cache tensor for that backend; 0.28 logged no layout line at all. The failure to watch for is the
+reverse, KVarN declaring LBNHC, which the guard refuses at the first KV update.
+
 ## Acceptance (WSL2 4090, card 1, 2026-09-12)
 
 Same script on the 0.28.0 image and the 0.29.0 image, fresh cache volume per run.
