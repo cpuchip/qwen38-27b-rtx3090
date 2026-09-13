@@ -28,9 +28,13 @@ Apply from the installed vllm package directory:
 
 Written against vLLM 0.27.1.
 
+--- exported from cpuchip/vllm bdfdf87c2 (marlin-tune-table); regenerate with scripts/export-patch.sh, do not edit ---
+
+diff --git a/_custom_ops.py b/_custom_ops.py
+index 78a4c4315..d91311f76 100644
 --- a/_custom_ops.py
 +++ b/_custom_ops.py
-@@ -1197,6 +1197,53 @@
+@@ -1265,6 +1265,53 @@
      return torch.ops._C.marlin_int4_fp8_preprocess(qweight, qzeros_or_none, inplace)
  
  
@@ -84,7 +88,7 @@ Written against vLLM 0.27.1.
  def marlin_gemm(
      a: torch.Tensor,
      c: torch.Tensor | None,
-@@ -1218,6 +1265,11 @@
+@@ -1286,6 +1333,11 @@
      use_fp32_reduce: bool = False,
      is_zp_float: bool = False,
  ) -> torch.Tensor:

@@ -37,22 +37,27 @@ SKIP=(dflash2-backport.patch)
 
 echo "== pass 1: the whole series, GNU patch, glob order"
 git -C "$GIT_ROOT" checkout -q -- . && git -C "$GIT_ROOT" clean -qfd
+# --fuzz 0: an offset means the context matched exactly and the file merely grew around it; fuzz means the
+# context did NOT match and GNU patch accepted an approximate anchor. The first is benign and reported, the
+# second is a patch cut against a tree that no longer exists, and it fails here instead of landing by guess
+# (the same flag is on the Dockerfile's apply loop, so the image cannot carry what this check would refuse).
 count=0; offset=0
 for p in "$HERE"/patches/*.patch; do
   name=$(basename "$p")
   for s in "${SKIP[@]}"; do [ "$name" = "$s" ] && continue 2; done
-  out=$(patch -p1 --forward --no-backup-if-mismatch -d "$VLLM_SOURCE" < "$p" 2>&1) || {
-    echo "FAILED: $name"; echo "$out" | sed 's/^/    /'; exit 1
+  out=$(patch -p1 --forward --no-backup-if-mismatch --fuzz 0 -d "$VLLM_SOURCE" < "$p" 2>&1) || {
+    echo "FAILED: $name (a hunk's context does not exist in this tree; regenerate the patch against the pin)"
+    echo "$out" | sed 's/^/    /'; exit 1
   }
-  n=$(printf '%s\n' "$out" | grep -c "offset\|with fuzz" || true)
-  [ "$n" -gt 0 ] && { echo "   $name (applied, $n hunk(s) with offset)"; offset=$((offset+1)); }
+  n=$(printf '%s\n' "$out" | grep -c "offset" || true)
+  [ "$n" -gt 0 ] && { echo "   $name (applied, $n hunk(s) with an offset, context exact)"; offset=$((offset+1)); }
   count=$((count+1))
 done
 if git -C "$GIT_ROOT" diff --quiet; then
   echo "ERROR: the series applied but changed nothing -- the paths did not resolve." >&2
   exit 1
 fi
-echo "   $count patches applied, $offset with an offset"
+echo "   $count patches applied with exact context, $offset of them at an offset, 0 with fuzz"
 
 echo "== pass 2: the ordered DFlash patches, git apply --check"
 git -C "$GIT_ROOT" checkout -q -- . && git -C "$GIT_ROOT" clean -qfd

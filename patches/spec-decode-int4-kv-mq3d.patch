@@ -1,8 +1,12 @@
-diff --git a/vllm/v1/attention/ops/int4_per_token_head.py b/vllm/v1/attention/ops/int4_per_token_head.py
-index 6e8de72..1400469 100644
+multi-query 3D int4 verify path
+
+--- exported from cpuchip/vllm 96603512a (spec-decode-int4-kv-mq3d); regenerate with scripts/export-patch.sh, do not edit ---
+
+diff --git a/v1/attention/ops/int4_per_token_head.py b/v1/attention/ops/int4_per_token_head.py
+index 6e8de7295..d14902d20 100644
 --- a/v1/attention/ops/int4_per_token_head.py
 +++ b/v1/attention/ops/int4_per_token_head.py
-@@ -12,6 +12,7 @@ kernel, the RHT transform, and the public ``reshape_and_cache_int4`` /
+@@ -12,6 +12,7 @@
  
  from __future__ import annotations
  
@@ -10,7 +14,7 @@ index 6e8de72..1400469 100644
  from typing import Any
  
  import torch
-@@ -741,16 +742,41 @@ def _launch_packed_attn(
+@@ -741,16 +742,41 @@
          head_size, sliding_window_val, q.element_size(), is_prefill=False
      )
  
@@ -53,11 +57,11 @@ index 6e8de72..1400469 100644
  
      # 3D never reads ``output_ptr`` and 2D never reads the segm tensors,
      # but Triton needs a non-null pointer everywhere; reuse ``out`` as
-diff --git a/vllm/v1/attention/ops/triton_unified_attention.py b/vllm/v1/attention/ops/triton_unified_attention.py
-index f4d9ba9..e92cc4c 100644
+diff --git a/v1/attention/ops/triton_unified_attention.py b/v1/attention/ops/triton_unified_attention.py
+index f4d9ba95f..e92cc4ced 100644
 --- a/v1/attention/ops/triton_unified_attention.py
 +++ b/v1/attention/ops/triton_unified_attention.py
-@@ -715,6 +715,27 @@ def reduce_segments(
+@@ -715,6 +715,27 @@
      # sequence len for this particular sequence
      seq_len = tl.load(seq_lens_ptr + seq_idx)
  
