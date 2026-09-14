@@ -42,10 +42,10 @@ the sort order; the series file replaced it and the name came back).
 
 Written against vLLM 0.27.1.
 
---- exported from cpuchip/vllm f23785f6f (prefill-attn-int8); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 1caa43d11 (prefill-attn-int8); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/attention/backends/flash_attn.py b/v1/attention/backends/flash_attn.py
-index 778cb1a72..bf6c5aebe 100755
+index 61fabdebb..829866b72 100755
 --- a/v1/attention/backends/flash_attn.py
 +++ b/v1/attention/backends/flash_attn.py
 @@ -1159,6 +1159,50 @@

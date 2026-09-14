@@ -40,7 +40,7 @@ Ported to 0.29.0 from the fork's PR#100 branch (syv-ai/qwen38-27b-rtx3090, patch
 Signed-off-by: Michael Stufflebeam <cpuchip@gmail.com>
 Co-authored-by: Claude <noreply@anthropic.com>
 
---- exported from cpuchip/vllm 75e7243d1 (offload-mtp-serve); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 32ec876d3 (offload-mtp-serve); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py b/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py
 index bf12f4740..3ae8893e2 100644

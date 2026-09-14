@@ -92,7 +92,7 @@ VERIFICATION
 
 ---
 
---- exported from cpuchip/vllm f8dfd56f2 (spec-decode-scratch-token-units); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 88076b41b (spec-decode-scratch-token-units); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/attention/backends/triton_attn.py b/v1/attention/backends/triton_attn.py
 index ee4d10906..70a6e6cc4 100644
@@ -230,14 +230,15 @@ index ee4d10906..70a6e6cc4 100644
              softmax_segm_output=softmax_segm_output,
              softmax_segm_max=softmax_segm_max,
 diff --git a/v1/attention/ops/int4_per_token_head.py b/v1/attention/ops/int4_per_token_head.py
-index d14902d20..a6072a446 100644
+index 58b73d569..ece955e6e 100644
 --- a/v1/attention/ops/int4_per_token_head.py
 +++ b/v1/attention/ops/int4_per_token_head.py
-@@ -13,6 +13,29 @@
+@@ -12,7 +12,30 @@
+ 
  from __future__ import annotations
  
- import os
 +
+ import vllm.envs as envs
 +from vllm.logger import init_logger
 +
 +logger = init_logger(__name__)
@@ -275,7 +276,7 @@ index d14902d20..a6072a446 100644
 @@ -752,10 +777,33 @@
      # buffers directly. Opt-in via VLLM_INT4_MQ_3D=1 (promotion gates open).
      _mq = max_seqlen_q > 1
-     _mq_3d_enabled = os.environ.get("VLLM_INT4_MQ_3D", "0") == "1"
+     _mq_3d_enabled = envs.VLLM_INT4_MQ_3D
 -    _capacity_ok = (
 +
 +    # The eligibility bound and the allocation bound now come from ONE source (see
@@ -355,7 +356,7 @@ index d14902d20..a6072a446 100644
 +    # The reason bit: which predicate said no. Kept because "it fell back" was the whole
 +    # defect -- the seq-vs-token bug was invisible for as long as the fallback had no
 +    # stated cause. Off unless explicitly enabled.
-     if os.environ.get("VLLM_INT4_MQ_3D_DEBUG") == "1":
+     if envs.VLLM_INT4_MQ_3D_DEBUG:
 +        _why = []
 +        if seq_threshold_3D is None: _why.append("no_seq_threshold")
 +        if num_par_softmax_segments is None: _why.append("no_segments")

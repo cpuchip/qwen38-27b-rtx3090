@@ -29,10 +29,10 @@ block - leaves the captured decode graph reading freed memory.
 Apply from the repo root:
   patch -p1 -d venv/lib/python3.12/site-packages/vllm < patches/spec-decode-attn.patch
 
---- exported from cpuchip/vllm 531818e49 (spec-decode-attn); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 1e675910e (spec-decode-attn); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/attention/backends/flash_attn.py b/v1/attention/backends/flash_attn.py
-index 9a6c66f5e..a74255a2a 100755
+index 9a6c66f5e..b1deb5e33 100755
 --- a/v1/attention/backends/flash_attn.py
 +++ b/v1/attention/backends/flash_attn.py
 @@ -1159,6 +1159,37 @@
@@ -73,7 +73,7 @@ index 9a6c66f5e..a74255a2a 100755
                  flash_attn_varlen_func(
                      q=query[:num_actual_tokens],
                      k=key_cache,
-@@ -1832,3 +1863,61 @@
+@@ -1832,3 +1863,59 @@
  
      # Merge prefix and suffix outputs, and store the result in output.
      merge_attn_states(output, prefix_output, prefix_lse, suffix_output, suffix_lse)
@@ -84,9 +84,7 @@ index 9a6c66f5e..a74255a2a 100755
 +
 +
 +def _spec_attn_enabled() -> bool:
-+    import os
-+
-+    return os.environ.get("VLLM_SPEC_DECODE_ATTN", "0") == "1"
++    return envs.VLLM_SPEC_DECODE_ATTN
 +
 +
 +_SPEC_ATTN_QMAX: int | None = None
@@ -137,10 +135,10 @@ index 9a6c66f5e..a74255a2a 100755
 +            cu_seqlens_q.shape[0] - 1, max_seqlen_q)
 diff --git a/v1/attention/ops/spec_decode_attn.py b/v1/attention/ops/spec_decode_attn.py
 new file mode 100644
-index 000000000..326980e06
+index 000000000..494f9acce
 --- /dev/null
 +++ b/v1/attention/ops/spec_decode_attn.py
-@@ -0,0 +1,204 @@
+@@ -0,0 +1,205 @@
 +"""Split-KV paged attention for speculative-decode batches (a few query tokens per
 +request, GQA), Triton.
 +
@@ -167,9 +165,10 @@ index 000000000..326980e06
 +Restrictions: q_len <= QMAX_TOKENS per request, D a power of two <= 256, no sliding
 +window / softcap / alibi.
 +"""
-+import os
 +
 +import torch
++
++import vllm.envs as envs
 +import triton
 +import triton.language as tl
 +
@@ -302,10 +301,10 @@ index 000000000..326980e06
 +    def _plan(self, q_len, G, D):
 +        """(BLOCK_M, tokens per tile, tile count, warps). One tile is preferred: every
 +        extra tile re-reads this request's KV segment."""
-+        override = os.environ.get("VLLM_SPEC_ATTN_BLOCK_M")
++        override = envs.VLLM_SPEC_ATTN_BLOCK_M
 +        rows = q_len * G
 +        if override:
-+            block_m = int(override)
++            block_m = override
 +        elif rows <= 32:
 +            block_m = 32
 +        elif rows <= 64:
