@@ -54,21 +54,36 @@ if [ -n "$FORK" ]; then
   ok "row/commit cross-check done"
   echo "== 2: patches applied to v$PIN reproduce the branch tree"
   TMP=$(mktemp -d); $G worktree add -q "$TMP/tag" "v$PIN" 2>/dev/null && {
-    for p in patches/*.patch; do case "$p" in *dflash2-backport*) continue ;; esac; patch -p1 -N -s -r /dev/null -d "$TMP/tag/vllm" < "$p" >/dev/null 2>&1 || bad "patch does not apply to v$PIN: $(basename $p)"; done
+    # Apply in patches/series order (the Dockerfile's order), at --fuzz 0: a hunk that needs slack is a hunk cut
+    # against a tree this is not. The verdict is fail-closed: the comparison must itself succeed and print a
+    # count, so a broken temp worktree or a bad commit id reads as DRIFT, not as an empty diff (threadchip, 2026-09-14).
+    while IFS= read -r name; do case "$name" in dflash2-backport.patch) continue ;; esac
+      patch -p1 -N -s --fuzz 0 -r /dev/null -d "$TMP/tag/vllm" < "patches/$name" >/dev/null 2>&1 || bad "patch does not apply to v$PIN at --fuzz 0: $name"
+    done < <(sed -e 's/#.*//' -e 's/^[[:space:]]*//;s/[[:space:]]*$//' -e '/^$/d' patches/series)
     cp -r kvarn/files/vllm/. "$TMP/tag/vllm/" 2>/dev/null
-    for p in $KV; do patch -p1 -N -s -r /dev/null -d "$TMP/tag/vllm" < "$p" >/dev/null 2>&1 || bad "kvarn patch does not apply to v$PIN: $(basename $p)"; done
+    for p in $KV; do patch -p1 -N -s --fuzz 0 -r /dev/null -d "$TMP/tag/vllm" < "$p" >/dev/null 2>&1 || bad "kvarn patch does not apply to v$PIN at --fuzz 0: $(basename $p)"; done
     find "$TMP/tag/vllm" -name '*.orig' -delete
-    D=$(cd "$TMP/tag" && git add -A >/dev/null 2>&1 && git diff --cached --stat "$COMMIT" -- vllm | tail -1)
-    [ -z "$D" ] && ok "patches + kvarn on v$PIN == $COMMIT tree (vllm/)" || bad "patch view differs from the branch: $D"
+    if (cd "$TMP/tag" && git add -A >/dev/null 2>&1 && git rev-parse --verify -q "$COMMIT^{commit}" >/dev/null); then
+      N2=$(cd "$TMP/tag" && git diff --cached --name-only "$COMMIT" -- vllm | wc -l)
+      [ "$N2" = 0 ] && ok "patches + kvarn on v$PIN == $COMMIT tree (vllm/, 0 differing files)" || bad "patch view differs from the branch $COMMIT in $N2 file(s): $(cd "$TMP/tag" && git diff --cached --name-only "$COMMIT" -- vllm | head -6 | tr '
+' ' ')"
+    else
+      bad "could not compare the patched tree against $COMMIT (staging failed or the commit is not in $FORK; fetch origin?)"
+    fi
     $G worktree remove --force "$TMP/tag" >/dev/null 2>&1; rm -rf "$TMP"
   }
   if [ -n "$IMAGE" ]; then
     echo "== 1: the image is the branch ($IMAGE)"
     C=qwen-series-check-$$; docker create --name "$C" "$IMAGE" >/dev/null && docker cp "$C:/app/venv/lib/python3.12/site-packages/vllm" "$TMP-img" >/dev/null 2>&1; docker rm "$C" >/dev/null 2>&1
     $G worktree add -q "$TMP-br" "$COMMIT" 2>/dev/null
-    N=$(diff -rq -x __pycache__ -x '*.so' -x '*.pyc' -x _version.py -x third_party "$TMP-br/vllm" "$TMP-img" 2>/dev/null | grep -c '^Files .* differ$')
-    ONLY=$(diff -rq -x __pycache__ -x '*.so' -x '*.pyc' -x _version.py -x third_party "$TMP-br/vllm" "$TMP-img" 2>/dev/null | grep -c '^Only in')
-    [ "$N" = 0 ] && ok "image .py tree == branch tree (differing files: 0; only-in-one-side entries: $ONLY, expected wheel-generated)" || bad "image differs from the branch in $N files"
+    if [ -f "$TMP-img/envs.py" ] && [ -f "$TMP-br/vllm/envs.py" ]; then
+      N=$(diff -rq -x __pycache__ -x '*.so' -x '*.pyc' -x _version.py -x third_party "$TMP-br/vllm" "$TMP-img" 2>/dev/null | grep -c '^Files .* differ$')
+      ONLY=$(diff -rq -x __pycache__ -x '*.so' -x '*.pyc' -x _version.py -x third_party "$TMP-br/vllm" "$TMP-img" 2>/dev/null | grep -c '^Only in')
+      [ "$N" = 0 ] && ok "image .py tree == branch tree (differing files: 0; only-in-one-side entries: $ONLY, expected wheel-generated)" || bad "image differs from the branch in $N files: $(diff -rq -x __pycache__ -x '*.so' -x '*.pyc' -x _version.py -x third_party "$TMP-br/vllm" "$TMP-img" 2>/dev/null | grep '^Files .* differ$' | awk '{print $2}' | sed "s#.*/vllm/##" | head -6 | tr '
+' ' ')"
+    else
+      bad "could not read both trees (image copy at $TMP-img, branch worktree at $TMP-br); nothing compared"
+    fi
     $G worktree remove --force "$TMP-br" >/dev/null 2>&1; rm -rf "$TMP-img"
   fi
 fi
