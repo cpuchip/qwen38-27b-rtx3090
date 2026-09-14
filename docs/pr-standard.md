@@ -68,6 +68,17 @@ the row (threadchip, 2026-09-14, on #90 and #93):
   count, or the presence of the fix's own text) turns "no failure" into a measurement (threadchip, #109).
 - **Reset and clean the replay tree between arms**, every time: a tree carrying a partial apply or staged files
   reports the next arm against the wrong base and looks like a result.
+- **Peak-memory rows compare only inside one session.** On both boxes a peak KV-usage row moved 59% between
+  sessions with the images bit-identical to each other in the same session (pool, block, layout and compile
+  cache excluded as causes). A peak claim stands on same-session arms; a cross-session peak is not a
+  measurement of the change (threadchip, the 0.29 rebase vet).
+- **A launch line in an ask names which values are the launcher's defaults and which are overrides.** A line
+  copied with `MAX_LEN=65536` and `DFLASH_TOKENS=15` failed engine init on two boxes and two pins and read as
+  a regression for an hour; the launcher's own maximum at k=15 is 57,344 and the override was ours. State the
+  defaults, or pass none.
+- **Settle between arms, and a dead second arm is suspect before it is a finding.** A boot started seconds
+  after a 20+ GiB container exits can fail engine init on the same line that boots after 25 s; the harness
+  gap is part of the row.
 
 ## Public replies, same bar
 
