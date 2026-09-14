@@ -58,7 +58,10 @@ a rejected hunk.
 
 Every knob the launchers export is registered in `envs.py` and read through `envs` (`speed-knobs-envs.patch`
 carries the registry: `VLLM_PREFILL_ATTN`, `VLLM_SPEC_DECODE_ATTN_QMAX`, the `VLLM_DFLASH2_*` lookup and chain
-family); a boot on the production line prints no "Unknown vLLM environment variable detected" line. The launcher no
+family, `VLLM_SPEC_DECODE_ATTN`, `VLLM_SPEC_ATTN_BLOCK_M`, `VLLM_INT4_MQ_3D` and its debug switch,
+`VLLM_MAMBA_ALIGN_KEEP_CHECKPOINTS`, `VLLM_DRAFT_TEMP_SCALE`, `VLLM_MARLIN_REPACK_STAGED`, and the Marlin int8 and tune
+knobs that were registered but still read raw); a boot on the production line prints no "Unknown vLLM environment
+variable detected" line, and no fork knob is read with a raw `os.environ` anywhere in the tree. The launcher no
 longer exports `VLLM_V2_CUDAGRAPH_MEM_MIB`: nothing on 0.29 reads it, since the graph-reserve hunk retired when vLLM
 started profiling graph memory itself, so the export was a dead knob that every production boot warned about.
 

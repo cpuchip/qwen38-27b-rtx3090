@@ -14,7 +14,7 @@ Apply from the installed vllm package directory:
 
 Validated against vLLM 0.28.0.
 
---- exported from cpuchip/vllm f85fbd321 (marlin-int8-layer-select); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm ccd16216d (marlin-int8-layer-select); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/envs.py b/envs.py
 index 786864b91..b25601bac 100755
@@ -45,7 +45,7 @@ index 786864b91..b25601bac 100755
      "VLLM_HUMMING_ONLINE_QUANT_CONFIG": lambda: maybe_convert_json_str_or_file(
          os.environ.get("VLLM_HUMMING_ONLINE_QUANT_CONFIG", None)
 diff --git a/model_executor/layers/quantization/utils/marlin_utils.py b/model_executor/layers/quantization/utils/marlin_utils.py
-index 3658761d6..bcd33934d 100644
+index 3658761d6..2284750e9 100644
 --- a/model_executor/layers/quantization/utils/marlin_utils.py
 +++ b/model_executor/layers/quantization/utils/marlin_utils.py
 @@ -666,7 +666,17 @@
@@ -55,9 +55,9 @@ index 3658761d6..bcd33934d 100644
 -    elif envs.VLLM_MARLIN_INPUT_DTYPE.lower() == "int8":
 +    # syv patch: per-layer include/exclude regexes for the int8/fp8 activation
 +    # path (lm_head is int8-weight -> W8A8 unsupported by marlin; mtp stays 16-bit)
-+    import os as _os, re as _re
-+    _exc = _os.environ.get("VLLM_MARLIN_INT8_EXCLUDE_RE", "lm_head|mtp")
-+    _inc = _os.environ.get("VLLM_MARLIN_INT8_INCLUDE_RE", "")
++    import re as _re
++    _exc = envs.VLLM_MARLIN_INT8_EXCLUDE_RE
++    _inc = envs.VLLM_MARLIN_INT8_INCLUDE_RE
 +    if prefix is not None:
 +        if _exc and _re.search(_exc, prefix):
 +            return

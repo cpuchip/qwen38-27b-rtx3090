@@ -11,7 +11,7 @@ block 128 with their page padded to the primary page, so both trees compute the 
 (2176) and hash unit (128); the hunks changed nothing for this geometry, and the coordinator hunks below
 still exempt a sliding-window block that does not divide the scheduler block.
 
---- exported from cpuchip/vllm 69cbc18d0 (kvarn-v2-runner-0.29.0); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 58d20f40d (kvarn-v2-runner-0.29.0); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/layers/attention/attention.py b/model_executor/layers/attention/attention.py
 index 246d99893..a16e731a5 100644
@@ -107,10 +107,10 @@ index b3a9b4c03..5ec0c2f9b 100644
              "Each KV cache group's real block_size must be divisible by "
              f"hash_block_size. block_sizes={group_block_sizes}, "
 diff --git a/v1/core/single_type_kv_cache_manager.py b/v1/core/single_type_kv_cache_manager.py
-index 5ddec8c7b..70fade5c9 100644
+index 92e5fc6e2..60a1c7542 100644
 --- a/v1/core/single_type_kv_cache_manager.py
 +++ b/v1/core/single_type_kv_cache_manager.py
-@@ -937,6 +937,11 @@
+@@ -936,6 +936,11 @@
          assert dcp_world_size == 1, "DCP not support sliding window attn now."
          assert pcp_world_size == 1, "PCP not support sliding window attn now."
          # Fine-grained partial hits are not supported for sliding window now
@@ -122,7 +122,7 @@ index 5ddec8c7b..70fade5c9 100644
          assert alignment_tokens % kv_cache_spec.block_size == 0, (
              "SlidingWindowManager does not support fine-grained (partial) cache hits"
          )
-@@ -1125,6 +1130,24 @@
+@@ -1124,6 +1129,24 @@
          """
          return 0
  
