@@ -18,7 +18,9 @@ CONFIG_TOKENS = re.compile(r"(k=\d|CTX=|MAX_LEN|3090|4090|5060|WSL2|native|n=\d|
 NUMBER_LINE = re.compile(r"(\d+(\.\d+)?\s*(tok/s|%|ms|s\b|GiB|GB|x\b))")
 HW_WORDS = re.compile(r"(fp8|e4m3|sm89|sm90|sm86|capability|cuda\s*graph|flashinfer)", re.I)
 GUARD_WORDS = re.compile(r"(get_device_capability|SKIP|skip\(|pytest\.skip|by design)", re.I)
-ENV_READ = re.compile(r"os\.(environ\.get|getenv)\(\s*[\"'](VLLM_[A-Z0-9_]+)")
+# Any spelling of a raw read: os.environ.get / os.getenv / os.environ[...], an aliased `_os`, and
+# `__import__("os").environ.get`; the 09-14 census missed the last two and left eight raw reads in the 0.29 tree.
+ENV_READ = re.compile(r"(?:os|__import__\(\s*[\"']os[\"']\s*\))\.(?:environ\.get|getenv|environ)\s*[\(\[]\s*[\"'](VLLM_[A-Z0-9_]+)")
 results = []
 
 
