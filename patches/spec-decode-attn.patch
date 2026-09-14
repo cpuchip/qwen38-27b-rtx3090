@@ -29,7 +29,7 @@ block - leaves the captured decode graph reading freed memory.
 Apply from the repo root:
   patch -p1 -d venv/lib/python3.12/site-packages/vllm < patches/spec-decode-attn.patch
 
---- exported from cpuchip/vllm bc134de8d (spec-decode-attn); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 417e44712 (spec-decode-attn); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/attention/backends/flash_attn.py b/v1/attention/backends/flash_attn.py
 index 9a6c66f5e..aaca7cde7 100755
@@ -137,10 +137,10 @@ index 9a6c66f5e..aaca7cde7 100755
 +            cu_seqlens_q.shape[0] - 1, max_seqlen_q)
 diff --git a/v1/attention/ops/spec_decode_attn.py b/v1/attention/ops/spec_decode_attn.py
 new file mode 100644
-index 000000000..7b4e7a1bf
+index 000000000..326980e06
 --- /dev/null
 +++ b/v1/attention/ops/spec_decode_attn.py
-@@ -0,0 +1,201 @@
+@@ -0,0 +1,204 @@
 +"""Split-KV paged attention for speculative-decode batches (a few query tokens per
 +request, GQA), Triton.
 +
@@ -227,6 +227,9 @@ index 000000000..7b4e7a1bf
 +        pos = t * TILE + tl.arange(0, TILE)
 +        k_ok = pos < kv_len
 +        blk = tl.load(bt_ptr + req * stride_bt + pos // BLOCK_SIZE, mask=k_ok, other=0)
++        # int64: blk * stride_kb (and the int8 scale strides) overflow int32 for high block ids in a
++        # large KV pool (issue #86: a 480k-token pool on a 64 GB card).
++        blk = blk.to(tl.int64)
 +        slot = pos % BLOCK_SIZE
 +        k_ptrs = k_ptr + blk[:, None] * stride_kb + slot[:, None] * stride_ks + kvh * stride_kh + d[None, :]
 +        v_ptrs = v_ptr + blk[:, None] * stride_vb + slot[:, None] * stride_vs + kvh * stride_vh + d[None, :]

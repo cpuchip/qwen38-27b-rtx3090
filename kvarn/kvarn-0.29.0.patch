@@ -8,11 +8,13 @@ kv_cache_interface.compute_layout_strides, where the block stride follows the sp
 (padded or not) for every backend; the KVarN backend now declares its layout (LBNHC) and folds the
 per-token [N, C] slots of the runner's 4D view back into one tile per (block, head).
 
---- generated against the v0.29.0 tree after the active repo patches ---
+--- exported from cpuchip/vllm 51bd12fee (kvarn-0.29.0); regenerate with scripts/export-patch.sh, do not edit ---
 
+diff --git a/config/cache.py b/config/cache.py
+index dc4e6faf3..f5e4c18dd 100644
 --- a/config/cache.py
 +++ b/config/cache.py
-@@ -29,6 +29,10 @@
+@@ -49,6 +49,10 @@
      "turboquant_4bit_nc",
      "turboquant_k3v4_nc",
      "turboquant_3bit_nc",
@@ -23,6 +25,8 @@ per-token [N, C] slots of the runner's 4D view back into one tile per (block, he
      "int4_per_token_head",
      "int8_per_token_head",
      "fp8_per_token_head",
+diff --git a/model_executor/layers/attention/attention.py b/model_executor/layers/attention/attention.py
+index ff0c7a33a..246d99893 100644
 --- a/model_executor/layers/attention/attention.py
 +++ b/model_executor/layers/attention/attention.py
 @@ -645,6 +645,26 @@
@@ -52,6 +56,8 @@ per-token [N, C] slots of the runner's 4D view back into one tile per (block, he
              return FullAttentionSpec(
                  block_size=block_size,
                  num_kv_heads=self.num_kv_heads,
+diff --git a/platforms/cuda.py b/platforms/cuda.py
+index 0aff4ff9b..ce6b40f0e 100644
 --- a/platforms/cuda.py
 +++ b/platforms/cuda.py
 @@ -151,6 +151,7 @@
@@ -70,12 +76,10 @@ per-token [N, C] slots of the runner's 4D view back into one tile per (block, he
                  AttentionBackendEnum.TURBOQUANT,
              ]
  
-@@ -349,7 +351,71 @@
-                 "To raise the WSL2 VM memory ceiling, increase the `memory` "
-                 "setting in %%USERPROFILE%%\\.wslconfig and run "
+@@ -351,6 +353,70 @@
                  "`wsl --shutdown`."
-+            )
-+
+             )
+ 
 +        # KVarN keeps a fixed-size fp16 tail pool for each active request.
 +        # Bound scheduler concurrency to the pool budget before worker startup;
 +        # the backend itself cannot safely grow this allocation after CUDA graph
@@ -129,7 +133,7 @@ per-token [N, C] slots of the runner's 4D view back into one tile per (block, he
 +                max_num_batched_tokens=scheduler_config.max_num_batched_tokens,
 +                gpu_memory_utilization=cache_config.gpu_memory_utilization,
 +                weight_bytes=weight_bytes,
-             )
++            )
 +            if scheduler_config.max_num_seqs > supported:
 +                logger.warning(
 +                    "KVarN (%s): capping max_num_seqs %d -> %d for the fp16 "
@@ -139,9 +143,12 @@ per-token [N, C] slots of the runner's 4D view back into one tile per (block, he
 +                    supported,
 +                )
 +                scheduler_config.max_num_seqs = supported
- 
++
      @classmethod
      def get_current_memory_usage(
+         cls, device: torch.types.Device | None = None
+diff --git a/platforms/interface.py b/platforms/interface.py
+index d7a31323b..b54641fd7 100644
 --- a/platforms/interface.py
 +++ b/platforms/interface.py
 @@ -807,6 +807,23 @@
@@ -168,6 +175,8 @@ per-token [N, C] slots of the runner's 4D view back into one tile per (block, he
          elif cache_config.cache_dtype.startswith("turboquant_"):
              # TQ has a packed K|V layout; the standard FullAttentionSpec
              # formula over-sizes it and trips unify_kv_cache_spec_page_size
+diff --git a/utils/torch_utils.py b/utils/torch_utils.py
+index faee4305c..555dd7fe7 100644
 --- a/utils/torch_utils.py
 +++ b/utils/torch_utils.py
 @@ -49,6 +49,10 @@
@@ -181,6 +190,8 @@ per-token [N, C] slots of the runner's 4D view back into one tile per (block, he
      "nvfp4": torch.uint8,
      "nvfp4_4over6": torch.uint8,
  }
+diff --git a/v1/attention/backends/registry.py b/v1/attention/backends/registry.py
+index 6fc9dd1e1..e8af36ad6 100644
 --- a/v1/attention/backends/registry.py
 +++ b/v1/attention/backends/registry.py
 @@ -124,6 +124,7 @@
@@ -191,9 +202,11 @@ per-token [N, C] slots of the runner's 4D view back into one tile per (block, he
      TURBOQUANT = "vllm.v1.attention.backends.turboquant_attn.TurboQuantAttentionBackend"
      # Placeholder for third-party/custom backends - must be registered before use
      # set to None to avoid alias with other backend, whose value is an empty string
+diff --git a/v1/kv_cache_interface.py b/v1/kv_cache_interface.py
+index 1007c48a2..50127678f 100644
 --- a/v1/kv_cache_interface.py
 +++ b/v1/kv_cache_interface.py
-@@ -51,6 +51,7 @@
+@@ -54,6 +54,7 @@
      TURBOQUANT_4BIT_NC = 7
      TURBOQUANT_K3V4_NC = 8
      TURBOQUANT_3BIT_NC = 9
@@ -201,19 +214,19 @@ per-token [N, C] slots of the runner's 4D view back into one tile per (block, he
  
      @property
      def is_per_token_head(self) -> bool:
-@@ -75,6 +76,11 @@
-             KVQuantMode.TURBOQUANT_K3V4_NC,
+@@ -79,6 +80,11 @@
              KVQuantMode.TURBOQUANT_3BIT_NC,
          )
-+
+ 
 +    @property
 +    def is_kvarn(self) -> bool:
 +        """True for KVarN packed KV-cache quantization."""
 +        return self == KVQuantMode.KVARN
- 
++
  
  def get_kv_quant_mode(kv_cache_dtype: str) -> KVQuantMode:
-@@ -89,6 +95,8 @@
+     """Map a ``kv_cache_dtype`` string to a :class:`KVQuantMode`."""
+@@ -92,6 +98,8 @@
          return KVQuantMode.NVFP4
      if isinstance(kv_cache_dtype, str) and kv_cache_dtype.startswith("turboquant_"):
          return KVQuantMode[kv_cache_dtype.upper()]
@@ -222,4 +235,3 @@ per-token [N, C] slots of the runner's 4D view back into one tile per (block, he
      if isinstance(kv_cache_dtype, str) and kv_cache_dtype.startswith("fp8"):
          return KVQuantMode.FP8_PER_TENSOR
      return KVQuantMode.NONE
-
