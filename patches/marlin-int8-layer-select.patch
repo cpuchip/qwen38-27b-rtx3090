@@ -14,7 +14,7 @@ Apply from the installed vllm package directory:
 
 Validated against vLLM 0.28.0.
 
---- exported from cpuchip/vllm b70b8f279 (marlin-int8-layer-select); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm f85fbd321 (marlin-int8-layer-select); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/envs.py b/envs.py
 index 786864b91..b25601bac 100755

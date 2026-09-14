@@ -8,7 +8,7 @@ kv_cache_interface.compute_layout_strides, where the block stride follows the sp
 (padded or not) for every backend; the KVarN backend now declares its layout (LBNHC) and folds the
 per-token [N, C] slots of the runner's 4D view back into one tile per (block, head).
 
---- exported from cpuchip/vllm 51bd12fee (kvarn-0.29.0); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 2b48e1dd8 (kvarn-0.29.0); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/config/cache.py b/config/cache.py
 index dc4e6faf3..f5e4c18dd 100644

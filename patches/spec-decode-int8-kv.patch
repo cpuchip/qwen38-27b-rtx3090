@@ -39,10 +39,10 @@ Apply from the repo root, after spec-decode-attn.patch:
 
 Validated against vLLM 0.28.0. Reapply after upgrades.
 
---- exported from cpuchip/vllm 322ad2323 (spec-decode-int8-kv); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 383f50446 (spec-decode-int8-kv); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/attention/backends/flash_attn.py b/v1/attention/backends/flash_attn.py
-index aaca7cde7..e50718f31 100755
+index a74255a2a..778cb1a72 100755
 --- a/v1/attention/backends/flash_attn.py
 +++ b/v1/attention/backends/flash_attn.py
 @@ -1901,7 +1901,7 @@

@@ -1,6 +1,6 @@
 multi-query 3D int4 verify path
 
---- exported from cpuchip/vllm de5a95e17 (spec-decode-int4-kv-mq3d); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 4f9eaf037 (spec-decode-int4-kv-mq3d); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/attention/ops/int4_per_token_head.py b/v1/attention/ops/int4_per_token_head.py
 index 6e8de7295..d14902d20 100644

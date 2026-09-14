@@ -1,6 +1,6 @@
 CPU offload tier device pointers on WSL2
 
---- exported from cpuchip/vllm dacd18ddb (offload-wsl2-devptr); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 8af5932e3 (offload-wsl2-devptr); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/kv_offload/cpu/gpu_worker.py b/v1/kv_offload/cpu/gpu_worker.py
 index bcaf21ff7..6f433f4a7 100644

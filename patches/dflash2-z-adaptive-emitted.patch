@@ -1,9 +1,9 @@
 
 
---- exported from cpuchip/vllm 072cd23a5 (dflash2-z-adaptive-emitted); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 285bc0a26 (dflash2-z-adaptive-emitted); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/worker/gpu/spec_decode/dflash/speculator.py b/v1/worker/gpu/spec_decode/dflash/speculator.py
-index 1e30390ce..7ab02803e 100644
+index e17cfce51..ff5e01818 100644
 --- a/v1/worker/gpu/spec_decode/dflash/speculator.py
 +++ b/v1/worker/gpu/spec_decode/dflash/speculator.py
 @@ -361,11 +361,12 @@
@@ -25,10 +25,10 @@ index 1e30390ce..7ab02803e 100644
          num_query_tokens = num_reqs * self.num_query_per_req
          max_seq_len = input_batch.seq_lens_cpu_upper_bound[:num_reqs].max().item()
 diff --git a/v1/worker/gpu/spec_decode/dflash2/speculator.py b/v1/worker/gpu/spec_decode/dflash2/speculator.py
-index 22bbfb441..5c94ead5e 100644
+index af532c9a9..f41485210 100644
 --- a/v1/worker/gpu/spec_decode/dflash2/speculator.py
 +++ b/v1/worker/gpu/spec_decode/dflash2/speculator.py
-@@ -519,9 +519,7 @@
+@@ -513,9 +513,7 @@
          self.draft_max_seq_len = min(
              max_seq_len + self.num_query_per_req, self.max_model_len
          )

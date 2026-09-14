@@ -2,21 +2,22 @@ Ported to 0.29: the propose() override takes dp_sync (DPSyncState) instead of nu
 runner call and the DFlashSpeculator base (upstream changed the signature in 0.29); the inner draft path still receives
 num_tokens_across_dp from the base.
 
---- exported from cpuchip/vllm b4d433c80 (dflash2-ngram-chains); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 1361d3716 (dflash2-ngram-chains); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/worker/gpu/spec_decode/dflash2/speculator.py b/v1/worker/gpu/spec_decode/dflash2/speculator.py
-index 5a8d24883..22bbfb441 100644
+index 07438a148..af532c9a9 100644
 --- a/v1/worker/gpu/spec_decode/dflash2/speculator.py
 +++ b/v1/worker/gpu/spec_decode/dflash2/speculator.py
-@@ -2,6 +2,7 @@
+@@ -1,7 +1,7 @@
+ # SPDX-License-Identifier: Apache-2.0
  # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
  
- import os
+-import os
 +import time
  from typing import Any
  
  import torch
-@@ -11,7 +12,10 @@
+@@ -12,7 +12,10 @@
  from vllm.logger import init_logger
  from vllm.triton_utils import tl, triton
  from vllm.v1.worker.gpu.sample.gumbel import gumbel_noised_argmax
@@ -28,8 +29,8 @@ index 5a8d24883..22bbfb441 100644
  
  logger = init_logger(__name__)
  from vllm.v1.worker.gpu.spec_decode.dflash2.lookup import (
-@@ -258,6 +262,54 @@
-         self._lookup_sticky = int(os.environ.get("VLLM_DFLASH2_LOOKUP_STICKY", "3"))
+@@ -259,6 +262,48 @@
+         self._lookup_sticky = envs.VLLM_DFLASH2_LOOKUP_STICKY
          self._sticky = 0
  
 +        # --- drafter-free chains (VLLM_DFLASH2_CHAIN=1), ported from
@@ -42,7 +43,7 @@ index 5a8d24883..22bbfb441 100644
 +        # runs at capture time only; the one thing crossing GPU->host is a
 +        # captured D2H memcpy of a per-request flag into pinned memory,
 +        # replayed by the graph every step exactly like the kernels around it.
-+        self._chain = os.environ.get("VLLM_DFLASH2_CHAIN", "0") == "1"
++        self._chain = envs.VLLM_DFLASH2_CHAIN
 +        if self._chain and not self._lookup:
 +            logger.warning("VLLM_DFLASH2_CHAIN=1 needs VLLM_DFLASH2_LOOKUP=1; disabling")
 +            self._chain = False
@@ -50,19 +51,13 @@ index 5a8d24883..22bbfb441 100644
 +            # Entry evidence is the previous normal step's longest context
 +            # match (match_len, which reaches nmax) -- NOT the lookup's valid
 +            # count, which the kernel clamps to k. Keying on valid never fires.
-+            self._chain_minmatch = int(
-+                os.environ.get("VLLM_DFLASH2_CHAIN_MINMATCH", "8")
-+            )
-+            self._chain_log_sec = float(
-+                os.environ.get("VLLM_DFLASH2_CHAIN_LOG_SEC", "30")
-+            )
++            self._chain_minmatch = envs.VLLM_DFLASH2_CHAIN_MINMATCH
++            self._chain_log_sec = envs.VLLM_DFLASH2_CHAIN_LOG_SEC
 +            # Point-mass q under sampling accepts with probability p(token):
 +            # at temperature the chain blocks displace strictly better drafter
 +            # proposals (measured -8% C1 at T=default on chat). Greedy-only by
 +            # default; VLLM_DFLASH2_CHAIN_GREEDY_ONLY=0 lifts the gate.
-+            self._chain_greedy_only = (
-+                os.environ.get("VLLM_DFLASH2_CHAIN_GREEDY_ONLY", "1") == "1"
-+            )
++            self._chain_greedy_only = envs.VLLM_DFLASH2_CHAIN_GREEDY_ONLY
 +            self._req_temp_np = None
 +            self._chain_ev_gpu = torch.zeros(
 +                self.max_num_reqs, dtype=torch.int32, device=device
@@ -83,7 +78,7 @@ index 5a8d24883..22bbfb441 100644
          if self._lookup:
              logger.info(
                  "DFlash2 lookup-augmented drafting on (k=%d nmin=%d nmax=%d nstrong=%d "
-@@ -280,6 +332,11 @@
+@@ -281,6 +326,11 @@
          unanimity across the batch. Below CHEAP_CTX tokens of context an extra verify
          position is nearly free (+6% per step at 1.5k against +27% at 25k), so there the
          flag alone is enough."""
@@ -95,7 +90,7 @@ index 5a8d24883..22bbfb441 100644
          if not self._adaptive:
              return None
          emitted = getattr(self, "last_num_emitted", None)
-@@ -317,6 +374,251 @@
+@@ -318,6 +368,251 @@
          self._prev_want = want
          return self.num_speculative_steps if long_block else self.draft_block
  
@@ -347,7 +342,7 @@ index 5a8d24883..22bbfb441 100644
      def set_req_states(self, req_states) -> None:
          """The token history the lookup matches against (set by the model runner)."""
          self._req_states = req_states
-@@ -329,6 +631,10 @@
+@@ -330,6 +625,10 @@
      def set_sampling_states(self, sampling_states) -> None:
          self._req_top_p = sampling_states.top_p.gpu
          self._req_top_k = sampling_states.top_k.gpu
@@ -358,7 +353,7 @@ index 5a8d24883..22bbfb441 100644
  
      def _sample_path(
          self,
-@@ -482,3 +788,16 @@
+@@ -483,3 +782,16 @@
              BLOCK_K=block_k,
              num_warps=1,
          )
