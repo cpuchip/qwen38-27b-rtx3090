@@ -21,12 +21,20 @@ cd "$HERE" || exit 2
 echo "series-check: checking $HERE ($(git rev-parse --short HEAD 2>/dev/null) on $(git rev-parse --abbrev-ref HEAD 2>/dev/null))"
 fail=0; ok(){ echo "  OK    $*"; }; bad(){ echo "  DRIFT $*"; fail=$((fail+1)); }
 
+skip(){ echo "  SKIP  $*"; }
 echo "== 3: one pin"
 PIN=$(grep -E '^vllm==' docker/requirements.txt | cut -d= -f3); VPIN=$(grep -oE 'vllm==[0-9.]+|PIN=[0-9.]+|"0\.[0-9]+\.[0-9]+"' verify.sh | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+')
-COMMIT=$(grep -oE '^ARG VLLM_FORK_COMMIT=[0-9a-f]+' Dockerfile.fork | cut -d= -f2); FVER=$(grep -oE '^ARG VLLM_VERSION=[0-9.]+' Dockerfile.fork | cut -d= -f2)
-[ -n "$PIN" ] && [ "$PIN" = "$FVER" ] && ok "requirements vllm==$PIN, Dockerfile.fork VLLM_VERSION=$FVER" || bad "requirements vllm==$PIN vs Dockerfile.fork VLLM_VERSION=$FVER"
 [ -n "$VPIN" ] && [ "$VPIN" = "$PIN" ] && ok "verify.sh pin $VPIN" || bad "verify.sh pin '$VPIN' vs requirements $PIN"
-[ -n "$COMMIT" ] && ok "Dockerfile.fork pins $COMMIT" || bad "Dockerfile.fork has no VLLM_FORK_COMMIT"
+# A PR branch to syv-ai carries no Dockerfile.fork by design (the fork image is main's), so the pin-dependent
+# checks (3's fork lines, 3b, 5, 6b, 2, 1) are skipped there by name rather than reported as drift.
+NOFORK=""; COMMIT=""; FVER=""
+if [ -f Dockerfile.fork ]; then
+  COMMIT=$(grep -oE '^ARG VLLM_FORK_COMMIT=[0-9a-f]+' Dockerfile.fork | cut -d= -f2); FVER=$(grep -oE '^ARG VLLM_VERSION=[0-9.]+' Dockerfile.fork | cut -d= -f2)
+  [ -n "$PIN" ] && [ "$PIN" = "$FVER" ] && ok "requirements vllm==$PIN, Dockerfile.fork VLLM_VERSION=$FVER" || bad "requirements vllm==$PIN vs Dockerfile.fork VLLM_VERSION=$FVER"
+  [ -n "$COMMIT" ] && ok "Dockerfile.fork pins $COMMIT" || bad "Dockerfile.fork has no VLLM_FORK_COMMIT"
+else
+  NOFORK=1; skip "no Dockerfile.fork in this checkout (a PR branch): the fork-pin checks 3b, 5, 6b, 2 and 1 are skipped, not drift"
+fi
 
 echo "== 6: ledger rows vs fork commits named in them"
 ROWS=$(grep -E '^\| [a-z]' PATCHES.md | grep -v '^| patch' | awk -F'|' '{t=$2; gsub(/^ +| +$/,"",t); print t}' | sed 's|^kvarn/||')
@@ -35,7 +43,8 @@ KV="kvarn/kvarn-$PIN.patch kvarn/kvarn-v2-runner-$PIN.patch"   # older kvarn-*.p
 for p in patches/*.patch $KV; do n=$(basename "$p" .patch); echo "$ROWS" | grep -qx "$n" || bad "patch file without a row: $n"; done
 [ "$fail" = 0 ] && ok "every patch file has a row"
 
-if [ -n "$FORK" ]; then
+if [ -n "$FORK" ] && [ -n "$NOFORK" ]; then skip "--fork given but this checkout has no pin to check it against"; fi
+if [ -n "$FORK" ] && [ -z "$NOFORK" ]; then
   G="git -C $FORK"
   $G rev-parse --verify -q "v$PIN" >/dev/null || $G fetch -q --tags upstream "v$PIN" 2>/dev/null || true
   BR=$($G branch -a --contains "$COMMIT" 2>/dev/null | grep -oE 'qwen38/[0-9.]+' | head -1)
