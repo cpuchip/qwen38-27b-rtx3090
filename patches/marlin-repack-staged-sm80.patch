@@ -45,21 +45,23 @@ Status: validated on the 170HX (4 boot cycles + a full serving session,
 bit-exact, 0 Xid) and in production there — but as load-time hygiene, not
 as the wedge fix this header originally proposed; see the history above.
 
---- exported from cpuchip/vllm d15e20f92 (marlin-repack-staged-sm80); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 932293aab (marlin-repack-staged-sm80); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/kernels/linear/mixed_precision/marlin.py b/model_executor/kernels/linear/mixed_precision/marlin.py
-index 3975b26c2..d2b548c21 100644
+index 3975b26c2..891cd3b3a 100644
 --- a/model_executor/kernels/linear/mixed_precision/marlin.py
 +++ b/model_executor/kernels/linear/mixed_precision/marlin.py
-@@ -2,6 +2,8 @@
+@@ -2,8 +2,10 @@
  # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
  
  
-+import os
 +
  import torch
  
++import vllm.envs as envs
  from vllm import _custom_ops as ops
+ from vllm.model_executor.layers.quantization.utils.marlin_utils import (
+     MARLIN_SUPPORTED_GROUP_SIZES,
 @@ -29,6 +31,55 @@
  from vllm.platforms import current_platform
  from vllm.scalar_type import scalar_types
@@ -82,7 +84,7 @@ index 3975b26c2..d2b548c21 100644
 +
 +
 +def _use_staged_repack(device: torch.device) -> bool:
-+    env = os.environ.get("VLLM_MARLIN_REPACK_STAGED")
++    env = envs.VLLM_MARLIN_REPACK_STAGED
 +    if env is not None:
 +        return env == "1"
 +    if device.type != "cuda":

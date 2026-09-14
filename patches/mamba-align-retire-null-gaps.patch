@@ -19,13 +19,13 @@ Ported to 0.29.0 from the fork's PR#101 branch (syv-ai/qwen38-27b-rtx3090, patch
 Signed-off-by: Michael Stufflebeam <cpuchip@gmail.com>
 Co-authored-by: Claude <noreply@anthropic.com>
 
---- exported from cpuchip/vllm cf0c3b197 (mamba-align-retire-null-gaps); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 27f4d9303 (mamba-align-retire-null-gaps); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/core/single_type_kv_cache_manager.py b/v1/core/single_type_kv_cache_manager.py
-index adf7939ec..5ddec8c7b 100644
+index d544bfd3b..92e5fc6e2 100644
 --- a/v1/core/single_type_kv_cache_manager.py
 +++ b/v1/core/single_type_kv_cache_manager.py
-@@ -1389,6 +1389,7 @@
+@@ -1388,6 +1388,7 @@
              # Mapping from request ID to the index of the block
              # allocated in the previous step
              self.last_state_block_idx: dict[str, int] = {}
@@ -33,7 +33,7 @@ index adf7939ec..5ddec8c7b 100644
              # The set of the requests that have been allocated blocks
              self._allocated_block_reqs: set[str] = set()
              # Number of internal checkpoint blocks required by each request's
-@@ -1544,6 +1545,27 @@
+@@ -1543,6 +1544,27 @@
  
          return mask
  
@@ -61,7 +61,7 @@ index adf7939ec..5ddec8c7b 100644
      def remove_skipped_blocks(
          self,
          request_id: str,
-@@ -1872,6 +1894,7 @@
+@@ -1871,6 +1893,7 @@
          if self.mamba_cache_mode == "align":
              self._allocated_block_reqs.discard(request_id)
              self.last_state_block_idx.pop(request_id, None)

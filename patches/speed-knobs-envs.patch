@@ -9,13 +9,13 @@ this a cached graph from a run without the flag fails with
 "assert_size_stride ... expected size 328==82". Independent of marlin-int8-layer-select.patch (same file, disjoint hunks):
   patch -p1 -d venv/lib/python3.12/site-packages/vllm < patches/speed-knobs-envs.patch
 
---- exported from cpuchip/vllm fdfcc8d14 (speed-knobs-envs); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm cc3462de8 (speed-knobs-envs); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/envs.py b/envs.py
-index b25601bac..05ea42fd3 100755
+index b25601bac..7a98270ef 100755
 --- a/envs.py
 +++ b/envs.py
-@@ -189,6 +189,33 @@
+@@ -189,6 +189,39 @@
      VLLM_HUMMING_ONLINE_QUANT_CONFIG: dict[str, Any] | None = None
      VLLM_HUMMING_INPUT_QUANT_CONFIG: dict[str, Any] | None = None
      VLLM_HUMMING_USE_F16_ACCUM: bool = False
@@ -44,12 +44,18 @@ index b25601bac..05ea42fd3 100755
 +    VLLM_DFLASH2_CHAIN_MINMATCH: int = 8
 +    VLLM_DFLASH2_CHAIN_LOG_SEC: float = 30.0
 +    VLLM_DFLASH2_CHAIN_GREEDY_ONLY: bool = True
++    VLLM_SPEC_ATTN_BLOCK_M: int = 0
++    VLLM_INT4_MQ_3D: bool = False
++    VLLM_INT4_MQ_3D_DEBUG: bool = False
++    VLLM_MAMBA_ALIGN_KEEP_CHECKPOINTS: bool = False
++    VLLM_DRAFT_TEMP_SCALE: float = 1.0
++    VLLM_MARLIN_REPACK_STAGED: str | None = None
 +    # GiB of vision-tower weights to keep in pinned host memory; 0 disables.
 +    VLLM_VISION_CPU_OFFLOAD_GB: float = 0.0
      VLLM_HUMMING_MOE_GEMM_TYPE: Literal["indexed", "grouped", "auto"] | None = None
      VLLM_B12X_MOE_FP4_FORCE_A16: bool = False
      VLLM_DEEPEPLL_NVFP4_DISPATCH: bool = False
-@@ -1516,6 +1543,36 @@
+@@ -1516,6 +1549,47 @@
      "VLLM_HUMMING_ONLINE_QUANT_CONFIG": lambda: maybe_convert_json_str_or_file(
          os.environ.get("VLLM_HUMMING_ONLINE_QUANT_CONFIG", None)
      ),
@@ -80,6 +86,17 @@ index b25601bac..05ea42fd3 100755
 +    "VLLM_DFLASH2_CHAIN_MINMATCH": lambda: int(os.environ.get("VLLM_DFLASH2_CHAIN_MINMATCH", "8")),
 +    "VLLM_DFLASH2_CHAIN_LOG_SEC": lambda: float(os.environ.get("VLLM_DFLASH2_CHAIN_LOG_SEC", "30")),
 +    "VLLM_DFLASH2_CHAIN_GREEDY_ONLY": lambda: os.environ.get("VLLM_DFLASH2_CHAIN_GREEDY_ONLY", "1") == "1",
++    # split-KV verify kernel: force the query-row tile (0 = pick by row count)
++    "VLLM_SPEC_ATTN_BLOCK_M": lambda: int(os.environ.get("VLLM_SPEC_ATTN_BLOCK_M", "0")),
++    # int4 per-token-head KV: the multi-query 3D verify path and its debug print
++    "VLLM_INT4_MQ_3D": lambda: os.environ.get("VLLM_INT4_MQ_3D", "0") == "1",
++    "VLLM_INT4_MQ_3D_DEBUG": lambda: os.environ.get("VLLM_INT4_MQ_3D_DEBUG", "0") == "1",
++    # align-mode Mamba: hold each running request's reachable state snapshots until it finishes (fork #52)
++    "VLLM_MAMBA_ALIGN_KEEP_CHECKPOINTS": lambda: os.environ.get("VLLM_MAMBA_ALIGN_KEEP_CHECKPOINTS", "0") == "1",
++    # MTP drafter: temperature scale on the draft distribution (1.0 = the target's)
++    "VLLM_DRAFT_TEMP_SCALE": lambda: float(os.environ.get("VLLM_DRAFT_TEMP_SCALE", "1.0")),
++    # sm80 Marlin repack staging buffer: "1"/"0" override, unset = on for compute capability 8.0 only
++    "VLLM_MARLIN_REPACK_STAGED": lambda: os.environ.get("VLLM_MARLIN_REPACK_STAGED"),
 +    "VLLM_VISION_CPU_OFFLOAD_GB": lambda: float(
 +        os.environ.get("VLLM_VISION_CPU_OFFLOAD_GB", "0")
 +    ),
