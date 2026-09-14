@@ -19,7 +19,7 @@ Ported to 0.29.0 from the fork's PR#101 branch (syv-ai/qwen38-27b-rtx3090, patch
 Signed-off-by: Michael Stufflebeam <cpuchip@gmail.com>
 Co-authored-by: Claude <noreply@anthropic.com>
 
---- exported from cpuchip/vllm da74aef13 (mamba-align-retire-null-gaps); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 0e2901195 (mamba-align-retire-null-gaps); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/core/single_type_kv_cache_manager.py b/v1/core/single_type_kv_cache_manager.py
 index adf7939ec..5ddec8c7b 100644

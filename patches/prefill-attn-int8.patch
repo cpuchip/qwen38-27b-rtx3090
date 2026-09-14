@@ -42,13 +42,13 @@ the sort order; the series file replaced it and the name came back).
 
 Written against vLLM 0.27.1.
 
---- exported from cpuchip/vllm 075765f41 (prefill-attn-int8); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm d1619ea98 (prefill-attn-int8); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/attention/backends/flash_attn.py b/v1/attention/backends/flash_attn.py
-index e50718f31..103837830 100755
+index e50718f31..ca555bd21 100755
 --- a/v1/attention/backends/flash_attn.py
 +++ b/v1/attention/backends/flash_attn.py
-@@ -1159,6 +1159,51 @@
+@@ -1159,6 +1159,50 @@
                      block_table = block_table[:, :num_pages]
                      num_splits = 1
  
@@ -59,9 +59,8 @@ index e50718f31..103837830 100755
 +                # shifts every logit in a row equally, so the softmax — and
 +                # the output — is exact up to int8 rounding of Q rows and
 +                # 64-key K tiles (measured cos > 0.99999 against fp32).
-+                import os as _os
 +                if (
-+                    _os.environ.get("VLLM_PREFILL_ATTN", "") in ("int8", "fp16")
++                    envs.VLLM_PREFILL_ATTN in ("int8", "fp16")
 +                    and max_seqlen_q > 16
 +                    and cu_seqlens_q.shape[0] == 2
 +                    and self.num_heads == 24 and self.num_kv_heads == 4
@@ -92,7 +91,7 @@ index e50718f31..103837830 100755
 +                        _kv_len,
 +                        _kv_len - _q_len,
 +                        self.scale,
-+                        int8_qk=_os.environ.get("VLLM_PREFILL_ATTN") == "int8",
++                        int8_qk=envs.VLLM_PREFILL_ATTN == "int8",
 +                        block_t=128, block_n=64, num_warps=8, num_stages=3,
 +                    )
 +                    return output

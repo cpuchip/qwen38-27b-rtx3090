@@ -39,7 +39,7 @@ Carried after the port, because the 0.29.0 tag does not have them and the fork's
   What it buys is peak pool pressure during long align-mode prefills (about one pool token per prompt token
   on 0.28, both boxes); the long profile's peak rows are the check.
 
-Both are on the fork branch as commits (`cpuchip/vllm` `qwen38/0.29` at c68ae347f) and exported from there,
+Both are on the fork branch as commits (`cpuchip/vllm` `qwen38/0.29` at 1bedc9ecb) and exported from there,
 so a pin that carries the upstream change retires the file by dropping the commit.
 
 Every other file in `patches/` was regenerated the same way in this port's last pass. Before that, the shipped
@@ -55,6 +55,10 @@ series (the order `kvarn/install.sh` applies them in), so they apply at `--fuzz 
 of their hunks landed by fuzz behind the series and the installer's `|| true` would have hidden a rejected
 hunk in any file without a `port(kvarn-v2)` marker. The installer now applies at `--fuzz 0` and stops on
 a rejected hunk.
+
+`VLLM_PREFILL_ATTN` is registered in `envs.py` (`speed-knobs-envs.patch`) and read through `envs` at both
+sites in `flash_attn.py`; before, it was a raw `os.environ.get` and every boot with `PREFILL_ATTN` set printed
+"Unknown vLLM environment variable detected: VLLM_PREFILL_ATTN" (the 0.28 line still does).
 
 Adjusted for 0.29 API changes:
 
