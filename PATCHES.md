@@ -1,7 +1,7 @@
 # The patch series, one line each
 
 What every file in `patches/` (and `kvarn/`) is, where it came from, and what retires it. The Dockerfile applies
-them in filename order onto the installed vLLM wheel; `verify.sh` checks each one is in place. Kinds:
+them in the order of `patches/series` onto the installed vLLM wheel; `verify.sh` checks each one is in place. Kinds:
 
 - **backport**: a merged or open upstream change carried early. Retires when the pin carries it.
 - **fix**: a defect in upstream or in this stack, fixable upstream. Retires when upstream takes it.
@@ -43,7 +43,7 @@ the 0.29 port dropped from the file and why (details in `docs/vllm-0.29.md`).
 | spec-decode-scratch-within-budget | own | mq3d scratch allocated inside the memory budget (fork #57) | none | 0.29.0 | rides with mq3d |
 | spec-sampler-prewarm | fix | compile the rejection sampler's Triton kernels at boot (fork #48) | none yet | 0.29.0 | upstream PR |
 | speed-knobs-envs | local | register this repo's env knobs in `envs.py` | none | 0.29.0 | stays while the knobs exist |
-| triton-prefill-attn-int8 | feature | int8-QK Triton prefill attention for head_dim 256 | none | 0.29.0 | upstreamed |
+| prefill-attn-int8 | feature | int8-QK Triton prefill attention for head_dim 256 | none | 0.29.0 | upstreamed |
 | vision-tower-cpu-offload | local | Qwen3 vision tower bulk weights in host RAM | none | 0.29.0 | stays |
 | vllm-pr50021-gdn-spec-bounds | backport | bounds checks in GDN/KDA spec-decode state lookups | vllm #50021 (open) | 0.29.0 | the pin that carries #50021 |
 | kvarn/kvarn-0.29.0 | feature | KVarN cache dtypes, quant mode, backend registration, page size | none (KVarN is Huawei CSL's, Apache-2.0) | 0.29.0; attn_utils view hunk retired | upstreamed |

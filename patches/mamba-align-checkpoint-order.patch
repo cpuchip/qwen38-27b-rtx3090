@@ -76,7 +76,7 @@ Apply from the installed vllm package directory:
 
 Written against vLLM 0.27.1.
 
---- exported from cpuchip/vllm ce8413965 (mamba-align-checkpoint-order); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 40dbe1f17 (mamba-align-checkpoint-order); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/core/single_type_kv_cache_manager.py b/v1/core/single_type_kv_cache_manager.py
 index 443017012..adf7939ec 100644

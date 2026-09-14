@@ -59,7 +59,7 @@ padded_page_size, upstream #51718), so a padded page no longer needs a narrowing
 failed on 0.28 is gone. Mechanisms 2 and 3 below still apply. To be proven by booting the int4 profile
 (single-user/alternative.sh dflash2) on the 0.29 image.
 
---- exported from cpuchip/vllm bf79e5996 (int4-kv-per-token-head); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm a4174ea62 (int4-kv-per-token-head); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/attention/ops/int4_per_token_head.py b/v1/attention/ops/int4_per_token_head.py
 index 322d32bb8..6e8de7295 100644
