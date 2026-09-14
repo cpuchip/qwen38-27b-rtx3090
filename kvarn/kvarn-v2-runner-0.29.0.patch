@@ -11,26 +11,10 @@ block 128 with their page padded to the primary page, so both trees compute the 
 (2176) and hash unit (128); the hunks changed nothing for this geometry, and the coordinator hunks below
 still exempt a sliding-window block that does not divide the scheduler block.
 
---- generated against the v0.29.0 tree after the active repo and KVarN base patches ---
+--- exported from cpuchip/vllm c68ae347f (kvarn-v2-runner-0.29.0); regenerate with scripts/export-patch.sh, do not edit ---
 
---- a/model_executor/models/qwen3_dflash.py
-+++ b/model_executor/models/qwen3_dflash.py
-@@ -244,6 +244,15 @@
-         )
- 
-         self.sliding_window = sliding_window
-+        # KVarN has no sliding-window backend; keep the drafter's SW layers in
-+        # the native cache dtype while the target full-attention layers use KVarN.
-+        if cache_config is not None and str(
-+            getattr(cache_config, "cache_dtype", "auto")
-+        ).startswith("kvarn"):
-+            from copy import copy as _kv_copy
-+
-+            cache_config = _kv_copy(cache_config)
-+            cache_config.cache_dtype = "auto"
-         self.attn = Attention(
-             self.num_heads,
-             self.head_dim,
+diff --git a/model_executor/layers/attention/attention.py b/model_executor/layers/attention/attention.py
+index 246d99893..a16e731a5 100644
 --- a/model_executor/layers/attention/attention.py
 +++ b/model_executor/layers/attention/attention.py
 @@ -110,8 +110,25 @@
@@ -74,10 +58,31 @@ still exempt a sliding-window block that does not divide the scheduler block.
              # The backend owns its packing
              sw_per_token = self.attn_backend.customize_spec(
                  SlidingWindowSpec(
+diff --git a/model_executor/models/qwen3_dflash.py b/model_executor/models/qwen3_dflash.py
+index d38adfc88..cbcf78c39 100644
+--- a/model_executor/models/qwen3_dflash.py
++++ b/model_executor/models/qwen3_dflash.py
+@@ -224,6 +224,15 @@
+         )
+ 
+         self.sliding_window = sliding_window
++        # KVarN has no sliding-window backend; keep the drafter's SW layers in
++        # the native cache dtype while the target full-attention layers use KVarN.
++        if cache_config is not None and str(
++            getattr(cache_config, "cache_dtype", "auto")
++        ).startswith("kvarn"):
++            from copy import copy as _kv_copy
++
++            cache_config = _kv_copy(cache_config)
++            cache_config.cache_dtype = "auto"
+         self.attn = Attention(
+             self.num_heads,
+             self.head_dim,
+diff --git a/v1/core/kv_cache_coordinator.py b/v1/core/kv_cache_coordinator.py
+index b3a9b4c03..5ec0c2f9b 100644
 --- a/v1/core/kv_cache_coordinator.py
 +++ b/v1/core/kv_cache_coordinator.py
-@@ -86,7 +86,8 @@
-         self.enable_caching = enable_caching
+@@ -90,7 +90,8 @@
          # The scheduling granularity (LCM of all group block sizes), must be a multiple
          # of the hash_block_size and the block size of each group.
          assert scheduler_block_size % hash_block_size == 0 and all(
@@ -86,8 +91,9 @@ still exempt a sliding-window block that does not divide the scheduler block.
 +            or scheduler_block_size % g.kv_cache_spec.block_size == 0
              for g in kv_cache_config.kv_cache_groups
          )
-@@ -601,7 +601,12 @@
-             manager.block_size for manager in self.single_type_managers
+         self.scheduler_block_size = scheduler_block_size
+@@ -607,7 +608,12 @@
+             if group.kv_cache_spec.prefix_cacheable
          ]
          assert all(
 -            block_size % hash_block_size == 0 for block_size in group_block_sizes
@@ -100,9 +106,11 @@ still exempt a sliding-window block that does not divide the scheduler block.
          ), (
              "Each KV cache group's real block_size must be divisible by "
              f"hash_block_size. block_sizes={group_block_sizes}, "
+diff --git a/v1/core/single_type_kv_cache_manager.py b/v1/core/single_type_kv_cache_manager.py
+index 5ddec8c7b..70fade5c9 100644
 --- a/v1/core/single_type_kv_cache_manager.py
 +++ b/v1/core/single_type_kv_cache_manager.py
-@@ -918,6 +918,11 @@
+@@ -937,6 +937,11 @@
          assert dcp_world_size == 1, "DCP not support sliding window attn now."
          assert pcp_world_size == 1, "PCP not support sliding window attn now."
          # Fine-grained partial hits are not supported for sliding window now
@@ -114,11 +122,10 @@ still exempt a sliding-window block that does not divide the scheduler block.
          assert alignment_tokens % kv_cache_spec.block_size == 0, (
              "SlidingWindowManager does not support fine-grained (partial) cache hits"
          )
-@@ -1105,6 +1110,24 @@
-         window in the future.
+@@ -1125,6 +1130,24 @@
          """
          return 0
-+
+ 
 +    def cache_blocks(
 +        self,
 +        request: Request,
@@ -136,58 +143,15 @@ still exempt a sliding-window block that does not divide the scheduler block.
 +        ):
 +            return
 +        super().cache_blocks(request, num_tokens, retention_interval=retention_interval)
++
  
- 
- class ChunkedLocalAttentionManager(SingleTypeKVCacheManager):
---- a/v1/worker/gpu/model_states/mamba_hybrid.py
-+++ b/v1/worker/gpu/model_states/mamba_hybrid.py
-@@ -100,8 +100,13 @@
-         self.num_accepted_tokens_gpu[req_index].fill_(1)
-         if self._align_mode:
-             # Seed the running state block from the resumed/prefilled position.
-+            mamba_bs = (
-+                self._mamba_spec.block_size
-+                if self._mamba_spec is not None
-+                else self.cache_config.block_size
-+            )
-             self._mamba_state_idx_gpu[req_index].fill_(
--                (new_req_data.num_computed_tokens - 1) // self.cache_config.block_size
-+                (new_req_data.num_computed_tokens - 1) // mamba_bs
-             )
- 
-     def _get_mamba_group_info(
---- a/v1/worker/gpu/spec_decode/dflash2/speculator.py
-+++ b/v1/worker/gpu/spec_decode/dflash2/speculator.py
-@@ -94,6 +94,9 @@
-             temperature if SAMPLE_PROBABILISTIC else 0.0,
-             USE_FP64=USE_FP64,
-         )
-+        # A degenerate distribution can produce NaN scores. Keep the walk in
-+        # bounds; the verify step will reject any bad proposal.
-+        index = tl.where(index >= top_k, 0, index)
-         # vLLM 0.28.0's rejection sampler expects pre-temperature logits. With TRUNCATE
-         # the cached row is the truncated proposal (-inf outside the kept support).
-         realized = scores
-@@ -157,7 +160,7 @@
-             torch.arange(self.max_num_reqs, dtype=torch.int64, device=device)
-             * self.num_query_per_req
-         )
--        self._selector_tokens = torch.empty(
-+        self._selector_tokens = torch.zeros(
-             (self.max_num_reqs, self.draft_block),
-             dtype=self.draft_tokens.dtype,
-             device=device,
-@@ -717,6 +720,7 @@
-             hidden_states,
-             anchor_token_ids,
-         )
-+        scores = torch.nan_to_num(scores, nan=-1e30, posinf=1e30, neginf=-1e30)
-         self._sample_path(candidate_ids, scores, num_reqs)
-         if self.draft_logits is not None:
-             self._cache_draft_logits(candidate_ids, num_sample)
+ class CircularBufferManager(FullAttentionManager):
+     """Claims the ring's single block per request; prefix caching disabled."""
+diff --git a/v1/worker/gpu/model_runner.py b/v1/worker/gpu/model_runner.py
+index 3ce6998ef..94bffa6e1 100644
 --- a/v1/worker/gpu/model_runner.py
 +++ b/v1/worker/gpu/model_runner.py
-@@ -1115,9 +1115,14 @@
+@@ -1158,9 +1158,14 @@
              is_prefilling_np=is_prefilling_np,
              has_prefill=bool(is_prefilling_np.any()),
          )
@@ -203,3 +167,53 @@ still exempt a sliding-window block that does not divide the scheduler block.
  
      def prepare_inputs(
          self,
+diff --git a/v1/worker/gpu/model_states/mamba_hybrid.py b/v1/worker/gpu/model_states/mamba_hybrid.py
+index 6d07c1588..86c358e0f 100644
+--- a/v1/worker/gpu/model_states/mamba_hybrid.py
++++ b/v1/worker/gpu/model_states/mamba_hybrid.py
+@@ -118,8 +118,13 @@
+         self.num_accepted_tokens_gpu[req_index].fill_(1)
+         if self._align_mode:
+             # Seed the running state block from the resumed/prefilled position.
++            mamba_bs = (
++                self._mamba_spec.block_size
++                if self._mamba_spec is not None
++                else self.cache_config.block_size
++            )
+             self._mamba_state_idx_gpu[req_index].fill_(
+-                (new_req_data.num_computed_tokens - 1) // self.cache_config.block_size
++                (new_req_data.num_computed_tokens - 1) // mamba_bs
+             )
+ 
+     def _get_mamba_group_info(
+diff --git a/v1/worker/gpu/spec_decode/dflash2/speculator.py b/v1/worker/gpu/spec_decode/dflash2/speculator.py
+index 5c94ead5e..d63b68857 100644
+--- a/v1/worker/gpu/spec_decode/dflash2/speculator.py
++++ b/v1/worker/gpu/spec_decode/dflash2/speculator.py
+@@ -97,6 +97,9 @@
+             IS_DRAFTING=True,
+             USE_FP64=USE_FP64,
+         )
++        # A degenerate distribution can produce NaN scores. Keep the walk in
++        # bounds; the verify step will reject any bad proposal.
++        index = tl.where(index >= top_k, 0, index)
+         # vLLM 0.28.0's rejection sampler expects pre-temperature logits. With TRUNCATE
+         # the cached row is the truncated proposal (-inf outside the kept support).
+         realized = scores
+@@ -160,7 +163,7 @@
+             torch.arange(self.max_num_reqs, dtype=torch.int64, device=device)
+             * self.num_query_per_req
+         )
+-        self._selector_tokens = torch.empty(
++        self._selector_tokens = torch.zeros(
+             (self.max_num_reqs, self.draft_block),
+             dtype=self.draft_tokens.dtype,
+             device=device,
+@@ -718,6 +721,7 @@
+             hidden_states,
+             anchor_token_ids,
+         )
++        scores = torch.nan_to_num(scores, nan=-1e30, posinf=1e30, neginf=-1e30)
+         self._sample_path(candidate_ids, scores, num_reqs)
+         if self.draft_logits is not None:
+             self._cache_draft_logits(candidate_ids, num_sample)
