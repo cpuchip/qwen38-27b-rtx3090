@@ -10,7 +10,7 @@ Apply from the installed vllm package directory:
 
 Validated against vLLM 0.28.0. Reapply after upgrades.
 
---- exported from cpuchip/vllm bd0903a05 (qwen3_5-embed-quant); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 735f758ca (qwen3_5-embed-quant); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/models/qwen3_5.py b/model_executor/models/qwen3_5.py
 index f991f05d7..fe960984b 100644

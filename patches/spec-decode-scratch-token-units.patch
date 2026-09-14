@@ -92,7 +92,7 @@ VERIFICATION
 
 ---
 
---- exported from cpuchip/vllm b1cb4d1f0 (spec-decode-scratch-token-units); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm f8dfd56f2 (spec-decode-scratch-token-units); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/attention/backends/triton_attn.py b/v1/attention/backends/triton_attn.py
 index ee4d10906..70a6e6cc4 100644

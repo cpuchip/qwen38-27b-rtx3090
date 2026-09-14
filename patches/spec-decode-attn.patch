@@ -29,10 +29,10 @@ block - leaves the captured decode graph reading freed memory.
 Apply from the repo root:
   patch -p1 -d venv/lib/python3.12/site-packages/vllm < patches/spec-decode-attn.patch
 
---- exported from cpuchip/vllm 417e44712 (spec-decode-attn); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 531818e49 (spec-decode-attn); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/attention/backends/flash_attn.py b/v1/attention/backends/flash_attn.py
-index 9a6c66f5e..aaca7cde7 100755
+index 9a6c66f5e..a74255a2a 100755
 --- a/v1/attention/backends/flash_attn.py
 +++ b/v1/attention/backends/flash_attn.py
 @@ -1159,6 +1159,37 @@
@@ -110,7 +110,7 @@ index 9a6c66f5e..aaca7cde7 100755
 +            n = 1 + (spec.num_speculative_tokens if spec is not None else 0)
 +        except Exception:
 +            n = 0
-+        n = int(os.environ.get("VLLM_SPEC_DECODE_ATTN_QMAX", n or 0)) or n
++        n = envs.VLLM_SPEC_DECODE_ATTN_QMAX or n
 +        _SPEC_ATTN_QMAX = min(QMAX_TOKENS, max(n, BLOCK_M // group))
 +    return _SPEC_ATTN_QMAX
 +

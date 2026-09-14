@@ -19,7 +19,7 @@ Apply from the installed vllm package directory:
 
 Validated against vLLM 0.28.0 (issue #25, item 15). Reapply after upgrades.
 
---- exported from cpuchip/vllm ea263f708 (dspark-draft-quant-config); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 8e30713a7 (dspark-draft-quant-config); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/models/utils.py b/model_executor/models/utils.py
 index 9c6c7f6bb..74cee2369 100644
