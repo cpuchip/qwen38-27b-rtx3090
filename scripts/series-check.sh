@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The drift check for the fork workflow (docs/fork-workflow.md). Exit 0 = every invariant it can see holds.
 #
-#   bash scripts/series-check.sh [--fork <path to a cpuchip/vllm checkout or bare repo>] [--image <tag>] [--mirror]
+#   bash scripts/series-check.sh [--repo <ops checkout to check; default: the one this script is in>] [--fork <cpuchip/vllm checkout or bare repo>] [--image <tag>] [--mirror]
 #
 # Checks (numbers as in docs/fork-workflow.md):
 #   3  one pin: docker/requirements.txt vllm==, verify.sh pin, and the base tag of the fork commit in Dockerfile.fork agree
@@ -11,9 +11,14 @@
 #   1  the image is the branch: an image's installed vllm .py tree == the branch tree, version stamp excepted (needs --fork and --image)
 #   4  the mirror is a mirror: syv-main == syv-ai/main and main contains syv-main (--mirror; needs remotes origin + upstream)
 set -u
-HERE="$(cd "$(dirname "$0")/.." && pwd)"; cd "$HERE"
+# The script checks ONE repo checkout: --repo <path> if given, else the checkout the script itself lives in. The
+# caller's working directory is never the target (a copy of this script run from a sibling worktree checked its own
+# repo and reported that repo's pin as the sibling's: threadchip, 2026-09-14). The report names the checkout.
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
 FORK=""; IMAGE=""; MIRROR=0
-while [ $# -gt 0 ]; do case "$1" in --fork) FORK="$2"; shift 2 ;; --image) IMAGE="$2"; shift 2 ;; --mirror) MIRROR=1; shift ;; *) echo "unknown arg $1"; exit 2 ;; esac; done
+while [ $# -gt 0 ]; do case "$1" in --repo) HERE="$(cd "$2" && pwd)"; shift 2 ;; --fork) FORK="$2"; shift 2 ;; --image) IMAGE="$2"; shift 2 ;; --mirror) MIRROR=1; shift ;; *) echo "unknown arg $1"; exit 2 ;; esac; done
+cd "$HERE" || exit 2
+echo "series-check: checking $HERE ($(git rev-parse --short HEAD 2>/dev/null) on $(git rev-parse --abbrev-ref HEAD 2>/dev/null))"
 fail=0; ok(){ echo "  OK    $*"; }; bad(){ echo "  DRIFT $*"; fail=$((fail+1)); }
 
 echo "== 3: one pin"
