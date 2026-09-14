@@ -56,6 +56,12 @@ of their hunks landed by fuzz behind the series and the installer's `|| true` wo
 hunk in any file without a `port(kvarn-v2)` marker. The installer now applies at `--fuzz 0` and stops on
 a rejected hunk.
 
+Every knob the launchers export is registered in `envs.py` and read through `envs` (`speed-knobs-envs.patch`
+carries the registry: `VLLM_PREFILL_ATTN`, `VLLM_SPEC_DECODE_ATTN_QMAX`, the `VLLM_DFLASH2_*` lookup and chain
+family); a boot on the production line prints no "Unknown vLLM environment variable detected" line. The launcher no
+longer exports `VLLM_V2_CUDAGRAPH_MEM_MIB`: nothing on 0.29 reads it, since the graph-reserve hunk retired when vLLM
+started profiling graph memory itself, so the export was a dead knob that every production boot warned about.
+
 `VLLM_PREFILL_ATTN` is registered in `envs.py` (`speed-knobs-envs.patch`) and read through `envs` at both
 sites in `flash_attn.py`; before, it was a raw `os.environ.get` and every boot with `PREFILL_ATTN` set printed
 "Unknown vLLM environment variable detected: VLLM_PREFILL_ATTN" (the 0.28 line still does).

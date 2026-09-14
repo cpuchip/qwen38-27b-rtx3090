@@ -71,7 +71,7 @@ non-MLA attention layer). The "can this layer pad" check mirrors that: not isins
 promotion on every target layer; on 0.28 attn_utils set the flag from the backend for every attention spec, so the
 branch was taken there. The int4 profile then padded the five drafter layers at block 16 and could not fit 120k.)
 
---- exported from cpuchip/vllm b0739903c (hybrid-sw-block-promote); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 583eb7523 (hybrid-sw-block-promote); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/core/kv_cache_utils.py b/v1/core/kv_cache_utils.py
 index 69353c052..2e6e1c43a 100644

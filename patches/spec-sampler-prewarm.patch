@@ -20,7 +20,7 @@ compiles too. No-op without a speculator or on the v1 model runner.
 
 Apply with the patches/ set.
 
---- exported from cpuchip/vllm 757478923 (spec-sampler-prewarm); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 95ca38dd9 (spec-sampler-prewarm); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/warmup/kernel_warmup.py b/model_executor/warmup/kernel_warmup.py
 index f4dc08844..e1c240943 100644

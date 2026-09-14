@@ -1,6 +1,6 @@
 lookup-augmented drafting for DFlash2 (n-gram search over the context)
 
---- exported from cpuchip/vllm 548e7a152 (dflash2-lookup-drafting); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 5dd3b146e (dflash2-lookup-drafting); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/models/qwen3_dflash.py b/model_executor/models/qwen3_dflash.py
 index 0a481b382..d38adfc88 100644
@@ -76,10 +76,18 @@ index cb027293f..9aec93037 100644
          )
          self.attention_conv = DFlashGroupedConv(
 diff --git a/v1/worker/gpu/cudagraph_utils.py b/v1/worker/gpu/cudagraph_utils.py
-index f6564dadc..76610a4bc 100644
+index f6564dadc..7abb953e7 100644
 --- a/v1/worker/gpu/cudagraph_utils.py
 +++ b/v1/worker/gpu/cudagraph_utils.py
-@@ -229,6 +229,33 @@
+@@ -41,6 +41,7 @@
+ from vllm.v1.worker.gpu.input_batch import InputBatch, InputBuffers
+ from vllm.v1.worker.gpu.model_states.interface import ModelState
+ from vllm.v1.worker.utils import AttentionGroup, clear_layer_kv_caches
++import vllm.envs as envs
+ 
+ if TYPE_CHECKING:
+     from vllm.v1.worker.gpu.model_runner import GPUModelRunner
+@@ -229,6 +230,31 @@
              )
          else:
              decode_query_lens = [self.decode_query_len]
@@ -87,12 +95,10 @@ index f6564dadc..76610a4bc 100644
 +            # (v1/worker/gpu/spec_decode/dflash2/lookup.py fills the rest from the request's
 +            # own context) schedules either length, so both need a decode graph. Without
 +            # this the short step -- the one taken on ordinary prose -- runs piecewise.
-+            import os as _os
-+
 +            if (
 +                speculative_config is not None
-+                and _os.environ.get("VLLM_DFLASH2_GRAPH_BOTH", "1") == "1"
-+                and _os.environ.get("VLLM_DFLASH2_LOOKUP", "0") == "1"
++                and envs.VLLM_DFLASH2_GRAPH_BOTH
++                and envs.VLLM_DFLASH2_LOOKUP
 +            ):
 +                _cfg = getattr(
 +                    getattr(speculative_config, "draft_model_config", None),
@@ -157,17 +163,17 @@ index 0ee05328c..3ce6998ef 100644
  
          # Post-step KV connector related operations.
 diff --git a/v1/worker/gpu/spec_decode/dflash/speculator.py b/v1/worker/gpu/spec_decode/dflash/speculator.py
-index dd1bfdd5e..c6c57e414 100644
+index dd1bfdd5e..94d207ec6 100644
 --- a/v1/worker/gpu/spec_decode/dflash/speculator.py
 +++ b/v1/worker/gpu/spec_decode/dflash/speculator.py
-@@ -1,6 +1,7 @@
- # SPDX-License-Identifier: Apache-2.0
- # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
- import copy
-+import os
- from collections.abc import Mapping
- from typing import Any
+@@ -8,6 +8,7 @@
+ import torch
+ import torch.nn as nn
  
++import vllm.envs as envs
+ from vllm.config import VllmConfig, replace
+ from vllm.config.compilation import CUDAGraphMode
+ from vllm.forward_context import BatchDescriptor, set_forward_context
 @@ -44,8 +45,36 @@
          # Multimodal inputs not currently supported.
          self.supports_mm_inputs = False
@@ -188,7 +194,7 @@ index dd1bfdd5e..c6c57e414 100644
 +        self.draft_block = self.num_speculative_steps
 +        # Only the lookup can fill the extra positions, so without it the drafter keeps
 +        # being asked for the whole (longer) block, which is also the honest A/B control.
-+        lookup_on = os.environ.get("VLLM_DFLASH2_LOOKUP", "0") == "1"
++        lookup_on = envs.VLLM_DFLASH2_LOOKUP
 +        if lookup_on and 0 < trained_block < self.num_speculative_steps:
 +            self.draft_block = trained_block
 +            logger.info(
@@ -602,10 +608,10 @@ index 000000000..0315b6ecb
 +        num_warps=1,
 +    )
 diff --git a/v1/worker/gpu/spec_decode/dflash2/speculator.py b/v1/worker/gpu/spec_decode/dflash2/speculator.py
-index 1cd19acda..5a8d24883 100644
+index 1cd19acda..07438a148 100644
 --- a/v1/worker/gpu/spec_decode/dflash2/speculator.py
 +++ b/v1/worker/gpu/spec_decode/dflash2/speculator.py
-@@ -1,16 +1,25 @@
+@@ -1,16 +1,26 @@
  # SPDX-License-Identifier: Apache-2.0
  # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
  
@@ -615,6 +621,7 @@ index 1cd19acda..5a8d24883 100644
  import torch
  
 -from vllm.config import VllmConfig
++import vllm.envs as envs
  from vllm.config.compilation import CUDAGraphMode
 +from vllm.config import VllmConfig
 +from vllm.logger import init_logger
@@ -632,7 +639,7 @@ index 1cd19acda..5a8d24883 100644
  
  @triton.jit
  def _selector_walk_kernel(
-@@ -22,11 +31,14 @@
+@@ -22,11 +32,14 @@
      seeds_ptr,
      tokens_ptr,
      realized_scores_ptr,
@@ -647,7 +654,7 @@ index 1cd19acda..5a8d24883 100644
  ):
      row = tl.program_id(0)
      offsets = tl.arange(0, BLOCK_K)
-@@ -35,6 +47,9 @@
+@@ -35,6 +48,9 @@
      valid = req_state >= 0
      temperature = tl.load(temperature_ptr + req_state, mask=valid, other=0.0)
      seed = tl.load(seeds_ptr + req_state, mask=valid, other=0)
@@ -657,7 +664,7 @@ index 1cd19acda..5a8d24883 100644
      previous = 0
      for step in range(num_steps):
          flat = row * num_steps + step
-@@ -43,7 +58,7 @@
+@@ -43,7 +59,7 @@
              scores_ptr + score_base + offsets,
              mask=mask & valid,
              other=float("-inf"),
@@ -666,7 +673,7 @@ index 1cd19acda..5a8d24883 100644
          candidate_base = flat * top_k
          candidates = tl.load(
              candidate_ptr + candidate_base + offsets,
-@@ -51,6 +66,20 @@
+@@ -51,6 +67,20 @@
              other=0,
          )
  
@@ -687,7 +694,7 @@ index 1cd19acda..5a8d24883 100644
          # sample_pos is the predicted token's position P. Sampling keys a draw
          # by the position before the sampled token, P-1.
          sample_pos = tl.load(sample_pos_ptr + flat) - 1
-@@ -64,10 +93,12 @@
+@@ -64,10 +94,12 @@
              IS_DRAFTING=True,
              USE_FP64=USE_FP64,
          )
@@ -702,7 +709,7 @@ index 1cd19acda..5a8d24883 100644
              mask=mask & valid,
          )
          token = tl.load(candidate_ptr + candidate_base + index, mask=valid, other=0)
-@@ -85,6 +116,7 @@
+@@ -85,6 +117,7 @@
      draft_logits_stride_0,
      draft_logits_stride_1,
      num_steps: tl.constexpr,
@@ -710,7 +717,7 @@ index 1cd19acda..5a8d24883 100644
      top_k: tl.constexpr,
      BLOCK_K: tl.constexpr,
  ):
-@@ -94,7 +126,9 @@
+@@ -94,7 +127,9 @@
      offsets = tl.arange(0, BLOCK_K)
      mask = (req_state >= 0) & (offsets < top_k)
      candidate_base = flat * top_k
@@ -721,7 +728,7 @@ index 1cd19acda..5a8d24883 100644
      old_token_ids = tl.load(cached_candidate_ptr + cache_base + offsets, mask=mask)
      logits_base = (
          draft_logits_ptr
-@@ -109,6 +143,9 @@
+@@ -109,6 +144,9 @@
  
  
  class DFlash2Speculator(DFlashSpeculator):
@@ -731,7 +738,7 @@ index 1cd19acda..5a8d24883 100644
      _speculator_name = "DFlash2"
  
      def __init__(self, vllm_config: VllmConfig, device: torch.device):
-@@ -119,23 +156,180 @@
+@@ -119,23 +157,180 @@
              torch.arange(self.max_num_reqs, dtype=torch.int64, device=device)
              * self.num_query_per_req
          )
@@ -758,34 +765,34 @@ index 1cd19acda..5a8d24883 100644
 +        # over by the model runner; VLLM_DFLASH2_DRAFT_TOPK_TOPP=0 disables the truncation.
 +        self._req_top_p: torch.Tensor | None = None
 +        self._req_top_k: torch.Tensor | None = None
-+        self._truncate = os.environ.get("VLLM_DFLASH2_DRAFT_TOPK_TOPP", "1") == "1"
++        self._truncate = envs.VLLM_DFLASH2_DRAFT_TOPK_TOPP
 +        # Lookup-augmented block drafting: propose the continuation of an earlier
 +        # occurrence of the current suffix instead of the model's guess (lookup.py).
-+        self._lookup = os.environ.get("VLLM_DFLASH2_LOOKUP", "0") == "1"
++        self._lookup = envs.VLLM_DFLASH2_LOOKUP
 +        # Three separate questions, three thresholds (dflash2/lookup.py):
 +        #  NMIN/NSTRONG/AGREE   when to let the lookup replace a token the drafter proposed
 +        #  NMIN_TAIL            when to fill the positions the drafter never proposed
 +        #  LONGMIN              when the long verify block is worth its step time
-+        self._lookup_nmin = int(os.environ.get("VLLM_DFLASH2_LOOKUP_NMIN", "6"))
++        self._lookup_nmin = envs.VLLM_DFLASH2_LOOKUP_NMIN
 +        # 12, not 32: the kernel picks the longest match and breaks ties by recency, and a
 +        # longer cap makes it prefer an older long match over a newer short one. On
 +        # quote-and-explain work the newer one is the better predictor (3.21 vs 2.69 tokens
 +        # per step), and copies match well past 12 either way.
-+        self._lookup_nmax = int(os.environ.get("VLLM_DFLASH2_LOOKUP_NMAX", "12"))
++        self._lookup_nmax = envs.VLLM_DFLASH2_LOOKUP_NMAX
 +        # NSTRONG = NMIN and AGREE = 0 means "take any match of NMIN or more" for the
 +        # positions the drafter also proposed. Measured better at C1 (3.33 vs 3.27 tokens
 +        # per step) than requiring drafter agreement for medium matches.
-+        self._lookup_nstrong = int(os.environ.get("VLLM_DFLASH2_LOOKUP_NSTRONG", "6"))
-+        self._lookup_agree = int(os.environ.get("VLLM_DFLASH2_LOOKUP_AGREE", "0"))
-+        self._lookup_nmin_tail = int(os.environ.get("VLLM_DFLASH2_LOOKUP_NMIN_TAIL", "4"))
-+        self._lookup_long_min = int(os.environ.get("VLLM_DFLASH2_LOOKUP_LONGMIN", "6"))
++        self._lookup_nstrong = envs.VLLM_DFLASH2_LOOKUP_NSTRONG
++        self._lookup_agree = envs.VLLM_DFLASH2_LOOKUP_AGREE
++        self._lookup_nmin_tail = envs.VLLM_DFLASH2_LOOKUP_NMIN_TAIL
++        self._lookup_long_min = envs.VLLM_DFLASH2_LOOKUP_LONGMIN
 +        # Below this many tokens of context the long block is taken unconditionally, on the
 +        # theory that an extra verify position is nearly free there. Off by default: it
 +        # measured +8% at C1 under one memory configuration and -13% under the one that
 +        # ships (4 request slots, 56k), because what the extra positions cost depends on the
 +        # paged-attention layout as much as on the KV length.
-+        self._lookup_cheap_ctx = int(os.environ.get("VLLM_DFLASH2_LOOKUP_CHEAP_CTX", "0"))
-+        self._lookup_search = int(os.environ.get("VLLM_DFLASH2_LOOKUP_SEARCH", str(1 << 30)))
++        self._lookup_cheap_ctx = envs.VLLM_DFLASH2_LOOKUP_CHEAP_CTX
++        self._lookup_search = envs.VLLM_DFLASH2_LOOKUP_SEARCH
 +        self._req_states = None
 +        self._lookup_tokens = torch.zeros(
 +            (self.max_num_reqs, self.num_speculative_steps), dtype=torch.int32, device=device
@@ -804,7 +811,7 @@ index 1cd19acda..5a8d24883 100644
 +        # copy -- one step stale by construction, which costs at most one step at each end
 +        # of a copy run and never needs a synchronise.
 +        self._adaptive = (
-+            os.environ.get("VLLM_DFLASH2_LOOKUP_ADAPTIVE", "1") == "1"
++            envs.VLLM_DFLASH2_LOOKUP_ADAPTIVE
 +            and self.draft_block < self.num_speculative_steps
 +        )
 +        self._take_flags = torch.zeros(
@@ -836,7 +843,7 @@ index 1cd19acda..5a8d24883 100644
 +        # others arrived. Different block length, different rounding, different greedy text:
 +        # bench/labd_soak.py caught a verbatim copy coming out differently in two rounds of
 +        # an otherwise identical 4-way batch, and reproducibly did not with STICKY=0.
-+        self._lookup_sticky = int(os.environ.get("VLLM_DFLASH2_LOOKUP_STICKY", "3"))
++        self._lookup_sticky = envs.VLLM_DFLASH2_LOOKUP_STICKY
 +        self._sticky = 0
 +
 +        if self._lookup:
@@ -917,7 +924,7 @@ index 1cd19acda..5a8d24883 100644
      def _sample_path(
          self,
          candidate_ids: torch.Tensor,
-@@ -143,6 +337,7 @@
+@@ -143,6 +338,7 @@
          num_reqs: int,
      ) -> None:
          block_k = triton.next_power_of_2(self.selector_top_k)
@@ -925,7 +932,7 @@ index 1cd19acda..5a8d24883 100644
          _selector_walk_kernel[(num_reqs,)](
              scores.contiguous(),
              candidate_ids.contiguous(),
-@@ -150,19 +345,25 @@
+@@ -150,19 +346,25 @@
              self.sample_idx_mapping,
              self.temperature,
              self.seeds,
@@ -954,7 +961,7 @@ index 1cd19acda..5a8d24883 100644
          block_k = triton.next_power_of_2(self.selector_top_k)
          _cache_draft_logits_kernel[(num_sample,)](
              draft_logits,
-@@ -172,7 +373,8 @@
+@@ -172,7 +374,8 @@
              self.sample_idx_mapping,
              draft_logits.stride(0),
              draft_logits.stride(1),
@@ -964,7 +971,7 @@ index 1cd19acda..5a8d24883 100644
              top_k=self.selector_top_k,
              BLOCK_K=block_k,
              num_warps=1,
-@@ -194,15 +396,15 @@
+@@ -194,15 +397,15 @@
              num_tokens_across_dp,
              cudagraph_runtime_mode,
          )
@@ -983,7 +990,7 @@ index 1cd19acda..5a8d24883 100644
          )
          unary_logits = unary_logits.view_as(candidate_ids)
          anchor_token_ids = self.input_buffers.input_ids[self._anchor_indices[:num_reqs]]
-@@ -215,3 +417,68 @@
+@@ -215,3 +418,68 @@
          self._sample_path(candidate_ids, scores, num_reqs)
          if self.draft_logits is not None:
              self._cache_draft_logits(candidate_ids, num_sample)
