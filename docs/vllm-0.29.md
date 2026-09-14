@@ -45,7 +45,7 @@ so a pin that carries the upstream change retires the file by dropping the commi
 Every other file in `patches/` was regenerated the same way in this port's last pass. Before that, the shipped
 0.29 image placed nine of them by fuzz (GNU patch's default of two lines of slack when the context does not
 match: hybrid-sw-block-promote, mamba-align-checkpoint-order, offload-dflash-eagle-groups, offload-wsl2-devptr,
-spec-decode-attn, spec-sampler-prewarm, speed-knobs-envs, triton-prefill-attn-int8, vision-tower-cpu-offload;
+spec-decode-attn, spec-sampler-prewarm, speed-knobs-envs, prefill-attn-int8 (then triton-prefill-attn-int8), vision-tower-cpu-offload;
 found by threadchip replaying the apply loop against a pristine wheel), and nothing reported it because the
 check counted fuzz and offset under one word. The files now apply to v0.29.0 with exact context (30 clean, 1
 at an offset, 0 with fuzz), the tree they produce is byte-identical to the fork branch, and both the Dockerfile
