@@ -65,7 +65,7 @@ superseded_by() {
   local target="$1" q
   for q in "${SERIES[@]}"; do
     grep -q "^Supersedes: $target\$" "patches/$q" || continue
-    patch -p1 -R --dry-run -s -d "$SP" < "patches/$q" >/dev/null 2>&1 || $PY patches/_check_applied.py "patches/$q" "$SP" 2>/dev/null || continue
+    patch -p1 -R --dry-run -s --fuzz 0 -d "$SP" < "patches/$q" >/dev/null 2>&1 || $PY patches/_check_applied.py "patches/$q" "$SP" 2>/dev/null || continue
     printf '%s' "$q"; return 0
   done
   return 1
@@ -78,17 +78,19 @@ for name in "${SERIES[@]}"; do
     ok "dflash2-backport.patch retired (DFlash2 is native in vLLM 0.28.0)"
     continue
   fi
-  if patch -p1 -R --dry-run -s -d "$SP" < "$p" >/dev/null 2>&1; then ok "$name applied"
+  if patch -p1 -R --dry-run -s --fuzz 0 -d "$SP" < "$p" >/dev/null 2>&1; then ok "$name applied"
   elif $PY patches/_check_applied.py "$p" "$SP" 2>/dev/null; then ok "$name applied (content check; hunks overlap another patch)"
   elif s=$(superseded_by "$name"); then ok "$name applied (superseded by $s, which is applied)"
-  elif patch -p1 -N --dry-run -s -d "$SP" < "$p" >/dev/null 2>&1; then fail "$name NOT applied (patch -p1 -d $SP < $p)"
+  elif patch -p1 -N --dry-run -s --fuzz 0 -d "$SP" < "$p" >/dev/null 2>&1; then fail "$name NOT applied (patch -p1 -d $SP < $p)"
   else fail "$name neither applied nor applicable — vLLM version mismatch?"; fi
 done
-grep -q "VLLM_MARLIN_INT8_INCLUDE_RE" "$SP/envs.py" 2>/dev/null && ok "int8 layer-select env vars registered in envs.py" || fail "envs.py lacks VLLM_MARLIN_INT8_INCLUDE_RE"
+# Behavioural, not textual: the name must be in the live registry, so a comment or docstring cannot satisfy it
+# (a text grep here would; threadchip, 2026-09-13). Negative control: a made-up name exits 1 in the same image.
+$PY -c "import vllm.envs as e, sys; sys.exit(0 if 'VLLM_MARLIN_INT8_INCLUDE_RE' in e.environment_variables else 1)" 2>/dev/null && ok "int8 layer-select env vars registered in envs.py (live registry)" || fail "envs.py does not register VLLM_MARLIN_INT8_INCLUDE_RE"
 
 echo "== KVarN (optional, kvarn/)"
 if [ -f "$SP/v1/attention/backends/kvarn_attn.py" ]; then
-  if patch -p1 -R --dry-run -s -d "$SP" < kvarn/kvarn-0.28.0.patch >/dev/null 2>&1; then
+  if patch -p1 -R --dry-run -s --fuzz 0 -d "$SP" < kvarn/kvarn-0.28.0.patch >/dev/null 2>&1; then
     $PY -c "from vllm.v1.attention.backends.registry import AttentionBackendEnum; AttentionBackendEnum.KVARN.get_class()" 2>/dev/null && ok "KVarN backend importable, patch applied (KV=kvarn / CTX=huge available)" || fail "KVarN files present but backend does not import"
   else fail "KVarN modules present but kvarn-0.28.0.patch not applied (bash kvarn/install.sh)"; fi
   if $PY patches/_check_applied.py kvarn/kvarn-v2-runner-0.28.0.patch "$SP" >/dev/null 2>&1; then
