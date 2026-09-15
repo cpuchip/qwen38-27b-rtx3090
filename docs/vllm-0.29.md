@@ -61,7 +61,15 @@ carries the registry: `VLLM_PREFILL_ATTN`, `VLLM_SPEC_DECODE_ATTN_QMAX`, the `VL
 family, `VLLM_SPEC_DECODE_ATTN`, `VLLM_SPEC_ATTN_BLOCK_M`, `VLLM_INT4_MQ_3D` and its debug switch,
 `VLLM_MAMBA_ALIGN_KEEP_CHECKPOINTS`, `VLLM_DRAFT_TEMP_SCALE`, `VLLM_MARLIN_REPACK_STAGED`, and the Marlin int8 and tune
 knobs that were registered but still read raw); a boot on the production line prints no "Unknown vLLM environment
-variable detected" line, and no fork knob is read with a raw `os.environ` anywhere in the tree. The launcher no
+variable detected" line, and no fork knob is read with a raw `os.environ` anywhere in the tree.
+
+The KVarN modules under `kvarn/` read 20 knobs of their own (`KVARN_*`, Huawei CSL's names, one of them
+`KVARN_POOL_MEM_FRAC` exported by both launchers); they are registered in `envs.py` under those names by
+`kvarn-0.29.0.patch` and read through `envs` at all 25 sites, with the same defaults and the same
+present-or-absent semantics where the reader branches on presence. One limit stays: vLLM's "Unknown vLLM
+environment variable" warning fires only for names that start `VLLM_`, so a misspelt `KVARN_` knob is still
+silent. Renaming them `VLLM_KVARN_*` would close that and diverge from KVarN's own documentation; it is offered
+as a follow-up rather than done here. The launcher no
 longer exports `VLLM_V2_CUDAGRAPH_MEM_MIB`: nothing on 0.29 reads it, since the graph-reserve hunk retired when vLLM
 started profiling graph memory itself, so the export was a dead knob that every production boot warned about.
 
@@ -156,3 +164,30 @@ What to read in the numbers: quality and geometry compare across versions; prefi
 decode does not at n=3 even on byte-identical prompts, because the continuations differ. Perplexity lanes that
 read the image's own source (the code corpus) never compare across pins. Prompts must be deterministic per row
 (no timestamps in the salt), or no two runs share an input.
+
+## Decisions made in this port, one line each (reject any by name)
+
+Every one of these is a judgment call, not a consequence of the pin. Each is reversible on its own.
+
+1. **KVarN keeps Huawei's knob names** (`KVARN_*`), registered under them; the `VLLM_KVARN_*` rename is a follow-up.
+2. **Every fork knob is registered and read through `envs`**, including nineteen in patches that predate this port
+   (the DFlash2 lookup and chain family, the split-KV `QMAX` and `BLOCK_M`, the Marlin int8 and tune knobs, the
+   align-mode checkpoint flag); the reads are one-for-one with the raw expressions they replace.
+3. **`VLLM_V2_CUDAGRAPH_MEM_MIB` is no longer exported by `single-user/start_qwen.sh`** on this line: nothing on
+   0.29 reads it since the graph-reserve hunk retired.
+4. **`hybrid-sw-block-promote` pads any non-MLA attention layer**, mirroring upstream's own pad branch, after the
+   removed `indexes_kv_by_block_stride` flag; the 0.28 decision (promote instead of pad) is kept.
+5. **`ngram-chains`' `propose` override forwards `dp_sync`** (the 0.29 runner signature).
+6. **KVarN declares `LBHNC`** and folds the runner's 4D view into tiles with a `view` that fails on a wrong layout.
+7. **The three KVarN commits sit last on the fork branch**, in the order `kvarn/install.sh` applies them, so the
+   exported files apply at `--fuzz 0`; `install.sh` stops on a rejected hunk instead of `|| true`.
+8. **`vllm-pr54282-draft-gumbel-salt` and `xgrammar-spec-terminated` are retired** (both in 0.29.0), and the
+   graph-memory reserve hunk of `hybrid-kv-groups-v2-cudagraph` and the int4 padded-page view hunk are dropped.
+9. **`--fuzz 0` everywhere** (Dockerfile, `check_vllm_series.sh`, `kvarn/install.sh`), so a drifted hunk fails the
+   build by name instead of landing by guess.
+10. **The two backports (#100, #101) are carried** as fork commits and exported patches, and retire when a pin
+    carries the upstream change.
+11. **Three patch preambles were cut to prose** (`dflash2-prewarm`, `dflash2-z-adaptive-emitted`,
+    `prefill-attn-int8` carried a whole diff a second time above the first file header).
+12. **The int64 casts from #91 and #109** are in the fork commits, not fixups on top.
+
