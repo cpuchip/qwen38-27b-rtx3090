@@ -79,6 +79,21 @@ the row (threadchip, 2026-09-14, on #90 and #93):
 - **Settle between arms, and a dead second arm is suspect before it is a finding.** A boot started seconds
   after a 20+ GiB container exits can fail engine init on the same line that boots after 25 s; the harness
   gap is part of the row.
+- **A registration sweep ships with a default-preservation table.** For every knob moved from a raw read to
+  the registry, the raw expression's default from the pre-sweep tree beside what the built image reads with
+  nothing set; a knob read two ways at two sites (an int default at one, presence at the other) gets both
+  sites named. A registration that moves a default is the defect the sweep exists to prevent (threadchip, the
+  KVarN sweep).
+- **A knob census is a set difference, not a grep.** Three sweeps in one day each declared "no raw read left"
+  and each was scoped by a spelling or a prefix nobody had questioned (`os.environ.get(` only; `VLLM_` names
+  only). Count knobs by structural extraction over the tree (lodestar's `config_key` nodes) or by AST set
+  difference against the stock registry, and remember that vLLM's unknown-variable warning fires only for
+  `VLLM_`-prefixed names, so silence proves nothing for any other prefix.
+- **Classify a stats-line silence by the line that ends it, and compare timestamps with their date.** The stats
+  line before a gap is emitted as a prefill begins and reads zero prompt throughput; the prefill shows only on
+  the closing line, so a prefill filter keyed on the pre-gap line passes the very fires it targets. And a
+  tally that compares `HH:MM:SS` strings across midnight matches the wrong lines while reporting a verdict that
+  can still be right, which is the worse failure.
 
 ## Public replies, same bar
 
