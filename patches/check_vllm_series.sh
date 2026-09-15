@@ -19,7 +19,7 @@ set -euo pipefail
 # patch: the installed tree is produced by GNU patch, so GNU patch defines
 # "applies", and git apply stays on the five where hunk metadata is contractual.
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-VLLM_SOURCE=${1:?usage: bash patches/check_vllm_series.sh /path/to/vllm-<pinned tag>}
+VLLM_SOURCE=${1:?usage: bash patches/check_vllm_series.sh /path/to/vllm-<pinned tag>/vllm  (the package directory inside the checkout, not its root)}
 VLLM_SOURCE=$(cd -- "$VLLM_SOURCE" && pwd)
 
 git -C "$VLLM_SOURCE" rev-parse --is-inside-work-tree >/dev/null
