@@ -49,8 +49,16 @@ the 0.29 port dropped from the file and why (details in `docs/vllm-0.29.md`).
 | kvarn/kvarn-0.29.0 | feature | KVarN cache dtypes, quant mode, backend registration, page size | none (KVarN is Huawei CSL's, Apache-2.0) | 0.29.0; attn_utils view hunk retired | upstreamed |
 | kvarn/kvarn-v2-runner-0.29.0 | own | KVarN with the V2 runner and DFlash2 (SW groups, Mamba block index, selector guards) | none | 0.29.0; kv_cache_utils hunks retired | rides with KVarN |
 
-Retired at 0.29.0 and removed from the tree: `vllm-pr54282-draft-gumbel-salt` (vllm #54282, in 0.29.0) and
-`xgrammar-spec-terminated` (in 0.29.0).
+Retired at 0.29.0 and removed from the tree: `vllm-pr54282-draft-gumbel-salt` (vllm #54282, in 0.29.0),
+`xgrammar-spec-terminated` (in 0.29.0), and `sse-keep-alive` (vllm 585bb07c7, in 0.29.0 and not in
+0.28.0; the `--sse-keep-alive-interval` flag is unchanged, so nothing that sets it needs to change).
+
+Retired on 0.29 for a different reason, and temporarily: `int4-mq3d-envs` — its two registrations
+(`VLLM_INT4_MQ_3D`, `VLLM_INT4_MQ_3D_DEBUG`) already exist on this line in `speed-knobs-envs`, and
+this line's readers already go through `vllm.envs`, so applying it duplicates them and fails at
+`--fuzz 0`. The #114 restructure recreates it as its own topic — moving those registrations out of
+`speed-knobs-envs` rather than adding a second copy — before the pin-flip PR. Until then the 0.28
+and 0.29 shapes differ here by design.
 
 Two files still carry raw `diff -ruN` headers with timestamps instead of a preamble (`dflash2-z-adaptive-emitted`,
 `offload-wsl2-devptr`); their descriptions live in `docs/gotchas.md` and `docs/MR-DRAFT.md` until they get one.
