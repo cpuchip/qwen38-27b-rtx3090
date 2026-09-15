@@ -95,6 +95,19 @@ the row (threadchip, 2026-09-14, on #90 and #93):
   tally that compares `HH:MM:SS` strings across midnight matches the wrong lines while reporting a verdict that
   can still be right, which is the worse failure.
 
+Three more, paid for on 2026-09-15 by the 0.29 re-port onto a moved main (threadchip):
+
+- **Count commits before and after every rebase.** Taking upstream's side mechanically on a conflicted patch file
+  emptied six of thirty commits and git dropped them, the KVarN tip among them; the count was the only thing that
+  noticed.
+- **Confirm the branch ref points at the work before any push.** A worktree on a detached HEAD held the finished
+  re-port while the branch name still pointed at the pre-rebase start; `git push origin <branch>` would have
+  published the untouched start and reported success. `git branch --show-current` must print the branch, and
+  `git rev-parse <branch>` must equal the commit that was validated.
+- **Apply with `--no-backup-if-mismatch`, and grep the tree for `*.orig` and `*.rej` before every commit.** Three
+  stale patch backups rode into a topic commit through `git add -A` and surfaced later as the one differing entry
+  in an otherwise identical tree.
+
 ## Public replies, same bar
 
 A comment on someone's issue or PR is read by the same people with the same care. `scripts/pr-gate/reply_gate.py
