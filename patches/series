@@ -48,3 +48,4 @@ engine-completion-log.patch
 engine-stall-sentinel.patch
 int4-mq3d-envs.patch
 triton-spec-attn-fp8-kv.patch
+topk-honour-flashinfer-sampler-switch.patch
