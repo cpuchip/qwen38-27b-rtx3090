@@ -46,6 +46,5 @@ mamba-align-retire-null-gaps.patch
 offload-mtp-serve.patch
 engine-completion-log.patch
 engine-stall-sentinel.patch
-sse-keep-alive.patch
 int4-mq3d-envs.patch
 triton-spec-attn-fp8-kv.patch
