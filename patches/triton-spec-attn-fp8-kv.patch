@@ -291,7 +291,7 @@ Re-cut for 0.29: the envs.py anchors moved, and this tree already carries
 0.28 patch is a no-op here. VLLM_SPEC_ATTN_DEBUG is registered beside VLLM_SPEC_ATTN_BLOCK_M
 rather than at the 0.28 line numbers.
 
---- exported from cpuchip/vllm 6b63de5eb (triton-spec-attn-fp8-kv); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm cfc6b3032 (triton-spec-attn-fp8-kv); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/envs.py b/envs.py
 index 61df61c0f..dd6eea8e2 100755
