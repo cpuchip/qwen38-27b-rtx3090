@@ -838,7 +838,10 @@ venv/bin/pip install vllm==0.29.0 huggingface_hub hf_transfer ninja \
 # latest. With the versions matched, FLASHINFER_DISABLE_VERSION_CHECK=1 is no longer
 # needed; the launchers still export it, harmlessly.
 # Cost to know before you install it: the 0.6.18 cubin package is ~6.3 GB unpacked
-# (85,496 files).
+# (85,496 files). The Docker image deliberately does NOT carry it: the image ships
+# nvcc 13.0.88, which satisfies the equality rule below, and 6.3 GB on a 9.5 GB image
+# is disk the CI runner already has to free to build at all. The venv path installs
+# it because a venv host may have no usable nvcc.
 #
 # It does NOT cover everything. No cubin release carries the vocab-wide top-k, so
 # the DFlash2 candidate selector still JITs on first use, and that JIT needs a
