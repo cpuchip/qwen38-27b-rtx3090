@@ -11,7 +11,7 @@ block 128 with their page padded to the primary page, so both trees compute the 
 (2176) and hash unit (128); the hunks changed nothing for this geometry, and the coordinator hunks below
 still exempt a sliding-window block that does not divide the scheduler block.
 
---- exported from cpuchip/vllm 58d20f40d (kvarn-v2-runner-0.29.0); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm e23d277a2 (kvarn-v2-runner-0.29.0); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/layers/attention/attention.py b/model_executor/layers/attention/attention.py
 index 246d99893..a16e731a5 100644
