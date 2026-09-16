@@ -46,7 +46,7 @@ Every other file in `patches/` was regenerated the same way in this port's last 
 0.29 image placed nine of them by fuzz (GNU patch's default of two lines of slack when the context does not
 match: hybrid-sw-block-promote, mamba-align-checkpoint-order, offload-dflash-eagle-groups, offload-wsl2-devptr,
 spec-decode-attn, spec-sampler-prewarm, speed-knobs-envs, prefill-attn-int8 (then named triton-prefill-attn-int8), vision-tower-cpu-offload;
-found by threadchip replaying the apply loop against a pristine wheel), and nothing reported it because the
+found by replaying the apply loop against a pristine wheel on the native 3090), and nothing reported it because the
 check counted fuzz and offset under one word. The files now apply to v0.29.0 with exact context (30 clean, 1
 at an offset, 0 with fuzz), the tree they produce is byte-identical to the fork branch, and both the Dockerfile
 and `check_vllm_series.sh` run `patch --fuzz 0`, so the next drift fails the build and names the patch.
@@ -99,7 +99,7 @@ total is not: the same 25k prompt on the huge profile moved from 9.75 s to first
 (0.29 without the backports) to 15.68 s and 78 tok/s (with them) with the total within 8 percent and equal
 quality, and the native 3090 shows neither the split nor the move (16.37 s vs 16.46 s, totals within 1 percent).
 Read totals and counters on WSL2; the split is where the first content byte lands relative to the work, not
-compute (threadchip's reading, 2026-09-13).
+compute (read on the native 3090, 2026-09-13).
 
 Two layout strings one letter apart appear in 0.29 boot logs and both are right: the fast profile's FLASH_ATTN
 path logs "Using LBNHC KV cache layout", KVarN (`CTX=huge`) logs "Using LBHNC". The letters are the physical
