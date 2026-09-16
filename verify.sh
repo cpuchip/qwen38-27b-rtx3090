@@ -85,7 +85,7 @@ for name in "${SERIES[@]}"; do
   else fail "$name neither applied nor applicable — vLLM version mismatch?"; fi
 done
 # Behavioural, not textual: the name must be in the live registry, so a comment or docstring cannot satisfy it
-# (a text grep here would; threadchip, 2026-09-13). Negative control: a made-up name exits 1 in the same image.
+# (a text grep here would; found on the native 3090, 2026-09-13). Negative control: a made-up name exits 1 in the same image.
 $PY -c "import vllm.envs as e, sys; sys.exit(0 if 'VLLM_MARLIN_INT8_INCLUDE_RE' in e.environment_variables else 1)" 2>/dev/null && ok "int8 layer-select env vars registered in envs.py (live registry)" || fail "envs.py does not register VLLM_MARLIN_INT8_INCLUDE_RE"
 
 echo "== KVarN (optional, kvarn/)"
