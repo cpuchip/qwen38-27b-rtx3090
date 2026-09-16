@@ -607,11 +607,20 @@ TOOL_ARGS=()
 # issue #51; llama-swap reads them). Off by default only because the timing
 # fields ride on the engine-stats path, so it cannot be paired with
 # --disable-log-stats in EXTRA_ARGS. --enable-prompt-tokens-details is always
-# on. vLLM's per-request *spec-decode* summary flag is nightly-only (not 0.27.1).
+# on. The per-request spec-decode summary is in 0.29.0 and rides with REQ_METRICS=1.
 # Array, not $( [ ] && echo ): that substitution exits 1 when the test is
 # false, which kills a launcher running under `set -e` silently (#59).
 METRICS_ARGS=()
-[ "${REQ_METRICS:-0}" = 1 ] && METRICS_ARGS=(--enable-per-request-metrics --enable-force-include-usage)
+if [ "${REQ_METRICS:-0}" = 1 ]; then
+  # vLLM 0.29.0: per-request speculative-decoding acceptance metrics ride in the response under
+  # metrics.speculative_decoding (n == 1 only; the field is experimental, shape as of v0.29.0). summary
+  # is mean acceptance length, draft acceptance rate and the step histogram; REQ_METRICS_DETAILED=1
+  # adds the ordered per-step accepted/proposed arrays, which upstream says is not free, so it is a
+  # separate opt-in and off in every profile anyone benchmarks (#66, #75, gotcha 53).
+  SPEC_METRICS=summary; [ "${REQ_METRICS_DETAILED:-0}" = 1 ] && SPEC_METRICS=detailed
+  METRICS_ARGS=(--enable-per-request-metrics --enable-force-include-usage
+                --per-request-spec-decode-metrics "$SPEC_METRICS")
+fi
 
 # Vision. --language-model-only drops the vision tower cleanly -- no weights loaded,
 # 0.858 GiB on this checkpoint (gotcha 9) -- and stays the default. VISION=1 keeps
