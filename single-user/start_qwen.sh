@@ -512,19 +512,28 @@ if [ "${PREFIX_CACHE:-0}" = "1" ]; then
   # attention block, and that block moves with the draft count (the Mamba page holds
   # the speculative state slots): 2176 at 7 drafts, 2432 at 15, both measured. Other
   # draft counts stay dense and say how to set it by hand. PREFIX_RETENTION= (empty)
-  # forces dense; an exported VLLM_PREFIX_CACHE_RETENTION_INTERVAL always wins.
-  if [ "$CTX" = "huge" ] && [ "$SPEC" = "dflash2" ] \
-     && [ -z "${VLLM_PREFIX_CACHE_RETENTION_INTERVAL+x}" ]; then
-    case $DRAFT_TOKENS in 7) RETENTION=13056 ;; 15) RETENTION=14592 ;; *) RETENTION= ;; esac
-    RETENTION=${PREFIX_RETENTION-$RETENTION}
-    if [ -n "$RETENTION" ]; then
-      export VLLM_PREFIX_CACHE_RETENTION_INTERVAL=$RETENTION
-    elif [ -z "${PREFIX_RETENTION+x}" ]; then
-      echo "[start_qwen] CTX=huge DFLASH_TOKENS=$DRAFT_TOKENS: no measured block size, so" \
-           "prefix retention stays dense and two long conversations advanced in turn will" \
-           "evict each other (#174). Set PREFIX_RETENTION to 6x the 'attention block size'" \
-           "line this boot prints." >&2
-    fi
+  # forces dense; --prefix-cache-retention-interval in EXTRA_ARGS always wins, then an
+  # exported VLLM_PREFIX_CACHE_RETENTION_INTERVAL.
+  # On 0.29 the interval has to go in as the flag. `vllm serve` still reads the
+  # deprecated env var (and logs the deprecation), but the flag's own unset default
+  # overrides it, so hybrid + EAGLE falls back to dense with no error: an exported
+  # 13057, which the flag refuses, boots. An exported value is carried over as the flag.
+  if [ "$CTX" = "huge" ] && [ "$SPEC" = "dflash2" ]; then
+    case " ${EXTRA_ARGS:-} " in
+      *"--prefix-cache-retention-interval"*) ;;
+      *)
+        case $DRAFT_TOKENS in 7) RETENTION=13056 ;; 15) RETENTION=14592 ;; *) RETENTION= ;; esac
+        RETENTION=${VLLM_PREFIX_CACHE_RETENTION_INTERVAL-${PREFIX_RETENTION-$RETENTION}}
+        if [ -n "$RETENTION" ]; then
+          EXTRA_ARGS="--prefix-cache-retention-interval $RETENTION ${EXTRA_ARGS}"
+        elif [ -z "${PREFIX_RETENTION+x}" ] && [ -z "${VLLM_PREFIX_CACHE_RETENTION_INTERVAL+x}" ]; then
+          echo "[start_qwen] CTX=huge DFLASH_TOKENS=$DRAFT_TOKENS: no measured block size, so" \
+               "prefix retention stays dense and two long conversations advanced in turn will" \
+               "evict each other (#174). Set PREFIX_RETENTION to 6x the 'attention block size'" \
+               "line this boot prints." >&2
+        fi ;;
+    esac
+    unset VLLM_PREFIX_CACHE_RETENTION_INTERVAL
   fi
   # DFlash2 only: prefix caching and a CAPTURED (FULL) verify step do not mix on
   # that path. It is the capture, not the drafter: eager is clean, and so is
