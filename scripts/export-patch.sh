@@ -10,6 +10,11 @@ G="git -C $FORK"
 SUBJ=$($G log -1 --format='%s' "$COMMIT"); TOPIC=$(echo "$SUBJ" | sed -nE 's/^\[qwen38\] ([A-Za-z0-9._-]+).*/\1/p')
 [ -n "$TOPIC" ] || { echo "not a topic commit: $SUBJ"; exit 1; }
 [ -n "$OUT" ] || OUT="patches/$TOPIC.patch"
+# A whole diff pasted into the message is not a stray line: dropping its header lines (below) leaves the hunk
+# bodies in the preamble (triton-spec-attn-fp8-kv shipped 218 such lines until 2026-09-22). Fix the message.
+if $G log -1 --format='%b' "$COMMIT" | grep -q '^diff --git '; then
+  echo "commit $COMMIT's message contains a diff; reword it to prose before exporting"; exit 1
+fi
 # The body is prose. A commit imported from an old patch file can carry a stray diff line (a new-file
 # patch's "--- /dev/null" and "@@" preamble boundary); GNU patch would read that as the start of a hunk.
 BODY=$($G log -1 --format='%b' "$COMMIT" | sed -e '/^Source: /,$d' | grep -vE '^(@@ |--- |\+\+\+ |diff --git )' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')
