@@ -38,7 +38,7 @@ for i in range(N):
     dt = time.time() - t0; b = counters(); u = d["usage"]
     ct = u["completion_tokens"]
     acc = {k: round(b.get(k, 0) - a.get(k, 0), 1) for k in set(a) | set(b) if b.get(k, 0) != a.get(k, 0)}
-    # exact-suffix selection (threadchip, 2026-09-12): "draft" matched both num_drafts and
+    # exact-suffix selection (found on the native 3090, 2026-09-12): "draft" matched both num_drafts and
     # num_draft_tokens and set iteration order is hash-dependent, so the old line picked
     # a different counter per process; report both named quantities instead.
     def pick(suffix):

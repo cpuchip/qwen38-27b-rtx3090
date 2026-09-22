@@ -54,7 +54,7 @@ not a merged PR; it is the wrapping not lagging the code.
 ## Verification asks, and two rules the second seat paid for
 
 An ask to the verifying seat names the branch head, the exact command, and the expected row. Two rules for
-the row (threadchip, 2026-09-14, on #90 and #93):
+the row (the native 3090 review, 2026-09-14, on #90 and #93):
 
 - **Run the positive control before the negative.** A row that expects silence ("=0 prints nothing") is
   satisfied by a check that never fires; the expected string in the row was wrong once and the =1 run showed
@@ -65,13 +65,13 @@ the row (threadchip, 2026-09-14, on #90 and #93):
   the branch, or replace the installed file with the branch's, and say which in the row.
 - **Prove which module the interpreter loaded before trusting a before-arm.** A stale `.pyc` can run the fixed
   code under an unfixed source file, making a bug look absent; a one-line guard on the loaded module (line
-  count, or the presence of the fix's own text) turns "no failure" into a measurement (threadchip, #109).
+  count, or the presence of the fix's own text) turns "no failure" into a measurement (the native 3090 review, #109).
 - **Reset and clean the replay tree between arms**, every time: a tree carrying a partial apply or staged files
   reports the next arm against the wrong base and looks like a result.
 - **Peak-memory rows compare only inside one session.** On both boxes a peak KV-usage row moved 59% between
   sessions with the images bit-identical to each other in the same session (pool, block, layout and compile
   cache excluded as causes). A peak claim stands on same-session arms; a cross-session peak is not a
-  measurement of the change (threadchip, the 0.29 rebase vet).
+  measurement of the change (the native 3090 review, the 0.29 rebase vet).
 - **A launch line in an ask names which values are the launcher's defaults and which are overrides.** A line
   copied with `MAX_LEN=65536` and `DFLASH_TOKENS=15` failed engine init on two boxes and two pins and read as
   a regression for an hour; the launcher's own maximum at k=15 is 57,344 and the override was ours. State the
@@ -82,7 +82,7 @@ the row (threadchip, 2026-09-14, on #90 and #93):
 - **A registration sweep ships with a default-preservation table.** For every knob moved from a raw read to
   the registry, the raw expression's default from the pre-sweep tree beside what the built image reads with
   nothing set; a knob read two ways at two sites (an int default at one, presence at the other) gets both
-  sites named. A registration that moves a default is the defect the sweep exists to prevent (threadchip, the
+  sites named. A registration that moves a default is the defect the sweep exists to prevent (the native 3090 review, the
   KVarN sweep).
 - **A knob census is a set difference, not a grep.** Three sweeps in one day each declared "no raw read left"
   and each was scoped by a spelling or a prefix nobody had questioned (`os.environ.get(` only; `VLLM_` names
@@ -95,7 +95,7 @@ the row (threadchip, 2026-09-14, on #90 and #93):
   tally that compares `HH:MM:SS` strings across midnight matches the wrong lines while reporting a verdict that
   can still be right, which is the worse failure.
 
-Three more, paid for on 2026-09-15 by the 0.29 re-port onto a moved main (threadchip):
+Three more, paid for on 2026-09-15 by the 0.29 re-port onto a moved main (the native 3090 review):
 
 - **Count commits before and after every rebase.** Taking upstream's side mechanically on a conflicted patch file
   emptied six of thirty commits and git dropped them, the KVarN tip among them; the count was the only thing that

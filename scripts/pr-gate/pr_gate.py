@@ -58,7 +58,7 @@ def main():
         lead_commit = pr["commits"][-1]["messageHeadline"] + "\n" + pr["commits"][-1].get("messageBody", "")
         # The diff is read from the local branch. If that is not the PR's head, every objective check below
         # (counts, series, env registration) describes a commit the reviewer will never see; say so and stop
-        # (threadchip, 2026-09-13: a worktree one commit behind reported 6 hunks for a 7-hunk head, green).
+        # (2026-09-13: a worktree one commit behind reported 6 hunks for a 7-hunk head, green).
         local = git(["rev-parse", branch], a.git).strip()
         if local != pr["headRefOid"] and not a.local_head:
             raise SystemExit(f"FAIL stale-diff: local {branch} is at {local[:7]}, PR #{a.pr} head is {pr['headRefOid'][:7]}. "
@@ -130,7 +130,7 @@ def main():
                 reads.add(m.group(1))
     # Bar item 7 says never read a knob with os.environ inside vLLM code, registered or not: the registered
     # bool and a raw string read disagree at "0" (the string is truthy), so a knob read both ways has two
-    # senses (threadchip on #90, 2026-09-14). Any such read fails; the fix is `envs.<NAME>`.
+    # senses (review of #90, 2026-09-14). Any such read fails; the fix is `envs.<NAME>`.
     if reads:
         all_patches = git(["ls-tree", "-r", "--name-only", branch, "--", "patches"], a.git).split()
         envs_text = "\n".join(head_tree(p) for p in all_patches if p.endswith(".patch"))

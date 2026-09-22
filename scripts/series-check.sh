@@ -13,7 +13,7 @@
 set -u
 # The script checks ONE repo checkout: --repo <path> if given, else the checkout the script itself lives in. The
 # caller's working directory is never the target (a copy of this script run from a sibling worktree checked its own
-# repo and reported that repo's pin as the sibling's: threadchip, 2026-09-14). The report names the checkout.
+# repo and reported that repo's pin as the sibling's, 2026-09-14). The report names the checkout.
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 FORK=""; IMAGE=""; MIRROR=0
 while [ $# -gt 0 ]; do case "$1" in --repo) HERE="$(cd "$2" && pwd)"; shift 2 ;; --fork) FORK="$2"; shift 2 ;; --image) IMAGE="$2"; shift 2 ;; --mirror) MIRROR=1; shift ;; *) echo "unknown arg $1"; exit 2 ;; esac; done
@@ -70,7 +70,7 @@ if [ -n "$FORK" ] && [ -z "$NOFORK" ]; then
   TMP=$(mktemp -d); $G worktree add -q "$TMP/tag" "v$PIN" 2>/dev/null && {
     # Apply in patches/series order (the Dockerfile's order), at --fuzz 0: a hunk that needs slack is a hunk cut
     # against a tree this is not. The verdict is fail-closed: the comparison must itself succeed and print a
-    # count, so a broken temp worktree or a bad commit id reads as DRIFT, not as an empty diff (threadchip, 2026-09-14).
+    # count, so a broken temp worktree or a bad commit id reads as DRIFT, not as an empty diff (2026-09-14).
     while IFS= read -r name; do case "$name" in dflash2-backport.patch) continue ;; esac
       patch -p1 -N -s --fuzz 0 -r /dev/null -d "$TMP/tag/vllm" < "patches/$name" >/dev/null 2>&1 || bad "patch does not apply to v$PIN at --fuzz 0: $name"
     done < <(sed -e 's/#.*//' -e 's/^[[:space:]]*//;s/[[:space:]]*$//' -e '/^$/d' patches/series)
