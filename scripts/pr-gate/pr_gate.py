@@ -88,7 +88,7 @@ def main():
 
     # 1. counts in body/lead commit vs the patch files in the diff
     patch_files = [f for f in files if f.startswith("patches/") and f.endswith(".patch")]
-    claimed = re.findall(r"\b(\w+|\d+)\s+hunks?\b", text_all, re.I)
+    claimed = re.findall(r"\b(\w+|\d+)\s+hunks?\b(?!-)", text_all, re.I)  # "hunk-body" is not a count
     words = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
     claimed_n = sorted({words.get(c.lower(), int(c) if c.isdigit() else None) for c in claimed} - {None})
     if patch_files:
