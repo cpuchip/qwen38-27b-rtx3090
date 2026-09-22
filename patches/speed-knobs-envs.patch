@@ -9,13 +9,13 @@ this a cached graph from a run without the flag fails with
 "assert_size_stride ... expected size 328==82". Independent of marlin-int8-layer-select.patch (same file, disjoint hunks):
   patch -p1 -d venv/lib/python3.12/site-packages/vllm < patches/speed-knobs-envs.patch
 
---- exported from cpuchip/vllm cc3462de8 (speed-knobs-envs); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 323e89b2f (speed-knobs-envs); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/envs.py b/envs.py
-index b25601bac..7a98270ef 100755
+index 39e14e5fc..8e4ad24a4 100755
 --- a/envs.py
 +++ b/envs.py
-@@ -189,6 +189,39 @@
+@@ -193,6 +193,36 @@
      VLLM_HUMMING_ONLINE_QUANT_CONFIG: dict[str, Any] | None = None
      VLLM_HUMMING_INPUT_QUANT_CONFIG: dict[str, Any] | None = None
      VLLM_HUMMING_USE_F16_ACCUM: bool = False
@@ -23,10 +23,8 @@ index b25601bac..7a98270ef 100755
 +    # torch.compile cache key; VLLM_MARLIN_TUNE changes the Marlin workspace shape)
 +    VLLM_MARLIN_TUNE: bool = False
 +    VLLM_MARLIN_TUNE_DIR: str = ""
-+    VLLM_SPEC_DECODE_ATTN: bool = False
 +    VLLM_DRAFT_TOPK_TOPP: bool = True
 +    VLLM_PREFILL_ATTN: str = ""
-+    VLLM_SPEC_DECODE_ATTN_QMAX: int = 0
 +    VLLM_DFLASH2_LOOKUP: bool = False
 +    VLLM_DFLASH2_GRAPH_BOTH: bool = True
 +    VLLM_DFLASH2_DRAFT_TOPK_TOPP: bool = True
@@ -44,7 +42,6 @@ index b25601bac..7a98270ef 100755
 +    VLLM_DFLASH2_CHAIN_MINMATCH: int = 8
 +    VLLM_DFLASH2_CHAIN_LOG_SEC: float = 30.0
 +    VLLM_DFLASH2_CHAIN_GREEDY_ONLY: bool = True
-+    VLLM_SPEC_ATTN_BLOCK_M: int = 0
 +    VLLM_INT4_MQ_3D: bool = False
 +    VLLM_INT4_MQ_3D_DEBUG: bool = False
 +    VLLM_MAMBA_ALIGN_KEEP_CHECKPOINTS: bool = False
@@ -55,19 +52,17 @@ index b25601bac..7a98270ef 100755
      VLLM_HUMMING_MOE_GEMM_TYPE: Literal["indexed", "grouped", "auto"] | None = None
      VLLM_B12X_MOE_FP4_FORCE_A16: bool = False
      VLLM_DEEPEPLL_NVFP4_DISPATCH: bool = False
-@@ -1516,6 +1549,47 @@
+@@ -1523,6 +1553,44 @@
      "VLLM_HUMMING_ONLINE_QUANT_CONFIG": lambda: maybe_convert_json_str_or_file(
          os.environ.get("VLLM_HUMMING_ONLINE_QUANT_CONFIG", None)
      ),
 +    # syv patch: single-user speed knobs
 +    "VLLM_MARLIN_TUNE": lambda: os.environ.get("VLLM_MARLIN_TUNE", "0") == "1",
 +    "VLLM_MARLIN_TUNE_DIR": lambda: os.environ.get("VLLM_MARLIN_TUNE_DIR", ""),
-+    "VLLM_SPEC_DECODE_ATTN": lambda: os.environ.get("VLLM_SPEC_DECODE_ATTN", "0") == "1",
 +    "VLLM_DRAFT_TOPK_TOPP": lambda: os.environ.get("VLLM_DRAFT_TOPK_TOPP", "1") == "1",
 +    # int8 (or fp16 scaffold) Triton prefill attention for hd256; "" keeps FA2
 +    "VLLM_PREFILL_ATTN": lambda: os.environ.get("VLLM_PREFILL_ATTN", ""),
 +    # split-KV verify kernel: cap on query rows per request (0 = 1 + num_speculative_tokens)
-+    "VLLM_SPEC_DECODE_ATTN_QMAX": lambda: int(os.environ.get("VLLM_SPEC_DECODE_ATTN_QMAX", "0")),
 +    # DFlash2 lookup-augmented drafting and drafter-free chains (dflash2/speculator.py, lookup.py)
 +    "VLLM_DFLASH2_LOOKUP": lambda: os.environ.get("VLLM_DFLASH2_LOOKUP", "0") == "1",
 +    "VLLM_DFLASH2_GRAPH_BOTH": lambda: os.environ.get("VLLM_DFLASH2_GRAPH_BOTH", "1") == "1",
@@ -87,7 +82,6 @@ index b25601bac..7a98270ef 100755
 +    "VLLM_DFLASH2_CHAIN_LOG_SEC": lambda: float(os.environ.get("VLLM_DFLASH2_CHAIN_LOG_SEC", "30")),
 +    "VLLM_DFLASH2_CHAIN_GREEDY_ONLY": lambda: os.environ.get("VLLM_DFLASH2_CHAIN_GREEDY_ONLY", "1") == "1",
 +    # split-KV verify kernel: force the query-row tile (0 = pick by row count)
-+    "VLLM_SPEC_ATTN_BLOCK_M": lambda: int(os.environ.get("VLLM_SPEC_ATTN_BLOCK_M", "0")),
 +    # int4 per-token-head KV: the multi-query 3D verify path and its debug print
 +    "VLLM_INT4_MQ_3D": lambda: os.environ.get("VLLM_INT4_MQ_3D", "0") == "1",
 +    "VLLM_INT4_MQ_3D_DEBUG": lambda: os.environ.get("VLLM_INT4_MQ_3D_DEBUG", "0") == "1",
