@@ -72,9 +72,17 @@ def main():
     base = git(["merge-base", a.base, branch], a.git).strip()
     files = git(["diff", "--name-only", base, branch], a.git).split()
     added_lines = {}
+    # For a patch file, its own section headers ("diff --git a/envs.py ...") are usually unchanged context in
+    # this diff when the file was modified, not created; check 3 needs them to know which section an added line
+    # is in, so patch files keep their headers (as context) beside the added lines.
+    patch_sections = {}
     for f in files:
         d = git(["diff", base, branch, "--", f], a.git)
         added_lines[f] = [l[1:] for l in d.splitlines() if l.startswith("+") and not l.startswith("+++")]
+        if f.endswith(".patch"):
+            full = git(["diff", "--unified=1000000", base, branch, "--", f], a.git).splitlines()
+            body_start = next((i for i, l in enumerate(full) if l.startswith("@@")), len(full)) + 1
+            patch_sections[f] = [(l[0], l[1:]) for l in full[body_start:] if l[:1] in "+ "]
     head_tree = lambda path: run(["git", "-C", a.git, "show", f"{branch}:{path}"], check=False)
     text_all = body + "\n" + lead_commit
 
@@ -106,22 +114,20 @@ def main():
     # Only reads that land in vLLM code (patch files, kvarn/) count: a bench or launcher reading an env var is
     # not a kernel knob outside the torch.compile cache key.
     # The registry itself (envs.py hunks) is the one place a raw read belongs, so a patch's envs.py section is
-    # skipped: track the "+++ b/<file>" header while walking the diff's added lines.
+    # skipped: track the patch's own "diff --git" / "--- a/" headers, added or context, while walking it.
     reads = set()
     for f, lines in added_lines.items():
         if not (f.endswith(".patch") or f.startswith("kvarn/files/")):
             continue
         in_envs = f.endswith("envs.py")
-        for l in lines:
-            # A patch file's own headers arrive here with one "+" stripped: "diff --git a/x b/x", "--- a/x";
-            # its "+++ b/x" line is filtered out of the diff as a "+++" line, so key on the other two.
+        for sign, l in patch_sections.get(f, [("+", l) for l in lines]):
             if l.startswith("diff --git ") or l.startswith("--- a/") or l.startswith("--- /dev/null"):
                 in_envs = l.rstrip().endswith("envs.py")
                 continue
-            if in_envs:
+            if in_envs or sign != "+":
                 continue
             for m in ENV_READ.finditer(l):
-                reads.add(m.group(2))
+                reads.add(m.group(1))
     # Bar item 7 says never read a knob with os.environ inside vLLM code, registered or not: the registered
     # bool and a raw string read disagree at "0" (the string is truthy), so a knob read both ways has two
     # senses (threadchip on #90, 2026-09-14). Any such read fails; the fix is `envs.<NAME>`.
