@@ -114,6 +114,37 @@ def ok(m): print("  PASS ", m)
 def fail(m):
     global F
     print("  FAIL ", m); F += 1
+# The packed tensors prepare/ writes are symmetric (no zero point), but a foreign
+# export can declare zero points over those head groups — vLLM then looks for
+# weight_zero_point tensors that were never written and dies far from the cause
+# (the failure mode prepare/quant_heads_stream.py exists to normalize away, and
+# the PR #139 field report).
+#
+# Scope: only the groups prepare/ writes. quant_heads_stream.py builds the head
+# groups from group_0 and forces symmetric=true / zp_dtype=null on them, and
+# deliberately leaves the body group alone, because an AWQ body carries real zero
+# points — philbert440/Qwen3.8-27B-Uncensored-Aggressive-W4A16-AWQ, this repo's
+# own worked example, is symmetric=false on group_0 and serves fine. A body group
+# with symmetric=false is therefore legitimate and stays silent here; what must
+# not happen is a *head* group declaring zero points.
+#
+# An absent "symmetric" key means symmetric: QuantizationArgs declares
+# symmetric: bool = True (compressed_tensors quant_args.py), so a foreign
+# export that omits it must not be read as asymmetric.
+HEAD_TARGETS = {"re:.*lm_head$", "re:.*embed_tokens$", r"re:^mtp\..*"}
+def is_head_group(g):
+    return bool(set(g.get("targets") or []) & HEAD_TARGETS)
+def is_pack_quantized(g):
+    # a group may leave format null and inherit quantization_config["format"]
+    return (g.get("format") or qc.get("format")) == "pack-quantized"
+asym_head = [(name, g.get("targets")) for name, g in groups.items()
+             if is_pack_quantized(g) and g.get("weights") is not None
+             and is_head_group(g) and g["weights"].get("symmetric", True) is not True]
+if asym_head:
+    for name, tgt in asym_head:
+        fail(f"head group {name} ({tgt}) declares asymmetric weights (zero-point): prepare/ writes those tensors symmetric, so vLLM will look for weight_zero_point tensors that were never written. Requantize with prepare/quant_heads_stream.py")
+else:
+    ok(f"no head group declares zero points ({len(groups)} groups; an asymmetric body group is expected for AWQ exports)")
 # lm_head requantized to int8 (prepare/quant_lm_head.py), or int4-GPTQ as the
 # drafter/ pipeline writes it (the shipped ...-AutoRound-fast layout). The width
 # is whatever config declares; what must hold is the packed geometry it implies,
