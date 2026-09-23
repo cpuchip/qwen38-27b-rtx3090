@@ -41,12 +41,22 @@ export ACC_GPU_SMI=${ACC_GPU_SMI:-0}
 # for every profile there, not only the offload ones. ACC_WSL2=1 forces it; ACC_WSL2=0 suppresses it.
 WSL=""; { grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null || uname -s | grep -qiE "mingw|msys|cygwin"; } && WSL="-e VLLM_WSL2_ENABLE_PIN_MEMORY=1"
 case "${ACC_WSL2:-}" in 1) WSL="-e VLLM_WSL2_ENABLE_PIN_MEMORY=1" ;; 0) WSL="" ;; esac
+# Git Bash rewrites any argument that looks like a POSIX path before a Windows program sees it: -e HOME=/cache
+# reached the container as "C:/Program Files/Git/cache", and a /c/... bind mount arrived as a path that does not
+# exist (both reproduced 2026-09-23). Conversion is turned off for docker only, and docker gets Windows-form host
+# paths from hp; the host-side python3 calls below still need the conversion to find $HERE/*.py.
+if uname -s | grep -qiE "mingw|msys|cygwin"; then
+  docker(){ MSYS_NO_PATHCONV=1 command docker "$@"; }
+  hp(){ cygpath -m "$1"; }
+else
+  hp(){ printf '%s' "$1"; }
+fi
 log(){ echo "$(date -u +%H:%M:%SZ) [$TAG] $*"; }
 fails=0
 boot(){ # $1 name, $2 extra docker -e args, $3 entry command
   NAME=qwen-acc-$1; docker rm -f "$NAME" >/dev/null 2>&1
   docker run -d --name "$NAME" --gpus "device=$GPU" --ipc host --shm-size 4g \
-    -p "127.0.0.1:$PORT:18020" -v "qwen-cache-$TAG:/cache" -v "$MODELS:/app/models" -v "$QDATA:/qd:ro" \
+    -p "127.0.0.1:$PORT:18020" -v "qwen-cache-$TAG:/cache" -v "$(hp "$MODELS"):/app/models" -v "$(hp "$QDATA"):/qd:ro" \
     -e HOME=/cache -e PORT=18020 -e PREPARE=0 -e VERIFY=0 -e "GPU_UTIL=$GPU_UTIL" -e VLLM_NO_USAGE_STATS=1 $WSL $2 "${ENVARG[@]}" \
     --entrypoint bash "$IMAGE" -c "cd /app && echo \"\$VLLM_API_KEY\" > api_key.txt && export PATH=/app/venv/bin:\$PATH && $3 2>&1 | tee /tmp/server.log" >/dev/null \
     && log "started $NAME :: $3"
@@ -61,14 +71,14 @@ boot(){ # $1 name, $2 extra docker -e args, $3 entry command
 }
 stop(){ docker cp "qwen-acc-$1:/tmp/server.log" "$OUT/$1-server.log" >/dev/null 2>&1; docker rm -f "qwen-acc-$1" >/dev/null 2>&1; return 0; }
 quality(){ # $1 container name, $2 tag
-  docker run --rm --network "container:$1" -v "$HERE/../quality_battery.py:/app/bench/q.py:ro" -v "$QDATA:/qd" \
+  docker run --rm --network "container:$1" -v "$(hp "$HERE/../quality_battery.py"):/app/bench/q.py:ro" -v "$(hp "$QDATA"):/qd" \
     -e VLLM_API="http://127.0.0.1:18020/v1" -e QUALITY_DATA=/qd "${ENVARG[@]}" --entrypoint bash "$IMAGE" \
     -c 'export PATH=/app/venv/bin:$PATH && pip install -q pyarrow >/dev/null 2>&1; python /app/bench/q.py '"$2"' --gsm-n 100' 2>&1 | grep -E "PPL|GSM8K|rror" | cut -c1-220
 }
 needle(){ # $1 container name, tokens...
   local name=$1; shift
   for t in "$@"; do
-    docker run --rm --network "container:$name" -v "$HERE/../needle_test.py:/app/bench/needle.py:ro" -e VLLM_API="http://127.0.0.1:18020/v1" "${ENVARG[@]}" \
+    docker run --rm --network "container:$name" -v "$(hp "$HERE/../needle_test.py"):/app/bench/needle.py:ro" -e VLLM_API="http://127.0.0.1:18020/v1" "${ENVARG[@]}" \
       --entrypoint bash "$IMAGE" -c 'export PATH=/app/venv/bin:$PATH && python /app/bench/needle.py '"$t"' 0.9' 2>&1 | tail -2 | sed "s/^/NEEDLE $t: /"
   done
 }
