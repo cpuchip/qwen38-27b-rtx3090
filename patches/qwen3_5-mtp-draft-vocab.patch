@@ -12,7 +12,7 @@ Apply from the installed vllm package directory:
 
 Validated against vLLM 0.28.0.
 
---- exported from cpuchip/vllm f4ca56d56 (qwen3_5-mtp-draft-vocab); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 9862c7cf8 (qwen3_5-mtp-draft-vocab); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/models/qwen3_5_mtp.py b/model_executor/models/qwen3_5_mtp.py
 index d424d0c63..3e4421645 100644

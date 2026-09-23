@@ -14,7 +14,7 @@ Apply from the installed vllm package directory:
 
 Validated against vLLM 0.28.0.
 
---- exported from cpuchip/vllm 6e3451a39 (marlin-int8-negative-scales); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 8c300833c (marlin-int8-negative-scales); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/kernels/linear/mixed_precision/marlin.py b/model_executor/kernels/linear/mixed_precision/marlin.py
 index 387c33c11..d38b2d240 100644

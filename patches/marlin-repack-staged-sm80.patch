@@ -45,7 +45,7 @@ Status: validated on the 170HX (4 boot cycles + a full serving session,
 bit-exact, 0 Xid) and in production there — but as load-time hygiene, not
 as the wedge fix this header originally proposed; see the history above.
 
---- exported from cpuchip/vllm 5f9c7f3ae (marlin-repack-staged-sm80); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm d849f72c8 (marlin-repack-staged-sm80); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/kernels/linear/mixed_precision/marlin.py b/model_executor/kernels/linear/mixed_precision/marlin.py
 index d38b2d240..a01d94c4b 100644

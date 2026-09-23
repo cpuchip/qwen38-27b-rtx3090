@@ -11,7 +11,7 @@ block 128 with their page padded to the primary page, so both trees compute the 
 (2176) and hash unit (128); the hunks changed nothing for this geometry, and the coordinator hunks below
 still exempt a sliding-window block that does not divide the scheduler block.
 
---- exported from cpuchip/vllm 7fde57b8c (kvarn-v2-runner-0.30.0); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 117842805 (kvarn-v2-runner-0.30.0); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/layers/attention/attention.py b/model_executor/layers/attention/attention.py
 index 47a1299c8..9216c4ea8 100644
@@ -66,10 +66,10 @@ index afb03ac3e..5dd097388 100644
          )
          self.scheduler_block_size = scheduler_block_size
 diff --git a/v1/core/single_type_kv_cache_manager.py b/v1/core/single_type_kv_cache_manager.py
-index b6e6d28c6..135c13c57 100644
+index 0bc3f7343..ed0c4fe8f 100644
 --- a/v1/core/single_type_kv_cache_manager.py
 +++ b/v1/core/single_type_kv_cache_manager.py
-@@ -1200,6 +1200,31 @@
+@@ -1198,6 +1198,31 @@
          """
          return 0
  

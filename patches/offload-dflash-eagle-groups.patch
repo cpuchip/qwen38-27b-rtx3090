@@ -38,7 +38,7 @@ Verified on this card: boot line shows eagle groups [8]; the warning fires
 for group 8 (128 vs 2,176 tokens, 17x) on KVarN + connector and stays
 silent on configs with uniform chunk sizes.
 
---- exported from cpuchip/vllm 66c4213b0 (offload-dflash-eagle-groups); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 30e7b5305 (offload-dflash-eagle-groups); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py b/distributed/kv_transfer/kv_connector/v1/offloading/scheduler.py
 index 2fb3c5bb9..5cfae6d65 100644
