@@ -55,6 +55,10 @@ def main():
     if a.pr:
         pr = json.loads(run(["gh", "pr", "view", str(a.pr), "-R", a.repo, "--json", "title,body,headRefName,headRefOid,commits"]))
         title, body, branch = pr["title"], pr["body"], a.branch or pr["headRefName"]
+        # A --body file is the text about to replace the live one, so it is what gets gated. Until 2026-09-23 --pr
+        # silently gated the LIVE body and ignored --body, so every "gate the new body" run checked the old text.
+        if a.body:
+            body = open(a.body, encoding="utf-8").read()
         lead_commit = pr["commits"][-1]["messageHeadline"] + "\n" + pr["commits"][-1].get("messageBody", "")
         # The diff is read from the local branch. If that is not the PR's head, every objective check below
         # (counts, series, env registration) describes a commit the reviewer will never see; say so and stop
