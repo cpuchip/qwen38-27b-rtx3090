@@ -32,6 +32,7 @@ build by name instead of landing by guess. Regenerate a file with `bash scripts/
 | mamba-align-checkpoint-order | fix | keep reachable Mamba state snapshots alive until request end (fork #52) | vllm #45238 (not merged) | 0.29.0 | check against upstream #52789 (internal prefill checkpoints, in 0.29) at each pin |
 | mamba-align-retire-null-gaps | backport | align mode retires Mamba state blocks across null gaps instead of stopping at the first one (fork #101) | vllm #55450 (merged 2026-09-11, not in 0.29.0) | 0.29.0 (two hunks re-anchored around `_num_checkpoint_blocks`) | the pin that carries #55450 |
 | mamba-chunked-prefill-align | fix | state loss and NaN during chunked prefill on Mamba/GDN | none yet | 0.29.0 | upstream PR |
+| marlin-int8-asym-zp | fix | the Marlin int8-activation path (`INT8_ACT=int8`) accepts zero-point `uint4` weights, so asymmetric AWQ exports (compressed-tensors `symmetric: false`) run W4A8 like the symmetric ones; the `kS8 x kU4` kernel is already compiled, only two asserts refused it | none yet | 0.29.0 (applied as-is from the 0.28.0 file; exact context on 0.29.0 + this series) | upstream PR |
 | marlin-int8-layer-select | local | env vars to pick which layers run W4A8 with the Marlin kernel | none | 0.29.0 | stays |
 | marlin-int8-negative-scales | fix | Marlin W4A8 reads group scales as unsigned; AutoRound exports negative ones | none yet | 0.29.0 | upstream PR |
 | marlin-repack-staged-sm80 | local | one grow-only staging buffer for the sm80 Marlin repack (fork #27) | none | 0.29.0 | stays |
