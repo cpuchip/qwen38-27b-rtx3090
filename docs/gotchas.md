@@ -1365,3 +1365,10 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     is set explicitly, under a boot line ("defaulting prefix_cache_retention_interval
     to dense checkpointing") that reads like a managed setting and is the arm that
     fails ([#174](https://github.com/syv-ai/HyperQwen/issues/174)).
+    On 0.30 that forcing is gone (vllm #55760 went to the 0.29 release branch only),
+    and an unset interval means 0: the replay boundaries only. That does not zero
+    reuse, but each turn of a conversation reuses up to the previous prompt and
+    re-prefills the previous reply. So both single-user launchers now pass the
+    interval on every draft profile: the measured one above, else `None` (dense,
+    0.29's behaviour). `PREFIX_RETENTION=0` asks for boundaries only
+    ([vllm-0.30.md](vllm-0.30.md) has the measurement).
