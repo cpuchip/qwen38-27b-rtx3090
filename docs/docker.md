@@ -152,10 +152,11 @@ hard abort rather than a tuning question:
    ([#25](https://github.com/syv-ai/HyperQwen/issues/25)).
 2. **The ordinary batch default may fail vLLM's startup free-memory gate.**
    On an otherwise clean card, WSL reported 22.75/24.0 GiB free, less than
-   the 23.33 GiB requested by `GPU_UTIL=0.972`. Launching with
+   the 23.33 GiB requested by `GPU_UTIL=0.972` (the 0.28 default; 0.29 ships
+   0.95, which asks for 22.80). Launching with
    `GPU_UTIL=0.93 bash batch/start_qwen.sh` retained a 201,832-token FP8
    pool, preserving the 150k context contract and expected C64 throughput.
-   Keep 0.972 as the tuned native-Linux default; 0.93 is a WSL fallback.
+   Keep the shipped default on native Linux; 0.93 is a WSL fallback.
 3. **Cold and cached starts can profile different activation peaks.** A warm
    start may turn the difference into extra KV pages and leave less transient
    headroom than the cold start. For a deterministic service, compile once

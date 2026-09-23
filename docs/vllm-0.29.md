@@ -385,3 +385,52 @@ Warming the estimate pass does not cure it: a build that ran `profile_cudagraph_
 
 So the branch carries a second fix, `cudagraph-memory-from-allocator.patch`: `capture_model` returns the allocator's reserved delta and logs the driver delta beside it, and the FULL-graph samples the estimate extrapolates from are read the same way, so the estimate never mixes an allocator total with driver samples. What that reading knowingly leaves unreserved is the driver-side residue of a capture (graph executables, kernel module loads, per-kernel local memory, non-torch workspaces): measured on the native 3090 as the driver delta minus the allocator delta on the same real capture, 0.02 GiB on the default profile and 0.03 GiB on `CTX=huge` (0.10 and 0.12 on the throwaway capture), the same sign on both profiles; on the WSL2 box the driver cannot measure it at all. Verified on card 1 with the estimate on: the cold `CTX=huge` boot on a fresh volume passes (4.19 GiB, pool 270,796, health at 288 s, a request served; the estimate reads 0.28 GiB for a 0.23 GiB pool while the driver's delta across the same capture still reads 5.44), the warm boot reads 4.41 GiB (pool 284,955), and the cold default boot 5.77 GiB (pool 79,414, 0.09 above the profiling fix alone). The 0.22 GiB between cold and warm on `CTX=huge` is the profile-side term above, and it survives both patches on both boxes: 0.14 GiB on the native 3090 (cold 4.48 GiB, pool 290,265; warm 4.62, pool 299,115) where the default profile is now exactly flat (5.48 GiB and 75,173 tokens in both states). Neither box has an explanation for it; on `CTX=huge` cold does not equal warm, and that stays open. The default profile's estimate is still about a GiB above its real pool (1.05 against 0.09), which answers which half of the estimate over-reserves: the throwaway capture itself reserves 1.03 GiB where the real capture reserves 0.09, so the extrapolation from FULL-graph samples is not the term. The logged "actual" now reads the pool (0.23 and 0.09) instead of 0.0. Two things the numbers say that the patch does not claim: the estimate itself is not made accurate, only the actual is measured (on the default profile 1.03 GiB estimated against 0.09 actual after the patch on both boxes, the log's own 1026.6%; on `CTX=huge` 0.28 against 0.23), and correcting the actual returns the difference to the KV budget on every boot, not only the failing ones (native 3090 default profile 5.37 to 5.48 GiB, pool 73,631 to 75,173; `CTX=huge` pool 283,185 to 290,265 cold and 292,035 to 299,115 warm; the native estimate on the default profile fell 1.14 to 1.03, the same 0.1 as on card 1, with four of five native profiles running FULL graphs, so the FULL-sample extrapolation contributes nothing there either). On the default profile the equivalent-utilization line is identical across failing and passing boots and is not the explanation; on `CTX=huge` it separates them, because the term it reports is the estimate, which is the thing that moves.
 
+
+## Batch mode's `GPU_UTIL` on 0.29 (reference 3090, 2026-09-23)
+
+The shipped batch default, `GPU_UTIL=0.972`, OOMs in warmup on 0.29 on a native
+3090 (`Tried to allocate 96.00 MiB`, 47-69 MiB free), with the vision tower on
+and off, on the reference checkpoint and on an asymmetric AWQ one alike (#182).
+0.28 boots and serves the same settings. The cause is this port's own two memory
+fixes working: with `memory-profile-after-warmup` and
+`cudagraph-memory-from-allocator`, 0.29 stops over-reserving about 1.5 GiB (KV
+6.09 GiB at 0.972 on 0.28, 7.63 GiB on 0.29, same box, same settings), and at
+0.972 that over-reservation was the headroom batch mode's unprofiled warmup
+transients lived in (64 seats, the int8 activation workspace). The campaign
+tables above ran every arm at 0.90, so they never met it. The single-user
+profiles are unaffected: they pin `KV_MEM`.
+
+Each cell below is a boot, then 128 requests at 64-way concurrency (1024 in /
+256 out), `KV=fp8`, `MAX_LEN=150000`, int8 MLP activations, and a check that
+the log has no `OutOfMemoryError` after the burst:
+
+| `GPU_UTIL` | `VISION=1`: KV, pool | `VISION=0`: KV, pool | requests |
+|---|---|---|---|
+| 0.93 | 6.48 GiB, 204,896 | 6.64 GiB, 210,309 | 128/128 both |
+| 0.94 | 6.72 GiB, 212,628 | 6.88 GiB, 217,268 | 128/128 both |
+| **0.95 (new default)** | 6.96 GiB, 219,587 | 7.11 GiB, 225,000 | 128/128 both |
+| 0.95, cold compile cache | 6.95 GiB, 219,587 | | 128/128 |
+| 0.96 | 7.19 GiB, 227,319 | | 128/128 |
+| 0.972 (0.28's default) | OOM in warmup | OOM in warmup | |
+| 0.28 at 0.972, for reference | 6.96 GiB, 220,360 | 6.09 GiB, 192,525 | 128/128 both |
+
+The new default is 0.95: one full 0.01 step below the highest value that passed,
+the same pool cold as warm, and at least the pool 0.28 had at 0.972, so batch
+users lose no capacity in the upgrade. `KV=kvarn` (293,444 tokens) and
+`KV=int4pth` (405,948) boot and serve at their existing 0.93 defaults and are
+unchanged.
+
+## Reading greedy tok/step across the two versions
+
+A greedy harness cohort is not a like-for-like comparison between 0.28 and 0.29,
+and its rows should not be read below about ±11%. 0.28 reproduces itself exactly
+at temperature 0 (the same text and the same tok/step on every prompt, across
+boots), but 0.29's numerics differ, so it writes different text on every one of
+the eight real prompts. Per prompt that moves acceptance by up to ±25% in both
+directions: on the production line, prompt 0 goes 3.23 to 4.03 while prompt 3
+goes 4.10 to 3.34. The aggregate of the same eight requests is 3.43 against 3.41.
+With a per-prompt spread of ~0.55 tok/step, the standard error of an eight-prompt
+cohort is ~0.19 tok/step, about 6%, so a −5.6% greedy row is one standard error
+and not a regression. It was first reported as one on the PR and retracted. To
+compare drafting between versions, the lookup lane's own number is exact: a
+verbatim-copy prompt at 15 drafts runs 15.45 tok/step on both.
