@@ -17,8 +17,12 @@
 #    checkpoint); VISION=1 keeps it for a client that sends images
 #  - expandable_segments is required: the DeltaNet prefill kernels allocate
 #    transient workspace and fragment the allocator, OOMs at util >= 0.978 without it
-#  - gpu-memory-utilization 0.972 is the sweet spot on a headless box
-#    (X/display holds ~220 MB; 0.98 fails the startup free-memory check)
+#  - gpu-memory-utilization 0.95 on 0.29 (0.972 on 0.28, where it was the sweet spot on a headless box):
+#    0.29's memory accounting returns ~1.5 GiB to the KV pool that 0.28 over-reserved, and batch's
+#    unprofiled warmup (64 seats, the int8 activation workspace) lived in it. Headless native 3090, fp8, 150k:
+#    0.972 and 0.97 OOM in warmup, 0.96 boots with 468 MiB spare at a 64-way burst peak, 0.95 with 668 MiB
+#    and a 225,000-token pool (0.28 at 0.972: 192,525, second box). A card that drives a display holds ~220 MB
+#    more (X), which cuts those margins to ~450 and ~250 MiB. #182, #148.
 #  - max-num-batched-tokens 2048 beats 8192 here: bigger chunks inflate the
 #    profiled activation peak, which shrinks the KV/state page pool
 #  - kv-cache-dtype fp8 roughly doubles the usable context/pool
@@ -79,7 +83,7 @@ elif [ "$KV" = "kvarn" ]; then
   export KVARN_POOL_MEM_FRAC=${KVARN_POOL_MEM_FRAC:-0.25}
 else
   MAX_LEN=${MAX_LEN:-150000}
-  GPU_UTIL=${GPU_UTIL:-0.972}
+  GPU_UTIL=${GPU_UTIL:-0.95}
   KV_ARGS="--kv-cache-dtype fp8"
 fi
 # int8 activations: "int8" (default) or empty for W4A16; layers: regex on the

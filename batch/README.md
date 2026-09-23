@@ -196,7 +196,7 @@ All overridable as env vars, defaults in the script:
 | `MAX_LEN` | 150000 | max context. Raising it much past this fails startup, the pool can't hold a longer request |
 | `TOOLS` | 1 | tool/function calling (`--enable-auto-tool-choice --tool-call-parser`). `TOOL_PARSER` (`qwen3_coder`) must match the XML call format this model's chat template emits — `hermes` parses the JSON a Qwen model does *not* produce here, and fails silently. 0 = off, and `tool_choice: "auto"` then 400s |
 | `PORT` | 18020 | |
-| `GPU_UTIL` | 0.972 | do not raise, see gotchas in the main README. Use 0.93 when you want `prompt_logprobs` (quality checks) |
+| `GPU_UTIL` | 0.95 | do not raise: 0.972 (the 0.28 default) OOMs in warmup on 0.29 on a 3090 (#182), 0.96 is the edge on a headless 3090, and a display costs ~220 MB more. See gotchas in the main README. Use 0.93 when you want `prompt_logprobs` (quality checks) |
 
 ## Verify you're getting the numbers
 

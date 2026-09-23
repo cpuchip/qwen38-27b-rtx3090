@@ -155,7 +155,8 @@ hard abort rather than a tuning question:
    the 23.33 GiB requested by `GPU_UTIL=0.972`. Launching with
    `GPU_UTIL=0.93 bash batch/start_qwen.sh` retained a 201,832-token FP8
    pool, preserving the 150k context contract and expected C64 throughput.
-   Keep 0.972 as the tuned native-Linux default; 0.93 is a WSL fallback.
+   On 0.28, 0.972 was the tuned native-Linux default and 0.93 the WSL fallback; on 0.29 the default is 0.95
+   (0.972 OOMs in warmup there, #182), which WSL still cannot reach, so 0.93 stays the WSL fallback.
 3. **Cold and cached starts can profile different activation peaks.** A warm
    start may turn the difference into extra KV pages and leave less transient
    headroom than the cold start. For a deterministic service, compile once
