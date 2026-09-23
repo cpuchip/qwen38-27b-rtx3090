@@ -27,7 +27,7 @@ cd ~/qwen-serving
 
 python3 -m venv venv
 venv/bin/pip install vllm==0.29.0 huggingface_hub hf_transfer ninja \
-  --extra-index-url https://flashinfer.ai/whl/ flashinfer-cubin==0.6.18 pandas
+  --extra-index-url https://flashinfer.ai/whl/ flashinfer-cubin==0.6.18.post1 pandas
 # pandas is what `vllm[bench]` pulls in for the custom-dataset path: without it
 # bench/prefill_ab.sh's decode guard dies with "Please install vllm[bench] for
 # bench support" after the prefill rows have already run.
