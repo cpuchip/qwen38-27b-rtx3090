@@ -1,7 +1,7 @@
 # The vLLM 0.30.0 pin
 
 What the move from 0.29.0 to 0.30.0 changed in this repo, what was re-measured, and what the port taught the
-procedure. **DRAFT: rows marked PENDING are measurements in flight on the reference 3090.**
+procedure.
 
 [← back to the main README](../README.md)
 
@@ -77,11 +77,14 @@ and its port alone. Every mode at its shipped defaults, fresh volume per arm.
 | batch fp8 (0.95), burst 128 at 64-way offered | 225,000 / 225,000 | 95.7 s / 95.8 s, 128/128 |
 | batch kvarn (0.93) | 297,357 / 297,357 | 108.5 s / 109.0 s, 128/128 |
 | batch int4pth (0.93) | 407,446 / 407,446 | 97.6 s / 97.6 s, 128/128 |
+| batch fp8 with `INT8_ACT=` (W4A16, 0.95) | 231,958 / 231,958 | 140.9 s / 141.0 s, 128/128 |
 | CTX=huge SPEC=dflash2 PREFIX_CACHE=1 (#179) | 268,169 / 268,169 | pass both; groups [2176 x8, 128]; before cut4, refused on 0.30 |
 
 The batch burst is KV-limited on fp8 and kvarn (57 and 37 running at most, the same on both pins); int4pth reaches
 64. Burst wall time is the comparable number: the stats line's generation throughput alternates between prefill and
-decode windows.
+decode windows. On both pins the int8 activation path buys 32% of burst wall time on this card (95.7 s against
+140.9 s W4A16) for about 7K tokens of pool (its workspace). A W4A16 gap measured on the WSL2 4090 (0.30 about 15%
+slower) does not reproduce here.
 
 Speculative decoding at C1, shipped defaults, tokens per step (greedy / default temperature): every delta is inside
 the ±11% band an 8-prompt cohort shows between runs.
@@ -101,13 +104,18 @@ draft model's", appears on MTP and DFlash2 profiles. 0.29 computes the same cond
 is unaffected: an identical ~14.7k-token resend hits 13,824 tokens on both pins (default) and 13,312 (long), exactly
 `floor((N-1)/A)*A - A` for the boot's attention block A.
 
-The retention knob reaches the engine on 0.30. On the #179 profile, `PREFIX_RETENTION=13057` is refused by the retention validator ("must be non-negative and a multiple of scheduler_block_size (2176)"), and 13056 boots with a resend of 17,706 tokens hitting 15,232 = floor((17706-1)/2176)*2176 - 2176. Before cut4 the same boot was refused earlier, by prefix_match_unit, so the knob was unproven there.
+The retention knob reaches the engine on 0.30. On the #179 profile, `PREFIX_RETENTION=13057` is refused by the
+retention validator ("must be non-negative and a multiple of scheduler_block_size (2176)"), and 13056 boots with a
+resend of 17,706 tokens hitting 15,232 = floor((17706-1)/2176)*2176 - 2176. Before cut4 the same boot was refused
+earlier, by prefix_match_unit, so the knob was unproven there.
 
-Native install (from `docs/install.md`, Python 3.14, system `nvcc` 12.4): default and dflash2 k7 boot with the
-Docker pools (84,811 and 68,605) and no FlashInfer compile failure. The launcher points `CUDA_HOME` at the pip CUDA 13
-toolkit when the `nvcc` on PATH is older (logged), and `VLLM_USE_FLASHINFER_SAMPLER=0` keeps the vocab-wide top-k on
-`torch.topk`. PENDING: that install repeated at the published head with one `INT8_ACT=int8` boot (the first ran the
-cut2 series, before the #54809 fixes); batch W4A16 (`INT8_ACT=`).
+Native install at this branch's head (`docs/install.md`'s own pip line and patch loop, a fresh venv, Python 3.14,
+system `nvcc` 12.4 on the reference 3090): all patches applied, `verify.sh --no-server` 68 PASS, and default,
+`INT8_ACT=int8` and dflash2 k7 boot and serve with the Docker pools (84,811, 80,956 and 68,605). The launcher points
+`CUDA_HOME` at the pip CUDA 13 toolkit when the `nvcc` on PATH is older (logged), and
+`VLLM_USE_FLASHINFER_SAMPLER=0` keeps the vocab-wide top-k on `torch.topk`, so nothing JIT-compiles with the old
+`nvcc`. The patch loop in `docs/install.md` still spells `venv/lib/python3.12`, which breaks on any other Python;
+that fix is its own change (the loop asks the venv's python for the path), not part of this port.
 
 ## Prefix-cache retention: 0.29's default is not 0.30's
 
@@ -126,17 +134,24 @@ cell is exact to the token against the formula beside it:
 | 0.29 (dense) | `floor((N-1)/A)*A - A` | `((P + R)//A)*A - A`: into the previous reply |
 | 0.30 (0) | the same | `(P//A)*A - A`: the previous prompt's boundary |
 
-Here P is the previous turn's prompt and R its reply. On 0.30 each turn re-prefills the previous reply: the hit rate
-drops from 91-94% to 87-90%, and each turn re-prefills the previous reply's whole blocks (S1 - S0 = 864 tokens at
-A=432, 896 at A=448), about 0.7-0.8 s at this card's ~1,150 tok/s prefill. Measured turn times differ by 0.7 s a turn
+Here P is the previous turn's prompt and R its reply. On 0.30 each turn re-prefills the previous reply's whole blocks
+(864 tokens at A=432, 896 at A=448), about 0.7-0.8 s at this card's ~1,150 tok/s prefill, and the hit rate drops from
+91-94% to 87-90%. Measured turn times differ by 0.7 s a turn
 on MTP and 0.7-1.8 s on DFlash2 k7; the excess over the re-prefill is decode on replies that differ between the pins
-(greedy still diverges across versions). An identical resend cannot tell the two apart (the
-EAGLE drop caps both at the same boundary); only an extension can. With `--prefix-cache-retention-interval None`
+(greedy still diverges across versions). An identical resend cannot tell the two apart (the EAGLE drop caps both at
+the same boundary); only an extension can. With `--prefix-cache-retention-interval None`
 (dense), 0.30 prefills a fresh 25K and 37-48K prompt within 0.5% of both 0.30 at 0 and 0.29 dense.
 
 So both single-user launchers pass the interval on every draft profile: the measured one for `CTX=huge SPEC=dflash2`
 (13056 at 7 drafts, 14592 at 15), else `None`, which is 0.29's behaviour. `PREFIX_RETENTION=0` asks for boundaries
 only, and a flag in `EXTRA_ARGS` wins. Batch mode runs no draft, so #55760 never applied to it and nothing changes.
+Verified on the reference 3090 with the launchers read out of the image against the commit: the default MTP profile
+shows `'prefix_cache_retention_interval': None` in the engine's arguments and its turn 2 hits S1 (20,304, 92.0%);
+alternative.sh shows None and keeps its 302,094 pool; `CTX=huge SPEC=dflash2` keeps 13056 (pool 268,169) and still
+refuses 13057 at the retention validator; `PREFIX_RETENTION=0` on dflash2 k7 hits S0 (19,264, 87.3%). An explicit 0
+never appears in the engine's non-default arguments on 0.30, because 0 is the parser default there, so the proof for
+0 is the S0 hit, not the log line.
+
 Retention is prefill-neutral on the reference 3090: the acceptance A shape (dflash2 k7, `CTX=fast`, prefix caching),
 fresh 25K and 37-48K prompts, reads 1221-1225 and 1140-1145 tok/s on 0.29 dense, 0.29 at 0, 0.30 at 0 and 0.30 at
 None alike (per-rep TTFTs within ~0.1 s). `docs/vllm-0.29.md`'s "0 halves the 47k prefill" (1303 vs 2323 tok/s) was
@@ -147,15 +162,15 @@ reuse above, not prefill.
 
 `docs/vllm-0.29.md`'s three steps stand. The replay oracle ("the patch files reproduce the fork branch") was green
 at every cut of this port, and still four defects shipped into a built image, because a patch that applies is not a
-patch that still means what it did. The runbook the next port owes (`port-acceptance`, items 0-7) now starts with
-checks that need no card:
+patch that still means what it did. The procedure now starts with four checks that need no card:
 
 - `scripts/port-triage.sh`: cherry-picks each topic onto the new tag and reports clean, CONFLICT (with files) or
   EMPTY, plus a RETIRE? column from each row's upstream PR ancestry.
 - `scripts/pin-bump.py`: moves every mechanical pin in one pass, checks every exact pin in
   `docker/requirements.txt` against the new vLLM's floors (the hub pin would have failed a 20-minute build), and
-  lists every leftover mention of the old version in the files it edits. The install doc's `vllm==0.29.0` survived
-  the first pass; this is what now reports it.
+  lists every leftover mention of the old version, line by line in the files it edits and as a count in every other
+  tracked doc and script. The install doc's `vllm==0.29.0` and the README badge survived this port's first pass; this
+  is what now reports them.
 - `scripts/port-removed-names.py`: every identifier the series' added lines use that upstream deleted between the
   pins. The #54809 names were invisible to the replay and to a clean apply, because they sit in our lines and never
   in hunk context. At cut2 it reports all three topics.
@@ -185,4 +200,6 @@ Two lessons for the reading:
    (the drafter's trailing chunk is stored under DFlash2 + CPU tier) is stated, not fixed. The port-faithful fix would
    be a narrow carry of the old connector hunk. Annotating the drafter at upstream's annotation site would also narrow
    the GPU tier's EAGLE drop, which 0.29 never did.
-7. **Draft profiles pass `--prefix-cache-retention-interval None` unless measured or set**, keeping 0.29's multi-turn reuse. Boundaries-only (0.30's default) is one `PREFIX_RETENTION=0` away, and would be the better choice for many alternating long conversations on a small pool (gotcha 60); this port does not change that trade.
+7. **Draft profiles pass `--prefix-cache-retention-interval None` unless measured or set**, keeping 0.29's multi-turn
+   reuse. Boundaries-only (0.30's default) is one `PREFIX_RETENTION=0` away, and would be the better choice for many
+   alternating long conversations on a small pool (gotcha 60); this port does not change that trade.
