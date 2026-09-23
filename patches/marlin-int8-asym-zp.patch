@@ -21,7 +21,7 @@ Apply from the installed vllm package directory:
 
 Validated against vLLM 0.28.0; the same two hunks apply to 0.29.0 at an offset.
 
---- exported from cpuchip/vllm adf5d6085 (marlin-int8-asym-zp); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm fb8fdb59e (marlin-int8-asym-zp); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/kernels/linear/mixed_precision/marlin.py b/model_executor/kernels/linear/mixed_precision/marlin.py
 index 8c3537505..e85d0ca49 100644

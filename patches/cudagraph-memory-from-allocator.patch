@@ -9,7 +9,7 @@ replaced the gc.collect() and moved the end driver reading inside the block): st
 empty_cache() and end_reserved right after end_free_gpu_memory, both inside the block, so the allocator and driver
 readings still bracket the same region.
 
---- exported from cpuchip/vllm 5314798bf (cudagraph-memory-from-allocator); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 715b69ff7 (cudagraph-memory-from-allocator); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/worker/gpu/cudagraph_utils.py b/v1/worker/gpu/cudagraph_utils.py
 index 962f1f908..77c05754d 100644

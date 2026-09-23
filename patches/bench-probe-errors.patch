@@ -35,7 +35,7 @@ unkeyed server, and the None-on-missing-metrics contract, are unchanged.
 Alignment behaviour is unchanged: it still runs only for str prompts, still
 skips on failure rather than failing the run.
 
---- exported from cpuchip/vllm d308653cd (bench-probe-errors); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 46ac577da (bench-probe-errors); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/benchmarks/serve.py b/benchmarks/serve.py
 index 0292ff939..b5cce35ca 100644

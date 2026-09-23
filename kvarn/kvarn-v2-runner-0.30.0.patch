@@ -11,13 +11,58 @@ block 128 with their page padded to the primary page, so both trees compute the 
 (2176) and hash unit (128); the hunks changed nothing for this geometry, and the coordinator hunks below
 still exempt a sliding-window block that does not divide the scheduler block.
 
---- exported from cpuchip/vllm 93792a665 (kvarn-v2-runner-0.30.0); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm bcb7667ab (kvarn-v2-runner-0.30.0); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/layers/attention/attention.py b/model_executor/layers/attention/attention.py
-index 47a1299c8..9216c4ea8 100644
+index 47a1299c8..bc35fecea 100644
 --- a/model_executor/layers/attention/attention.py
 +++ b/model_executor/layers/attention/attention.py
-@@ -633,6 +633,13 @@
+@@ -100,6 +100,7 @@
+     per_token_bytes: int,
+     page_budget: int,
+     fallback: int,
++    divisor_of: int | None = None,
+ ) -> int:
+     """Largest supported kernel block size whose page fits in ``page_budget``.
+ 
+@@ -114,11 +115,31 @@
+     sizes = attn_backend.get_supported_kernel_block_sizes()
+     max_block_size = page_budget // per_token_bytes
+     candidates = [s for s in sizes if isinstance(s, int)]
+-    candidates.extend(
+-        max(s.base, max_block_size // s.base * s.base)
+-        for s in sizes
+-        if isinstance(s, MultipleOf)
+-    )
++    for s in sizes:
++        if not isinstance(s, MultipleOf):
++            continue
++        scaled = max(s.base, max_block_size // s.base * s.base)
++        # (kvarn-v2) A padded SW drafter page next to a hybrid primary block: take the
++        # largest fitting block that also DIVIDES the primary block (a multiple of 128
++        # first, then of the base), so the group stays a divisor of the scheduler block
++        # and of prefix_match_unit. The largest aligned block alone lands on 432 against
++        # a 2176 primary at DFLASH_TOKENS=7, and CTX=huge + prefix caching (#179) is then
++        # refused: "prefix-cacheable KV cache group block sizes must be divisible by
++        # prefix_match_unit" (128). 0.29 picked 128 here.
++        if divisor_of:
++            for step in (128, s.base):
++                d = next(
++                    (
++                        d
++                        for d in range(max_block_size, step - 1, -1)
++                        if divisor_of % d == 0 and d % step == 0
++                    ),
++                    0,
++                )
++                if d:
++                    scaled = d
++                    break
++        candidates.append(scaled)
+     if not candidates:
+         return fallback
+     smallest = min(candidates)
+@@ -633,6 +654,13 @@
              # cannot run the primary block start from their smallest block and
              # ``unify`` scales it up by an integer ratio.
              shared_page = vllm_config.cache_config.skip_page_size_padded
@@ -31,6 +76,19 @@ index 47a1299c8..9216c4ea8 100644
              # The backend owns its packing
              sw_per_token = self.attn_backend.customize_spec(
                  SlidingWindowSpec(
+@@ -647,7 +675,11 @@
+             ).real_page_size_bytes
+             page_budget = shared_page or sw_per_token * block_size
+             sw_block_size = _largest_kernel_block_within(
+-                self.attn_backend, sw_per_token, page_budget, block_size
++                self.attn_backend,
++                sw_per_token,
++                page_budget,
++                block_size,
++                divisor_of=block_size if shared_page else None,
+             )
+             return SlidingWindowSpec(
+                 block_size=sw_block_size,
 diff --git a/model_executor/models/qwen3_dflash.py b/model_executor/models/qwen3_dflash.py
 index d77132b67..eb155de8c 100644
 --- a/model_executor/models/qwen3_dflash.py

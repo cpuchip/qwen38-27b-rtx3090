@@ -9,7 +9,7 @@ them in the order of `patches/series` onto the installed vLLM wheel; `verify.sh`
 - **local**: this hardware or environment (WSL2, sm80, a tuned build, env knobs). Stays.
 - **own**: a fix to a feature this repo introduced. Rides with that feature.
 
-Cut against: the pin the current hunks were generated on. Every file except the retired `dflash2-backport` is exported from its commit on one fork branch, `cpuchip/vllm` **`qwen38/0.30`** (v0.30.0 + one commit per row, in series order, subject `[qwen38] <topic>`; export point tagged `qwen38/0.30-cut3`, so a later rewrite of the branch never orphans a hash these files name), so the series applies to the 0.30.0 tree with exact context; the Dockerfile, `patches/check_vllm_series.sh`,
+Cut against: the pin the current hunks were generated on. Every file except the retired `dflash2-backport` is exported from its commit on one fork branch, `cpuchip/vllm` **`qwen38/0.30`** (v0.30.0 + one commit per row, in series order, subject `[qwen38] <topic>`; export point tagged `qwen38/0.30-cut4`, so a later rewrite of the branch never orphans a hash these files name), so the series applies to the 0.30.0 tree with exact context; the Dockerfile, `patches/check_vllm_series.sh`,
 `kvarn/install.sh` and `verify.sh` apply and check with `--fuzz 0`, and a hunk whose context has moved fails the
 build by name instead of landing by guess. Regenerate a file with `bash scripts/export-patch.sh <fork checkout>
 <commit> patches/<topic>.patch`; do not edit the files by hand. A patch that reads an env knob registers it in
@@ -60,7 +60,7 @@ build by name instead of landing by guess. Regenerate a file with `bash scripts/
 | vision-tower-cpu-offload | local | Qwen3 vision tower bulk weights in host RAM | none | 0.30.0 | stays |
 | vllm-pr50021-gdn-spec-bounds | backport | bounds checks in GDN/KDA spec-decode state lookups | vllm #50021 (open) | 0.30.0 | the pin that carries #50021 |
 | kvarn/kvarn-0.30.0 | feature | KVarN cache dtypes, quant mode, backend registration, page size | none (KVarN is Huawei CSL's, Apache-2.0) | 0.30.0: re-cut from the main-track resolution, with its #54713 replay_boundaries fixup | upstreamed |
-| kvarn/kvarn-v2-runner-0.30.0 | own | KVarN with the V2 runner and DFlash2 (SW groups, Mamba block index, selector guards) | none | 0.30.0: re-cut from the main-track resolution, with its #54713 replay_boundaries fixup | rides with KVarN |
+| kvarn/kvarn-v2-runner-0.30.0 | own | KVarN with the V2 runner and DFlash2 (SW groups, Mamba block index, selector guards) | none | 0.30.0: re-cut from the main-track resolution, with its #54713 replay_boundaries fixup; #53007 rewrote _largest_kernel_block_within and the SW divisor rule is carried into it by hand | rides with KVarN |
 
 Retired at 0.30.0 and removed from the tree: `offload-mtp-serve` (vllm #52771, #52807 and #54288, all in 0.30.0) and `mamba-align-retire-null-gaps` (vllm #55450, in 0.30.0).
 

@@ -12,7 +12,7 @@ CacheConfig.compute_hash, which already leaves that field out.
 
 Cut by hand against 0.29.0 with the series applied (not an export from the fork).
 
---- exported from cpuchip/vllm 6621c137c (compile-key-runtime-knobs); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm e6cbe3891 (compile-key-runtime-knobs); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/envs.py b/envs.py
 index 9083fbd60..02c5d9817 100755
