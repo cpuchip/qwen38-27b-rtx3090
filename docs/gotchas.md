@@ -1365,8 +1365,31 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     is set explicitly, under a boot line ("defaulting prefix_cache_retention_interval
     to dense checkpointing") that reads like a managed setting and is the arm that
     fails ([#174](https://github.com/syv-ai/HyperQwen/issues/174)).
-    On 0.30 that forcing is gone (vllm #55760 went to the 0.29 release branch only),
-    and an unset interval means 0: the replay boundaries only. That does not zero
+    **What the sparse interval costs, so you can turn it the right way.** It also
+    sets hit granularity: a new conversation's first one or two follow-up turns
+    reuse only down to the last retained snapshot, and a conversation shorter than
+    one interval reuses nothing on those turns. After that all settings are
+    the same. Reference 3090, vLLM 0.29, 7 drafts (block 2176), one
+    conversation and no other traffic unless stated, cached tokens per turn:
+
+    | workload | dense | `PREFIX_RETENTION=4352` (2 blocks) | 13056 (default) |
+    |---|---|---|---|
+    | ~8K chat, turns 2-3 | 81% (1.7 s) | 54% (3.6 s) | **0%** (7.3 s) |
+    | ~8K chat, turn 4 on | ~98% | ~98% | ~98% |
+    | ~20K chat, turn 2 | 98% (0.8 s) | 87% (3.0 s) | 65% (7.2 s) |
+    | ~20K chat, turn 3 on | 99% | 99% | 99% |
+    | two ~32.6K chats alternating | **0%** (31.8 s) | 93% (2.7 s) | 93-99.5% |
+
+    So the default trades a few seconds on each new conversation's early turns for
+    never losing a long one outright. The knob runs one way: a **smaller** interval
+    (`PREFIX_RETENTION`, any multiple of the block) gives finer early hits and
+    less capacity before two long conversations collide; a **larger** one the
+    reverse. Two blocks already halves the early-turn cost and still held the
+    ~32.6K pair; where its collision knee sits is not measured, so a workload of
+    many short-to-medium chats is the one to try it on, and one that keeps two
+    or more long documents live should stay on the default.
+    On 0.30, 0.29's forcing to dense is gone (vllm #55760 went to the 0.29 release
+    branch only), and an unset interval means 0: the replay boundaries only. That does not zero
     reuse, but each turn of a conversation reuses up to the previous prompt and
     re-prefills the previous reply. So both single-user launchers now pass the
     interval on every draft profile: the measured one above, else `None` (dense,

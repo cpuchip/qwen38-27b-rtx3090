@@ -14,9 +14,9 @@ unresolvable), FlashInfer `0.6.18.post1` (from 0.6.18; the wheel pins `flashinfe
 
 ## Patch series
 
-One fork branch, `cpuchip/vllm` `qwen38/0.30` (v0.30.0 + 44 topic commits), with an annotated tag at every export
-point (`qwen38/0.30-cut1` ... `-cut4`), so a later rewrite of the branch never orphans a hash a patch file names.
-The files apply to v0.30.0 at `--fuzz 0` (41 series patches: 38 clean, 3 at an offset), and the series plus both
+One fork branch, `cpuchip/vllm` `qwen38/0.30` (v0.30.0 + 45 topic commits), with an annotated tag at every export
+point (`qwen38/0.30-cut1` ... `-cut5`), so a later rewrite of the branch never orphans a hash a patch file names.
+The files apply to v0.30.0 at `--fuzz 0` (42 series patches: 39 clean, 3 at an offset), and the series plus both
 KVarN patches reproduce the branch's `vllm/` tree with 0 differing files.
 
 Retired, because 0.30.0 carries the change:
@@ -57,6 +57,10 @@ rule for the drafter's padded sliding-window block. Without it, the drafter's gr
 primary, and `CTX=huge SPEC=dflash2 PREFIX_CACHE=1` (#179) was refused at boot ("prefix-cacheable KV cache group
 block sizes must be divisible by prefix_match_unit", 128). With it the group is 128 and the pool is 268,169
 tokens, as on 0.29.
+
+Merged from main during the port: `auth-deny-default` (#169), cut against 0.29.0; it applies to 0.30.0 as cut
+(`authenticate.py` did not change; the help-text hunk lands at an offset), and the routes 0.30 adds fall under its
+deny-by-default rule. #187's retention-cost table sits in gotcha 60 ahead of the 0.30 note.
 
 Carried from the 0.29 line into the topics the port re-cut: the knob sweep (readers through `vllm.envs`), the
 `KVARN_*` registration, and #86's int64 block-id cast. All of them post-date the resolution the re-cut started
