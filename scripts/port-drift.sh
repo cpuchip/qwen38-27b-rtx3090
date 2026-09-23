@@ -4,14 +4,18 @@
 # cannot silently lose work the old line gained later. The replay oracle proves the patch files match the new fork
 # branch; this proves the new fork branch still carries what the old one meant.
 #
-#   bash scripts/port-drift.sh <fork repo> <new tag> <new branch> <old tag> <old branch>
+#   bash scripts/port-drift.sh <fork repo> <new tag> <new branch> <old tag> <old branch> [--show]
 #   e.g. bash scripts/port-drift.sh ../../vllm.git v0.30.0 qwen38/0.30 v0.29.0 qwen38/0.29-hq2
 #
 # Every line it prints is a difference to explain: an upstream retirement, a resolution against moved upstream code,
-# or a line order change. 2026-09-23: the first 0.30 cut took seven topics from main-track (cut 09-13) and this report
+# or a line order change. --show prints the lines themselves under each DRIFT row ("LOST" = the old topic added it and
+# the new one does not; "NEW" = the reverse). A count is not a review: 2026-09-23 the cut2 report read
+# "kvarn-v2-runner-0.30.0 -> attention.py:18" and was filed as a documented adaptation; four of those lines were the
+# divisor rule for the drafter's sliding-window block, and without it CTX=huge + dflash2 + prefix caching (#179) was
+# refused at boot. 2026-09-23: the first 0.30 cut took seven topics from main-track (cut 09-13) and this report
 # showed the knob sweep, the KVARN_* registration and the #86 cast missing, all landed on 0.29 after main-track was cut.
 set -uo pipefail
-FORK=$1; NEWTAG=$2; NEWBR=$3; OLDTAG=$4; OLDBR=$5
+FORK=$1; NEWTAG=$2; NEWBR=$3; OLDTAG=$4; OLDBR=$5; SHOW=${6:-}
 G="git -C $FORK"
 topic_of(){ $G log -1 --format=%s "$1" | sed -nE 's/^\[qwen38\] ([A-Za-z0-9._-]+).*/\1/p'; }
 # exact topic-name match (a --grep with "\[" was unreliable here, and an unanchored one matched other topics' bodies)
@@ -22,11 +26,17 @@ for c in $($G rev-list --reverse "$NEWTAG..$NEWBR"); do
   t=$(topic_of "$c"); [ -n "$t" ] || continue
   old_t=$(echo "$t" | sed -E "s/${NEWTAG#v}/${OLDTAG#v}/")        # kvarn-0.30.0 <-> kvarn-0.29.0
   o=$(find_old "$old_t"); [ -n "$o" ] || { echo "NEW   $t (no counterpart on $OLDBR)"; continue; }
-  line=""
+  line=""; body=""
   for f in $( ($G diff --name-only "$c^" "$c"; $G diff --name-only "$o^" "$o") | sort -u); do
-    n=$(diff <(added "$o" "$f") <(added "$c" "$f") | grep -cE '^[<>]')
-    [ "$n" -gt 0 ] && line="$line $(basename "$f"):$n"
+    d=$(diff <(added "$o" "$f") <(added "$c" "$f") | grep -E '^[<>]')
+    n=$(printf '%s' "$d" | grep -cE '^[<>]')
+    [ "$n" -gt 0 ] || continue
+    line="$line $(basename "$f"):$n"
+    [ "$SHOW" = "--show" ] && body="$body    == $f"$'
+'"$(printf '%s
+' "$d" | sed -E 's/^< \+/    LOST  /; s/^> \+/    NEW   /')"$'
+'
   done
-  if [ -n "$line" ]; then drift=$((drift+1)); echo "DRIFT $t ->$line"; else clean=$((clean+1)); fi
+  if [ -n "$line" ]; then drift=$((drift+1)); echo "DRIFT $t ->$line"; [ -n "$body" ] && printf '%s' "$body"; else clean=$((clean+1)); fi
 done
 echo "port-drift: $clean topics identical in content, $drift with differences to explain"
