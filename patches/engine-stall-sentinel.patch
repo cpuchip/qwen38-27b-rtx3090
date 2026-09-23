@@ -40,7 +40,7 @@ stream and one 44,820-token / 28.5 s chunked prefill -- i.e. no false positive
 on the arm that fires the log-scraper. No wedge was induced, so the patch's
 true-positive path is unexercised here; it is the same clock the draft used.
 
---- exported from cpuchip/vllm ce448b7c9 (engine-stall-sentinel); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm db7c01f6f (engine-stall-sentinel); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/envs.py b/envs.py
 index 4c68d5f4a..ba36d50ff 100755

@@ -45,10 +45,10 @@ Status: validated on the 170HX (4 boot cycles + a full serving session,
 bit-exact, 0 Xid) and in production there — but as load-time hygiene, not
 as the wedge fix this header originally proposed; see the history above.
 
---- exported from cpuchip/vllm d849f72c8 (marlin-repack-staged-sm80); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 024de61d3 (marlin-repack-staged-sm80); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/kernels/linear/mixed_precision/marlin.py b/model_executor/kernels/linear/mixed_precision/marlin.py
-index d38b2d240..a01d94c4b 100644
+index bae372347..8c3537505 100644
 --- a/model_executor/kernels/linear/mixed_precision/marlin.py
 +++ b/model_executor/kernels/linear/mixed_precision/marlin.py
 @@ -2,8 +2,10 @@
@@ -118,7 +118,7 @@ index d38b2d240..a01d94c4b 100644
  from .MPLinearKernel import MPLinearKernel, MPLinearLayerConfig
  
  
-@@ -136,6 +187,23 @@
+@@ -135,6 +186,22 @@
          def transform_w_q(x):
              assert isinstance(x, BasevLLMParameter)
              permute_param_layout_(x, input_dim=0, output_dim=1, packed_dim=0)
@@ -132,7 +132,6 @@ index d38b2d240..a01d94c4b 100644
 +                x.data = torch.empty(0, dtype=staged.dtype, device=staged.device)
 +                x.data = ops.gptq_marlin_repack(
 +                    staged,
-+                    perm=layer.g_idx_sort_indices,
 +                    size_k=padded_k,
 +                    size_n=padded_n,
 +                    num_bits=c.weight_type.size_bits,

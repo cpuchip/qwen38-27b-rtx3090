@@ -9,7 +9,7 @@ them in the order of `patches/series` onto the installed vLLM wheel; `verify.sh`
 - **local**: this hardware or environment (WSL2, sm80, a tuned build, env knobs). Stays.
 - **own**: a fix to a feature this repo introduced. Rides with that feature.
 
-Cut against: the pin the current hunks were generated on. Every file except the retired `dflash2-backport` is exported from its commit on one fork branch, `cpuchip/vllm` **`qwen38/0.30`** (v0.30.0 + one commit per row, in series order, subject `[qwen38] <topic>`; export point tagged `qwen38/0.30-cut2`, so a later rewrite of the branch never orphans a hash these files name), so the series applies to the 0.30.0 tree with exact context; the Dockerfile, `patches/check_vllm_series.sh`,
+Cut against: the pin the current hunks were generated on. Every file except the retired `dflash2-backport` is exported from its commit on one fork branch, `cpuchip/vllm` **`qwen38/0.30`** (v0.30.0 + one commit per row, in series order, subject `[qwen38] <topic>`; export point tagged `qwen38/0.30-cut3`, so a later rewrite of the branch never orphans a hash these files name), so the series applies to the 0.30.0 tree with exact context; the Dockerfile, `patches/check_vllm_series.sh`,
 `kvarn/install.sh` and `verify.sh` apply and check with `--fuzz 0`, and a hunk whose context has moved fails the
 build by name instead of landing by guess. Regenerate a file with `bash scripts/export-patch.sh <fork checkout>
 <commit> patches/<topic>.patch`; do not edit the files by hand. A patch that reads an env knob registers it in
@@ -31,9 +31,9 @@ build by name instead of landing by guess. Regenerate a file with `bash scripts/
 | mamba-chunked-prefill-align | fix | state loss and NaN during chunked prefill on Mamba/GDN | none yet | 0.30.0 | upstream PR |
 | marlin-int8-asym-zp | fix | the Marlin int8-activation path (`INT8_ACT=int8`) accepts zero-point `uint4` weights, so asymmetric AWQ exports (compressed-tensors `symmetric: false`) run W4A8 like the symmetric ones; the `kS8 x kU4` kernel is already compiled, only two asserts refused it | none yet | 0.30.0 | upstream PR |
 | marlin-int8-layer-select | local | env vars to pick which layers run W4A8 with the Marlin kernel | none | 0.30.0 | stays |
-| marlin-int8-negative-scales | fix | Marlin W4A8 reads group scales as unsigned; AutoRound exports negative ones | none yet | 0.30.0 | upstream PR |
-| marlin-repack-staged-sm80 | local | one grow-only staging buffer for the sm80 Marlin repack (fork #27) | none | 0.30.0 | stays |
-| marlin-tune-table | local | wiring for a locally built tunable Marlin extension, off by default | none | 0.30.0 | stays |
+| marlin-int8-negative-scales | fix | Marlin W4A8 reads group scales as unsigned; AutoRound exports negative ones | none yet | 0.30.0, adapted to #54809 (activation ordering removed: g_idx, perm, is_k_full gone) | upstream PR |
+| marlin-repack-staged-sm80 | local | one grow-only staging buffer for the sm80 Marlin repack (fork #27) | none | 0.30.0, adapted to #54809 (activation ordering removed: g_idx, perm, is_k_full gone) | stays |
+| marlin-tune-table | local | wiring for a locally built tunable Marlin extension, off by default | none | 0.30.0, adapted to #54809 (activation ordering removed: g_idx, perm, is_k_full gone) | stays |
 | offload-dflash-eagle-groups | fix | OffloadingConnector under dflash flagged every KV group as draft attention (fork #33) | none yet | 0.30.0: re-cut from the main-track resolution | upstream PR |
 | offload-wsl2-devptr | local | CPU offload tier device pointers on WSL2 | none | 0.30.0 | stays |
 | qwen3_5-embed-quant | fix | pass `quant_config` to the token embedding (main model and MTP module) | none yet | 0.30.0 | upstream PR |
