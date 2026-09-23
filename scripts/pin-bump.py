@@ -47,6 +47,8 @@ def main():
         "kvarn/install.sh": [(rf"kvarn-{o}\.patch", f"kvarn-{new}.patch"), (rf"kvarn-v2-runner-{o}\.patch", f"kvarn-v2-runner-{new}.patch"),
                              (rf"vLLM {o} venv", f"vLLM {new} venv")],
         # (?![.\w]), not \b: "0.6.18\b" also matches inside "0.6.18.post1", so a second run would append ".post1" again
+        "README.md": [(rf'alt="vLLM {o}"', f'alt="vLLM {new}"'), (rf"badge/vLLM-{o}-", f"badge/vLLM-{new}-")],
+        "docs/docker.md": [(rf"vLLM {o} pinned", f"vLLM {new} pinned")],
         "docs/install.md": [(rf"pip install vllm=={o} ", f"pip install vllm=={new} "),
                             (rf"written against {o};", f"written against {new};"),
                             (rf"flashinfer-cubin=={re.escape(fi_old)}(?![.\w])", f"flashinfer-cubin=={fi_new}")],
@@ -70,6 +72,21 @@ def main():
         for n, ln in enumerate(s.splitlines(), 1):
             if re.search(rf"(?<![\d.]){o}(?![\d])", ln):
                 print(f"    REVIEW {rel}:{n}: {ln.strip()[:140]}")
+    # The same question for every tracked doc and script this did NOT edit, as a count per file: the README badge and
+    # the long-context, docker and mode READMEs' "the <old> this repo runs" lines all survived the 0.30 port's first
+    # pass because nothing listed them. docs/vllm-<old>.md and PATCHES.md are history and are skipped.
+    tracked = subprocess.run(["git", "-C", str(root), "ls-files", "*.md", "*.sh", "*.txt", "Dockerfile*"],
+                             capture_output=True, text=True, encoding="utf-8").stdout.split()
+    skip = set(edits) | {f"docs/vllm-{old.rsplit('.', 1)[0]}.md", "PATCHES.md"}
+    for rel in tracked:
+        if rel in skip or rel.startswith(("patches/", "kvarn/files/")):
+            continue
+        try:
+            n = len(re.findall(rf"(?<![\d.]){o}(?![\d])", (root / rel).read_bytes().decode("utf-8", "replace")))
+        except OSError:
+            continue
+        if n:
+            print(f"  REVIEW-FILE {rel}: {n} mention(s) of {old}")
     # Co-pins: every exact pin in docker/requirements.txt must satisfy the NEW vLLM's own floors. 0.30.0 raised
     # huggingface_hub to >=1.31.0 and our 1.28.0 pin made the image unbuildable (ResolutionImpossible); this reports
     # such a pin before a 20-minute build does.
