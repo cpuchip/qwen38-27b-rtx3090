@@ -26,10 +26,10 @@ app and answers any method, so a bare OPTIONS /metrics returned the full
 exposition without the key. Without Origin, CORSMiddleware sends the
 request through to the app, so both headers are necessary.
 
---- exported from cpuchip/vllm 9e44ba3f5 (auth-deny-default); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm 27929a3856 (auth-deny-default); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/entrypoints/launchers/cli_args.py b/entrypoints/launchers/cli_args.py
-index 615c65d7f..6e55c7cfd 100644
+index 615c65d7fb..6e55c7cfd2 100644
 --- a/entrypoints/launchers/cli_args.py
 +++ b/entrypoints/launchers/cli_args.py
 @@ -291,13 +291,13 @@
@@ -53,7 +53,7 @@ index 615c65d7f..6e55c7cfd 100644
      """The file path to the SSL key file."""
      ssl_certfile: str | None = None
 diff --git a/entrypoints/serve/middleware/authenticate.py b/entrypoints/serve/middleware/authenticate.py
-index e8a61b21e..5f3c2af30 100644
+index e8a61b21ee..5f3c2af30d 100644
 --- a/entrypoints/serve/middleware/authenticate.py
 +++ b/entrypoints/serve/middleware/authenticate.py
 @@ -8,7 +8,29 @@
