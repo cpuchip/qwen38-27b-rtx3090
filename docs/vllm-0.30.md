@@ -103,7 +103,11 @@ is unaffected: an identical ~14.7k-token resend hits 13,824 tokens on both pins 
 
 The retention knob reaches the engine on 0.30. On the #179 profile, `PREFIX_RETENTION=13057` is refused by the retention validator ("must be non-negative and a multiple of scheduler_block_size (2176)"), and 13056 boots with a resend of 17,706 tokens hitting 15,232 = floor((17706-1)/2176)*2176 - 2176. Before cut4 the same boot was refused earlier, by prefix_match_unit, so the knob was unproven there.
 
-PENDING: the native install's boot with a CUDA 12.4 `nvcc`; batch W4A16 (`INT8_ACT=`).
+Native install (from `docs/install.md`, Python 3.14, system `nvcc` 12.4): default and dflash2 k7 boot with the
+Docker pools (84,811 and 68,605) and no FlashInfer compile failure. The launcher points `CUDA_HOME` at the pip CUDA 13
+toolkit when the `nvcc` on PATH is older (logged), and `VLLM_USE_FLASHINFER_SAMPLER=0` keeps the vocab-wide top-k on
+`torch.topk`. PENDING: that install repeated at the published head with one `INT8_ACT=int8` boot (the first ran the
+cut2 series, before the #54809 fixes); batch W4A16 (`INT8_ACT=`).
 
 ## Prefix-cache retention: 0.29's default is not 0.30's
 
@@ -123,7 +127,10 @@ cell is exact to the token against the formula beside it:
 | 0.30 (0) | the same | `(P//A)*A - A`: the previous prompt's boundary |
 
 Here P is the previous turn's prompt and R its reply. On 0.30 each turn re-prefills the previous reply: the hit rate
-drops from 91-94% to 87-89%, and turns 2+ take 0.7-1.1 s longer. An identical resend cannot tell the two apart (the
+drops from 91-94% to 87-90%, and each turn re-prefills the previous reply's whole blocks (S1 - S0 = 864 tokens at
+A=432, 896 at A=448), about 0.7-0.8 s at this card's ~1,150 tok/s prefill. Measured turn times differ by 0.7 s a turn
+on MTP and 0.7-1.8 s on DFlash2 k7; the excess over the re-prefill is decode on replies that differ between the pins
+(greedy still diverges across versions). An identical resend cannot tell the two apart (the
 EAGLE drop caps both at the same boundary); only an extension can. With `--prefix-cache-retention-interval None`
 (dense), 0.30 prefills a fresh 25K and 37-48K prompt within 0.5% of both 0.30 at 0 and 0.29 dense.
 
