@@ -45,7 +45,8 @@ def main():
         "Dockerfile": [(rf"# vLLM {o} ", f"# vLLM {new} ")],
         "kvarn/install.sh": [(rf"kvarn-{o}\.patch", f"kvarn-{new}.patch"), (rf"kvarn-v2-runner-{o}\.patch", f"kvarn-v2-runner-{new}.patch"),
                              (rf"vLLM {o} venv", f"vLLM {new} venv")],
-        "docs/install.md": [(rf"flashinfer-cubin=={re.escape(fi_old)}\b", f"flashinfer-cubin=={fi_new}")],
+        # (?![.\w]), not \b: "0.6.18\b" also matches inside "0.6.18.post1", so a second run would append ".post1" again
+        "docs/install.md": [(rf"flashinfer-cubin=={re.escape(fi_old)}(?![.\w])", f"flashinfer-cubin=={fi_new}")],
     }
     errors = 0
     for rel, subs in edits.items():
@@ -60,7 +61,26 @@ def main():
         if s != before and not a.dry_run:
             p.write_bytes(s.encode("utf-8"))
         print(f"  {'would edit' if a.dry_run else 'edited'} {rel}: {changed} replacement(s)")
-    print(f"pin-bump {old} -> {new}; flashinfer-cubin {fi_old} -> {fi_new}; {errors} expected pattern(s) not found")
+    # Co-pins: every exact pin in docker/requirements.txt must satisfy the NEW vLLM's own floors. 0.30.0 raised
+    # huggingface_hub to >=1.31.0 and our 1.28.0 pin made the image unbuildable (ResolutionImpossible); this reports
+    # such a pin before a 20-minute build does.
+    reqs = {}
+    for f in ("requirements/common.txt", "requirements/cuda.txt"):
+        txt = subprocess.run(["git", "-C", a.fork, "show", f"v{new}:{f}"], capture_output=True, text=True, encoding="utf-8").stdout
+        for m in re.finditer(r"^([A-Za-z0-9_.-]+)\s*(>=|==|~=)\s*([0-9][^\s#;,]*)", txt, re.M):
+            reqs[m.group(1).lower().replace("_", "-")] = (m.group(2), m.group(3))
+    def ver(v):
+        return tuple(int(x) if x.isdigit() else x for x in re.split(r"[.+-]", v))
+    ours = (root / "docker/requirements.txt").read_bytes().decode("utf-8")
+    for m in re.finditer(r"^([A-Za-z0-9_.-]+)==([^\s#]+)", ours, re.M):
+        name, pinned = m.group(1).lower().replace("_", "-"), m.group(2)
+        if name == "vllm" or name not in reqs:
+            continue
+        op, want = reqs[name]
+        bad = (op == ">=" and ver(pinned) < ver(want)) or (op == "==" and pinned != want)
+        if bad:
+            print(f"  CO-PIN   docker/requirements.txt {name}=={pinned} violates vLLM {new}'s {name}{op}{want}"); errors += 1
+    print(f"pin-bump {old} -> {new}; flashinfer-cubin {fi_old} -> {fi_new}; {errors} problem(s)")
     sys.exit(1 if errors else 0)
 
 
