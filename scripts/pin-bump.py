@@ -8,7 +8,8 @@ What it changes (and only this; narrative docs that describe a past pin are left
   - verify.sh                the version check, the kvarn patch names
   - Dockerfile               the header comment's "vLLM <old>"
   - kvarn/install.sh         kvarn-<old>.patch / kvarn-v2-runner-<old>.patch and the "vLLM <old> venv" comment
-  - docs/install.md          flashinfer-cubin==<x>, read from vLLM's own requirements/cuda.txt at the NEW tag
+  - docs/install.md          the `pip install vllm==<old>` line, the patches' "written against", and
+                             flashinfer-cubin==<x>, read from vLLM's own requirements/cuda.txt at the NEW tag
     (the cubin package is not on PyPI and must match flashinfer-python exactly; 0.30.0 moved it to 0.6.18.post1)
 Every file it touches is listed with its line count changed; anything it expected and did not find is an error.
 """
@@ -46,7 +47,9 @@ def main():
         "kvarn/install.sh": [(rf"kvarn-{o}\.patch", f"kvarn-{new}.patch"), (rf"kvarn-v2-runner-{o}\.patch", f"kvarn-v2-runner-{new}.patch"),
                              (rf"vLLM {o} venv", f"vLLM {new} venv")],
         # (?![.\w]), not \b: "0.6.18\b" also matches inside "0.6.18.post1", so a second run would append ".post1" again
-        "docs/install.md": [(rf"flashinfer-cubin=={re.escape(fi_old)}(?![.\w])", f"flashinfer-cubin=={fi_new}")],
+        "docs/install.md": [(rf"pip install vllm=={o} ", f"pip install vllm=={new} "),
+                            (rf"written against {o};", f"written against {new};"),
+                            (rf"flashinfer-cubin=={re.escape(fi_old)}(?![.\w])", f"flashinfer-cubin=={fi_new}")],
     }
     errors = 0
     for rel, subs in edits.items():
@@ -61,6 +64,12 @@ def main():
         if s != before and not a.dry_run:
             p.write_bytes(s.encode("utf-8"))
         print(f"  {'would edit' if a.dry_run else 'edited'} {rel}: {changed} replacement(s)")
+        # What is left of the old version in a file this touched is for a person to read: narrative ("on 0.29.0,
+        # ==0.6.18") may be right, a missed pin is not. 2026-09-23: the cubin pin was bumped and the `pip install
+        # vllm==0.29.0` two lines above it was not, and only a reader of the doc caught it.
+        for n, ln in enumerate(s.splitlines(), 1):
+            if re.search(rf"(?<![\d.]){o}(?![\d])", ln):
+                print(f"    REVIEW {rel}:{n}: {ln.strip()[:140]}")
     # Co-pins: every exact pin in docker/requirements.txt must satisfy the NEW vLLM's own floors. 0.30.0 raised
     # huggingface_hub to >=1.31.0 and our 1.28.0 pin made the image unbuildable (ResolutionImpossible); this reports
     # such a pin before a 20-minute build does.
