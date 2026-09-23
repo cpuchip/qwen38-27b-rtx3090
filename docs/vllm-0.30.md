@@ -1,0 +1,181 @@
+# The vLLM 0.30.0 pin
+
+What the move from 0.29.0 to 0.30.0 changed in this repo, what was re-measured, and what the port taught the
+procedure. **DRAFT: rows marked PENDING are measurements in flight on the reference 3090.**
+
+[← back to the main README](../README.md)
+
+## Dependencies
+
+`vllm==0.30.0`, `huggingface_hub==1.32.0` (0.30.0 requires `>=1.31.0`; the 0.29 pin of 1.28.0 made the image
+unresolvable), FlashInfer `0.6.18.post1` (from 0.6.18; the wheel pins `flashinfer-python==0.6.18.post1`, and
+`docs/install.md`'s `flashinfer-cubin` pin moved with it). torch 2.13.0 is unchanged. `verify.sh` checks the
+0.30.0 pin and the `kvarn-0.30.0` patch names.
+
+## Patch series
+
+One fork branch, `cpuchip/vllm` `qwen38/0.30` (v0.30.0 + 44 topic commits), with an annotated tag at every export
+point (`qwen38/0.30-cut1` ... `-cut4`), so a later rewrite of the branch never orphans a hash a patch file names.
+The files apply to v0.30.0 at `--fuzz 0` (41 series patches: 38 clean, 3 at an offset), and the series plus both
+KVarN patches reproduce the branch's `vllm/` tree with 0 differing files.
+
+Retired, because 0.30.0 carries the change:
+
+- `offload-mtp-serve.patch` (vllm #52771, #52807 and #54288)
+- `mamba-align-retire-null-gaps.patch` (vllm #55450)
+
+Re-cut against upstream code that moved, same behaviour:
+
+- `hybrid-sw-block-promote`: upstream #53007 changed hybrid grouping; the #142 divisor condition is carried.
+- `spec-decode-attn`: `flash_attn.py` resolved against #55768; `envs.py` from the 0.29 line.
+- `mamba-align-checkpoint-order`, `offload-dflash-eagle-groups`, `sampler-small-topk-fast-softmax`: re-cut
+  unchanged in intent. `offload-dflash-eagle-groups` no longer needs its #33 hunk: with no annotated draft group,
+  0.30's offloading scheduler treats every group as non-draft (the opposite of the fallback #33 fixed). One known
+  difference, bounded and not measured: on 0.29 the hunk flagged the DFlash2 drafter's sliding-window group ("EAGLE/MTP
+  draft attention groups [8] detected"), so the drafter's volatile trailing chunk was not stored while decoding. On 0.30
+  nothing is flagged ("no KV-cache group is annotated as a drafter group"), and that chunk is stored. Upstream's own
+  comment on that path bounds the effect: a drafter chunk served one chunk stale can only lower speculative acceptance,
+  since the target verifies every draft. It applies to DFlash2 with the CPU offload tier, on CPU-tier hits; MTP is the
+  same on both pins. A resend probe (GPU-tier hit) reads the same on both pins: 22,400 of ~23.3K tokens for dflash2 k7,
+  22,464 for mtp.
+- `spec-sampler-prewarm`: kept. #56323 warms the V1 sampler's kernels, not the V2 runner's that this patch warms.
+- `cudagraph-memory-from-allocator`: both readings sit inside #54646's `freeze_gc_for_cudagraph_capture()` block.
+- `kvarn-0.30.0`, `kvarn-v2-runner-0.30.0`: re-cut with #54713's `replay_boundaries`; `KVARN` is `KVQuantMode`
+  value 11, because upstream took 10 (every use is by name).
+
+Adapted to upstream #54809, which removed GPTQ activation ordering (`has_g_idx`, `g_idx_sort_indices`, and
+`marlin_gemm`'s `g_idx`/`perm`/`is_k_full`):
+
+- `marlin-int8-negative-scales`: the `has_g_idx` guard is gone. **Without this, every `INT8_ACT=int8` boot (batch
+  mode's default, and single-user with `INT8_ACT`) died at load** with an AttributeError.
+- `marlin-repack-staged-sm80`: the staged repack no longer passes `perm` (sm80, or `VLLM_MARLIN_REPACK_STAGED=1`).
+- `marlin-tune-table`: the standalone tuned build keeps its 0.27.1 schema and gets `None, None` and
+  `is_k_full=True` (off by default; not booted, it needs the standalone build).
+
+Carried by hand into upstream's rewrite of `_largest_kernel_block_within` (#53007): `kvarn-v2-runner`'s divisor
+rule for the drafter's padded sliding-window block. Without it, the drafter's group took block 432 against a 2176
+primary, and `CTX=huge SPEC=dflash2 PREFIX_CACHE=1` (#179) was refused at boot ("prefix-cacheable KV cache group
+block sizes must be divisible by prefix_match_unit", 128). With it the group is 128 and the pool is 268,169
+tokens, as on 0.29.
+
+Carried from the 0.29 line into the topics the port re-cut: the knob sweep (readers through `vllm.envs`), the
+`KVARN_*` registration, and #86's int64 block-id cast. All of them post-date the resolution the re-cut started
+from.
+
+## Acceptance (reference 3090 native headless, and the WSL2 4090)
+
+0.29 arm: an image built from syv main 73fd65d, the commit this port was cut from, so the pair differs by the pin
+and its port alone. Every mode at its shipped defaults, fresh volume per arm.
+
+| mode | pool 0.29 / 0.30 | result |
+|---|---|---|
+| single default | 84,811 / 84,811 | pass both |
+| dflash2 k7 / k15 | 68,605 / 68,605, 57,669 / 57,669 | pass both |
+| CTX=long SPEC=mtp | 202,040 / 202,040 | pass both |
+| CTX=huge | 336,283 / 336,283 | pass both |
+| alternative.sh | 302,094 / 302,094 | pass both; groups [1696 x9] |
+| batch fp8 (0.95), burst 128 at 64-way offered | 225,000 / 225,000 | 95.7 s / 95.8 s, 128/128 |
+| batch kvarn (0.93) | 297,357 / 297,357 | 108.5 s / 109.0 s, 128/128 |
+| batch int4pth (0.93) | 407,446 / 407,446 | 97.6 s / 97.6 s, 128/128 |
+| CTX=huge SPEC=dflash2 PREFIX_CACHE=1 (#179) | 268,169 / 268,169 | pass both; groups [2176 x8, 128]; before cut4, refused on 0.30 |
+
+The batch burst is KV-limited on fp8 and kvarn (57 and 37 running at most, the same on both pins); int4pth reaches
+64. Burst wall time is the comparable number: the stats line's generation throughput alternates between prefill and
+decode windows.
+
+Speculative decoding at C1, shipped defaults, tokens per step (greedy / default temperature): every delta is inside
+the ±11% band an 8-prompt cohort shows between runs.
+
+| arm | 0.29 | 0.30 |
+|---|---|---|
+| mtp | 2.93 / 2.85 | 2.89 / 2.81 |
+| dflash2 k7 | 3.41 / 3.05 | 3.43 / 3.28 |
+| dflash2 k15 | 3.40 / 3.30 | 3.21 / 3.29 |
+
+First-request JIT on a cold volume (`--jit-monitor-verbose`): 0 on both pins, default and `SPEC=mtp CTX=long`. The
+int8 prefill profile logs the same four in-request compiles on both pins (`_k_quant`, `_k_stats`, `_prefill_attn` x2),
+which is the positive control that the counter works.
+
+A new 0.30 warning, "Speculative decoding (method=...) is enabled but no KV cache group could be identified as the
+draft model's", appears on MTP and DFlash2 profiles. 0.29 computes the same condition without logging it. Prefix reuse
+is unaffected: an identical ~14.7k-token resend hits 13,824 tokens on both pins (default) and 13,312 (long), exactly
+`floor((N-1)/A)*A - A` for the boot's attention block A.
+
+The retention knob reaches the engine on 0.30. On the #179 profile, `PREFIX_RETENTION=13057` is refused by the retention validator ("must be non-negative and a multiple of scheduler_block_size (2176)"), and 13056 boots with a resend of 17,706 tokens hitting 15,232 = floor((17706-1)/2176)*2176 - 2176. Before cut4 the same boot was refused earlier, by prefix_match_unit, so the knob was unproven there.
+
+PENDING: the native install's boot with a CUDA 12.4 `nvcc`; batch W4A16 (`INT8_ACT=`).
+
+## Prefix-cache retention: 0.29's default is not 0.30's
+
+0.29.0 resolved an unset `prefix_cache_retention_interval` to dense for hybrid models with an EAGLE-family draft
+(vllm #55760). That change merged into `releases/v0.29.0` only; 0.30.0 does not have it, and its default is 0 (the
+replay boundaries only). Main fixed the mechanism #55760 worked around instead: #53945 lands the replay boundary after
+the EAGLE tail-block drop, and #54713 retains both the resend and the extension boundary. So 0.30's default still
+hits, but nothing past the prompt is retained.
+
+Measured on the reference 3090 with the interval unset, one conversation of ~20K tokens, four turns of 1,000-token
+replies and ~1,100-token user turns, and A the boot's attention block (432 MTP, 448 DFlash2 k7, both pins). Every
+cell is exact to the token against the formula beside it:
+
+| | identical resend | turn k (k = 2..4) |
+|---|---|---|
+| 0.29 (dense) | `floor((N-1)/A)*A - A` | `((P + R)//A)*A - A`: into the previous reply |
+| 0.30 (0) | the same | `(P//A)*A - A`: the previous prompt's boundary |
+
+Here P is the previous turn's prompt and R its reply. On 0.30 each turn re-prefills the previous reply: the hit rate
+drops from 91-94% to 87-89%, and turns 2+ take 0.7-1.1 s longer. An identical resend cannot tell the two apart (the
+EAGLE drop caps both at the same boundary); only an extension can. With `--prefix-cache-retention-interval None`
+(dense), 0.30 prefills a fresh 25K and 37-48K prompt within 0.5% of both 0.30 at 0 and 0.29 dense.
+
+So both single-user launchers pass the interval on every draft profile: the measured one for `CTX=huge SPEC=dflash2`
+(13056 at 7 drafts, 14592 at 15), else `None`, which is 0.29's behaviour. `PREFIX_RETENTION=0` asks for boundaries
+only, and a flag in `EXTRA_ARGS` wins. Batch mode runs no draft, so #55760 never applied to it and nothing changes.
+Retention is prefill-neutral on the reference 3090: the acceptance A shape (dflash2 k7, `CTX=fast`, prefix caching),
+fresh 25K and 37-48K prompts, reads 1221-1225 and 1140-1145 tok/s on 0.29 dense, 0.29 at 0, 0.30 at 0 and 0.30 at
+None alike (per-rep TTFTs within ~0.1 s). `docs/vllm-0.29.md`'s "0 halves the 47k prefill" (1303 vs 2323 tok/s) was
+measured on the WSL2 4090 and does not reproduce natively on either pin. The reason to pass None is the multi-turn
+reuse above, not prefill.
+
+## Porting the next pin (what this port added to the procedure)
+
+`docs/vllm-0.29.md`'s three steps stand. The replay oracle ("the patch files reproduce the fork branch") was green
+at every cut of this port, and still four defects shipped into a built image, because a patch that applies is not a
+patch that still means what it did. The runbook the next port owes (`port-acceptance`, items 0-7) now starts with
+checks that need no card:
+
+- `scripts/port-triage.sh`: cherry-picks each topic onto the new tag and reports clean, CONFLICT (with files) or
+  EMPTY, plus a RETIRE? column from each row's upstream PR ancestry.
+- `scripts/pin-bump.py`: moves every mechanical pin in one pass, checks every exact pin in
+  `docker/requirements.txt` against the new vLLM's floors (the hub pin would have failed a 20-minute build), and
+  lists every leftover mention of the old version in the files it edits. The install doc's `vllm==0.29.0` survived
+  the first pass; this is what now reports it.
+- `scripts/port-removed-names.py`: every identifier the series' added lines use that upstream deleted between the
+  pins. The #54809 names were invisible to the replay and to a clean apply, because they sit in our lines and never
+  in hunk context. At cut2 it reports all three topics.
+- `scripts/port-drift.sh --show`: each topic's added lines compared with the same topic on the old line, **printing
+  the lost lines**. A count ("attention.py:18") was filed as a documented adaptation at cut2; the lines were the
+  divisor rule behind #179.
+
+Two lessons for the reading:
+
+- A re-cut from a resolution made on another branch (here `qwen38/main-track`, cut 09-13) loses whatever the old line
+  gained after that date. List it (`port-drift`), then carry it.
+- Run the install doc's commands as extracted from the file, on a host whose Python is not the image's. That is how
+  the stale pin and the Python 3.12 path were found.
+
+## Decisions made in this port, one line each (reject any by name)
+
+1. **One fork branch per pin, with an annotated tag at every export point** (`qwen38/0.30-cutN`), instead of suffixed
+   branches.
+2. **`spec-sampler-prewarm` is kept** over #56323, which warms V1 kernels and not the V2 runner's.
+3. **The #54809 adaptations** pass the values activation ordering's removal implies (`None`, `None`,
+   `is_k_full=True`) to the standalone tuned build instead of dropping `marlin-tune-table`.
+4. **`kvarn-v2-runner`'s divisor rule applies only to a padded sliding-window page** (`divisor_of`), so #53007's
+   unpadded path is unchanged.
+5. **`huggingface_hub==1.32.0`** in the image (0.30.0's floor is 1.31.0; 1.32.0 is the only version tested). The
+   native install leaves it unpinned and resolves it from vLLM's own requirement (1.32.0 on the reference 3090).
+6. **`offload-dflash-eagle-groups`' #33 hunk is not carried**: 0.30 fails toward non-draft on its own. The residual
+   (the drafter's trailing chunk is stored under DFlash2 + CPU tier) is stated, not fixed. The port-faithful fix would
+   be a narrow carry of the old connector hunk. Annotating the drafter at upstream's annotation site would also narrow
+   the GPU tier's EAGLE drop, which 0.29 never did.
+7. **Draft profiles pass `--prefix-cache-retention-interval None` unless measured or set**, keeping 0.29's multi-turn reuse. Boundaries-only (0.30's default) is one `PREFIX_RETENTION=0` away, and would be the better choice for many alternating long conversations on a small pool (gotcha 60); this port does not change that trade.
