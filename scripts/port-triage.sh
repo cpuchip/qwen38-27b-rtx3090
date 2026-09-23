@@ -49,6 +49,17 @@ if [ -f "$PM" ] && command -v gh >/dev/null; then
     [ "$all" = 1 ] && rows[$i]="${rows[$i]%|} RETIRE? every named PR is in $NEW:$seen |"
   done
 fi
+# Release-branch commits the new tag does not carry. A release tag is not a superset of the one before it: fixes can
+# be cherry-picked onto a release branch and never reach main. 0.29.0 -> 0.30.0 dropped vllm #55760, #55861 and
+# #55863 that way (the dense prefix-retention default for hybrid + EAGLE), and 0.30 changed behaviour silently. Match
+# by PR number, because a cherry-pick has a different hash from the commit on main.
+SUBJ="$T/new-subjects"; $G log --format=%s "$NEW" > "$SUBJ"
+dropped=()
+for c in $($G rev-list "$NEW..$OLD"); do
+  s=$($G log -1 --format=%s "$c"); pr=$(echo "$s" | grep -oE '\(#[0-9]{4,6}\)' | tail -1)
+  if [ -z "$pr" ]; then dropped+=("| (no PR number) | ${s:0:100} |")
+  elif ! grep -qF "$pr" "$SUBJ"; then dropped+=("| ${pr//[()]/} | ${s:0:100} |"); fi
+done
 {
   echo "# Port triage: $BR ($OLD..) onto $NEW, $(date -u +%Y-%m-%dT%H:%MZ)"
   echo
@@ -56,4 +67,8 @@ fi
   echo
   echo "| topic | result | conflicting files |"; echo "|---|---|---|"
   printf '%s\n' "${rows[@]}"
+  echo
+  echo "## In $OLD, not in $NEW (${#dropped[@]}): read each for behaviour the port loses"
+  echo
+  if [ ${#dropped[@]} -gt 0 ]; then echo "| PR | subject |"; echo "|---|---|"; printf '%s\n' "${dropped[@]}"; else echo "(none)"; fi
 } | if [ -n "$OUT" ]; then tee "$OUT"; else cat; fi
