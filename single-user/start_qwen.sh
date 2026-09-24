@@ -534,10 +534,10 @@ if [ "${PREFIX_CACHE:-0}" = "1" ]; then
   # Every draft profile passes the interval explicitly, because vLLM's unset default moved. 0.29
   # resolved it to dense for a hybrid model with a draft (vllm #55760, merged to the 0.29 release
   # branch only); 0.30's is 0, which keeps only the replay boundaries. Measured on the reference
-  # 3090 with the interval unset (one ~20K conversation, 1,000-token replies): 0.30 reuses up to
-  # the previous PROMPT and re-prefills the previous reply's whole blocks every turn (87-90% hit,
-  # ~0.7-0.8 s a turn), where 0.29 reused into the reply (91-94%). With None (dense), 0.30 prefills a fresh
-  # 25K and 37-48K prompt within 0.5% of both. So: the measured interval above for CTX=huge
+  # 3090 with the interval unset (one ~20K conversation, 1,000-token replies): 0.30's hit stops
+  # inside the previous PROMPT, two blocks (864 tokens) short of 0.29's, which reached a few hundred
+  # tokens into the reply (87-90% hit against 91-94%, ~0.7-0.8 s a turn). With None (dense), 0.30
+  # prefills a fresh ~20-22K and 37-48K prompt within 0.5% of both. So: the measured interval above for CTX=huge
   # DFlash2 at 7/15 drafts, else None, which is 0.29's behaviour. The flag in EXTRA_ARGS wins, then
   # an exported VLLM_PREFIX_CACHE_RETENTION_INTERVAL (a spelling 0.30 no longer reads, carried
   # over as the flag), then PREFIX_RETENTION (0 keeps boundaries only; empty means dense).

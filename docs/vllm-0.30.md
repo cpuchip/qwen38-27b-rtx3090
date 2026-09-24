@@ -28,8 +28,8 @@ Both retirements are measured, not only read from ancestry (reference 3090, the 
 B, one frozen corpus, both images hashed against their commits). The offload tier serves an evicted prefix back by load
 on both pins: serve ratio 0.16 (11.0 -> 1.78 s), 486,932,480 bytes CPU to GPU, the same 4.52 GB stored. Peak pool
 during a long align-mode prefill is identical on both pins (0.16736 at 60k characters, 0.36402 at 160k), and the
-control that shows the check can see the defect, 0.29 with the patch removed, reads 0.26778 and 0.64017 (37.5% and
-43.1% higher: 1.85 pool tokens per prompt token at 160k against 1.05).
+control that shows the check can see the defect, 0.29 with the patch removed, reads 0.26778 and 0.64017 (60% and
+76% higher: 1.85 pool tokens per prompt token at 160k against 1.05).
 
 Re-cut against upstream code that moved, same behaviour:
 
@@ -106,17 +106,18 @@ the ±11% band an 8-prompt cohort shows between runs.
 | dflash2 k7 | 3.41 / 3.05 | 3.43 / 3.28 |
 | dflash2 k15 | 3.40 / 3.30 | 3.21 / 3.29 |
 
-First-request JIT on a cold volume (`--jit-monitor-verbose`) depends on what the first traffic is. For greedy or
-single-request traffic it is 0 on both pins, default and `SPEC=mtp CTX=long`. For a sampled batch (the bench's own
-warmup: 16 requests at concurrency 8, default sampling) it is still 0 on 0.29, with no cold-vs-warm cost, but on 0.30
-the default profile compiles five of 0.30's split top-p kernels (`_topp_sb_stats`, `_topp_sb_step` x3,
-`_topp_sb_mask`, all at `S=4`), and the first request's TTFT reads 3,433 ms cold against 1,579 ms warm (n=1). The
-kernels are real but unwarmed on CUDA: the V2 runner's sampler never registers them, and upstream #58465 limited
-their registration to ROCm because on CUDA it "adds ~2 min to every engine start". The cost is once per cold
-Triton cache (the cache lives on the `qwen-cache` volume), and a targeted prewarm is the open follow-up (#155). The
-monitor also counts compiled kernels loaded from the disk cache, so on a warm volume its count is not the cost;
-read the latency. The int8 prefill profile logs the same four in-request compiles on both pins (`_k_quant`,
-`_k_stats`, `_prefill_attn` x2), which is the positive control that the counter works.
+First-request JIT on a cold volume (`--jit-monitor-verbose`) depends on what the first traffic is. For greedy traffic,
+or single requests with the model's default sampling (`top_k` set), it is 0 on both pins, default and `SPEC=mtp
+CTX=long`. For a sampled batch (the bench's own warmup: 16 requests at concurrency 8, default sampling) it is still 0
+on 0.29, with no cold-vs-warm cost, but on 0.30 the default profile makes five compiles of 0.30's three split top-p
+kernels (`_topp_sb_stats`, `_topp_sb_step` x3, `_topp_sb_mask`, all at `S=4`), and the first request's TTFT reads
+3,433 ms cold against 1,579 ms warm (n=1). The kernels are real but unwarmed on CUDA: the V2 runner's sampler never
+registers them, and vllm #58465 limited their registration to ROCm because on CUDA it "adds ~2 min to every engine
+start". The cost is once per cold Triton cache (the cache lives on the `qwen-cache` volume), and the #155 follow-up
+carries vllm #58092's registration for CUDA, on a branch stacked on this one. The monitor also counts compiled kernels
+loaded from the disk cache, so on a warm volume its count is not the cost; read the latency. On the WSL2 4090, the
+int8 prefill profile logs the same four in-request compiles on both pins, of three kernels (`_k_quant`, `_k_stats`,
+`_prefill_attn` twice), which is the positive control that the counter works.
 
 A new 0.30 warning, "Speculative decoding (method=...) is enabled but no KV cache group could be identified as the
 draft model's", appears on MTP and DFlash2 profiles. 0.29 computes the same condition without logging it. Prefix reuse
@@ -153,13 +154,16 @@ cell is exact to the token against the formula beside it:
 | 0.29 (dense) | `floor((N-1)/A)*A - A` | `((P + R)//A)*A - A`: into the previous reply |
 | 0.30 (0) | the same | `(P//A)*A - A`: the previous prompt's boundary |
 
-Here P is the previous turn's prompt and R its reply. On 0.30 each turn re-prefills the previous reply's whole blocks
-(864 tokens at A=432, 896 at A=448), about 0.7-0.8 s at this card's ~1,150 tok/s prefill, and the hit rate drops from
-91-94% to 87-90%. Measured turn times differ by 0.7 s a turn
-on MTP and 0.7-1.8 s on DFlash2 k7; the excess over the re-prefill is decode on replies that differ between the pins
-(greedy still diverges across versions). An identical resend cannot tell the two apart (the EAGLE drop caps both at
-the same boundary); only an extension can. With `--prefix-cache-retention-interval None`
-(dense), 0.30 prefills a fresh 25K and 37-48K prompt within 0.5% of both 0.30 at 0 and 0.29 dense.
+Here P is the previous turn's prompt and R its reply. Neither reuses much of the reply: 0.29's hit reaches a few
+hundred tokens into it and both prefill the rest. What 0.30 at 0 prefills in addition is the span between the two
+formulas, 864 tokens at A=432 (896 at A=448), and that span is mostly the previous prompt's last blocks: 571-700
+prompt tokens and 164-293 reply tokens in reruns at ~8K, ~20K and ~40K (two replicates each, every turn on its
+formula). It costs about 0.7-0.8 s at this card's ~1,150 tok/s prefill, and the hit rate drops from 91-94% to 87-90%.
+Measured turn times differ by 0.7 s a turn on MTP and 0.7-1.8 s on DFlash2 k7; the excess over the re-prefill is
+decode on replies that differ between the pins (greedy still diverges across versions). An identical resend cannot
+tell the two apart (the EAGLE drop caps both at the same boundary); only an extension can. With
+`--prefix-cache-retention-interval None` (dense), 0.30 prefills a fresh ~20-22K and 37-48K prompt within 0.5% of both
+0.30 at 0 and 0.29 dense.
 
 So both single-user launchers pass the interval on every draft profile: the measured one for `CTX=huge SPEC=dflash2`
 (13056 at 7 drafts, 14592 at 15), else `None`, which is 0.29's behaviour. `PREFIX_RETENTION=0` asks for boundaries
@@ -172,7 +176,7 @@ never appears in the engine's non-default arguments on 0.30, because 0 is the pa
 0 is the S0 hit, not the log line.
 
 Retention is prefill-neutral on the reference 3090: the acceptance A shape (dflash2 k7, `CTX=fast`, prefix caching),
-fresh 25K and 37-48K prompts, reads 1221-1225 and 1140-1145 tok/s on 0.29 dense, 0.29 at 0, 0.30 at 0 and 0.30 at
+fresh ~20-22K and 37-48K prompts, reads 1221-1225 and 1140-1145 tok/s on 0.29 dense, 0.29 at 0, 0.30 at 0 and 0.30 at
 None alike (per-rep TTFTs within ~0.1 s). `docs/vllm-0.29.md`'s "0 halves the 47k prefill" (1303 vs 2323 tok/s) was
 measured on the WSL2 4090 and does not reproduce natively on either pin. The reason to pass None is the multi-turn
 reuse above, not prefill.

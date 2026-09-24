@@ -1390,8 +1390,9 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     or more long documents live should stay on the default.
     On 0.30, 0.29's forcing to dense is gone (vllm #55760 went to the 0.29 release
     branch only), and an unset interval means 0: the replay boundaries only. That does not zero
-    reuse, but each turn of a conversation reuses up to the previous prompt and
-    re-prefills the previous reply. So both single-user launchers now pass the
+    reuse, but each turn's hit now ends inside the previous prompt, two blocks (864
+    tokens at the MTP block) before 0.29's, which reached a few hundred tokens
+    into the reply, so a turn prefills those again. So both single-user launchers now pass the
     interval on every draft profile: the measured one above, else `None` (dense,
     0.29's behaviour). `PREFIX_RETENTION=0` asks for boundaries only
     ([vllm-0.30.md](vllm-0.30.md) has the measurement).
