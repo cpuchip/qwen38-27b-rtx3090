@@ -57,3 +57,4 @@ compile-key-runtime-knobs.patch
 auth-deny-default.patch
 spec-attn-smem-fit.patch
 bench-sse-keepalive.patch
+sampler-warmup-cuda.patch
