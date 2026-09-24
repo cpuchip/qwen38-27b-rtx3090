@@ -24,6 +24,13 @@ Retired, because 0.30.0 carries the change:
 - `offload-mtp-serve.patch` (vllm #52771, #52807 and #54288)
 - `mamba-align-retire-null-gaps.patch` (vllm #55450)
 
+Both retirements are measured, not only read from ancestry (reference 3090, the acceptance harness's profiles D and
+B, one frozen corpus, both images hashed against their commits). The offload tier serves an evicted prefix back by load
+on both pins: serve ratio 0.16 (11.0 -> 1.78 s), 486,932,480 bytes CPU to GPU, the same 4.52 GB stored. Peak pool
+during a long align-mode prefill is identical on both pins (0.16736 at 60k characters, 0.36402 at 160k), and the
+control that shows the check can see the defect, 0.29 with the patch removed, reads 0.26778 and 0.64017 (37.5% and
+43.1% higher: 1.85 pool tokens per prompt token at 160k against 1.05).
+
 Re-cut against upstream code that moved, same behaviour:
 
 - `hybrid-sw-block-promote`: upstream #53007 changed hybrid grouping; the #142 divisor condition is carried.
