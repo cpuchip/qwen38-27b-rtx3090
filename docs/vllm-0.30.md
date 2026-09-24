@@ -99,9 +99,17 @@ the ±11% band an 8-prompt cohort shows between runs.
 | dflash2 k7 | 3.41 / 3.05 | 3.43 / 3.28 |
 | dflash2 k15 | 3.40 / 3.30 | 3.21 / 3.29 |
 
-First-request JIT on a cold volume (`--jit-monitor-verbose`): 0 on both pins, default and `SPEC=mtp CTX=long`. The
-int8 prefill profile logs the same four in-request compiles on both pins (`_k_quant`, `_k_stats`, `_prefill_attn` x2),
-which is the positive control that the counter works.
+First-request JIT on a cold volume (`--jit-monitor-verbose`) depends on what the first traffic is. For greedy or
+single-request traffic it is 0 on both pins, default and `SPEC=mtp CTX=long`. For a sampled batch (the bench's own
+warmup: 16 requests at concurrency 8, default sampling) it is still 0 on 0.29, with no cold-vs-warm cost, but on 0.30
+the default profile compiles five of 0.30's split top-p kernels (`_topp_sb_stats`, `_topp_sb_step` x3,
+`_topp_sb_mask`, all at `S=4`), and the first request's TTFT reads 3,433 ms cold against 1,579 ms warm (n=1). The
+kernels are real but unwarmed on CUDA: the V2 runner's sampler never registers them, and upstream #58465 limited
+their registration to ROCm because on CUDA it "adds ~2 min to every engine start". The cost is once per cold
+Triton cache (the cache lives on the `qwen-cache` volume), and a targeted prewarm is the open follow-up (#155). The
+monitor also counts compiled kernels loaded from the disk cache, so on a warm volume its count is not the cost;
+read the latency. The int8 prefill profile logs the same four in-request compiles on both pins (`_k_quant`,
+`_k_stats`, `_prefill_attn` x2), which is the positive control that the counter works.
 
 A new 0.30 warning, "Speculative decoding (method=...) is enabled but no KV cache group could be identified as the
 draft model's", appears on MTP and DFlash2 profiles. 0.29 computes the same condition without logging it. Prefix reuse
