@@ -9,7 +9,7 @@ them in the order of `patches/series` onto the installed vLLM wheel; `verify.sh`
 - **local**: this hardware or environment (WSL2, sm80, a tuned build, env knobs). Stays.
 - **own**: a fix to a feature this repo introduced. Rides with that feature.
 
-Cut against: the pin the current hunks were generated on. Every file except the retired `dflash2-backport` is exported from its commit on one fork branch, `cpuchip/vllm` **`qwen38/0.30`** (v0.30.0 + one commit per row, in series order, subject `[qwen38] <topic>`; export point tagged `qwen38/0.30-cut5`, so a later rewrite of the branch never orphans a hash these files name), so the series applies to the 0.30.0 tree with exact context; the Dockerfile, `patches/check_vllm_series.sh`,
+Cut against: the pin the current hunks were generated on. Every file except the retired `dflash2-backport` is exported from its commit on one fork branch, `cpuchip/vllm` **`qwen38/0.30`** (v0.30.0 + one commit per row, in series order, subject `[qwen38] <topic>`; export point tagged `qwen38/0.30-cut5`; this branch adds `sampler-warmup-cuda` on `qwen38/0.30-warmup`, tagged `qwen38/0.30-warmup-cut1`, so a later rewrite of the branch never orphans a hash these files name), so the series applies to the 0.30.0 tree with exact context; the Dockerfile, `patches/check_vllm_series.sh`,
 `kvarn/install.sh` and `verify.sh` apply and check with `--fuzz 0`, and a hunk whose context has moved fails the
 build by name instead of landing by guess. Regenerate a file with `bash scripts/export-patch.sh <fork checkout>
 <commit> patches/<topic>.patch`; do not edit the files by hand. A patch that reads an env knob registers it in
@@ -40,6 +40,7 @@ build by name instead of landing by guess. Regenerate a file with `bash scripts/
 | qwen3_5-embed-quant | fix | pass `quant_config` to the token embedding (main model and MTP module) | none yet | 0.30.0 | upstream PR |
 | qwen3_5-mtp-draft-vocab | feature | vocab-truncated draft head for MTP | none | 0.30.0 | upstreamed |
 | sampler-small-topk-fast-softmax | feature | sort-free top-k/top-p for small k, multi-block row softmax | none | 0.30.0: re-cut from the main-track resolution | upstreamed or superseded |
+| sampler-warmup-cuda | backport | registers the V2 runner's top-k/top-p sampler JIT warmups on CUDA too (vllm #58092 without #58465's ROCm-only gate): 0 in-request compiles, ~71-78 s of warmup once per cold cache volume, ~0.2 s warm | vllm #58092 (merged after 0.30.0) | 0.30.0 | the pin that carries #58092 with CUDA registration (upstream gates it to ROCm; an opt-in is the ask) |
 | spec-decode-attn | feature | split-KV verify attention on FLASH_ATTN with query-row tiling | none | 0.30.0: main-track resolution, envs.py from the 0.29 line (#114), flash_attn.py hand-resolved against #55768 | upstreamed |
 | engine-completion-log | feature | one log line per completed engine step, so a stalled core is visible without scraping stats gaps | upstream PR (syv-ai #94/#110) | 0.30.0 | upstreamed |
 | engine-stall-sentinel | feature | daemon thread warns once per episode when no step completes for `VLLM_ENGINE_STALL_SENTINEL_S` while requests are live | upstream PR (syv-ai #94/#110) | 0.30.0 | upstreamed |
