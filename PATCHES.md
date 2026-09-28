@@ -40,6 +40,7 @@ build by name instead of landing by guess. Regenerate a file with `bash scripts/
 | qwen3_5-embed-quant | fix | pass `quant_config` to the token embedding (main model and MTP module) | none yet | 0.30.0 | upstream PR |
 | qwen3_5-mtp-draft-vocab | feature | vocab-truncated draft head for MTP | none | 0.30.0 | upstreamed |
 | sampler-small-topk-fast-softmax | feature | sort-free top-k/top-p for small k, multi-block row softmax | none | 0.30.0: re-cut from the main-track resolution | upstreamed or superseded |
+| spec-attn-smem-fit | fix | the split-KV verify attention sizes its KV tile to the device's shared memory: halve the KV tile when Triton reports OutOfResources, so it launches on Turing (sm75, 64 KB per block) | none | 0.30.0: hunk 1 (the import) re-placed by hand, hunks 2-4 at offset -1 | upstream with spec-decode-attn |
 | spec-decode-attn | feature | split-KV verify attention on FLASH_ATTN with query-row tiling | none | 0.30.0: main-track resolution, envs.py from the 0.29 line (#114), flash_attn.py hand-resolved against #55768 | upstreamed |
 | engine-completion-log | feature | one log line per completed engine step, so a stalled core is visible without scraping stats gaps | upstream PR (syv-ai #94/#110) | 0.30.0 | upstreamed |
 | engine-stall-sentinel | feature | daemon thread warns once per episode when no step completes for `VLLM_ENGINE_STALL_SENTINEL_S` while requests are live | upstream PR (syv-ai #94/#110) | 0.30.0 | upstreamed |

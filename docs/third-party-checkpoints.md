@@ -137,6 +137,33 @@ a 15-token verify block needs `DFLASH_MAX_LEN=36864` on top. The full table with
 and fast-variant rows, and the container that ships all four checkpoints:
 [Ar4ikov/vllm-hyprfastQwen](https://github.com/Ar4ikov/vllm-hyprfastQwen).
 
+### Ready-made, ThinkingCap (reasoning fine-tune)
+
+[dewamade/ThinkingCap-Qwen3.8-27B-AutoRound-W4A16-fast](https://huggingface.co/dewamade/ThinkingCap-Qwen3.8-27B-AutoRound-W4A16-fast)
+is BottleCap AI's reasoning fine-tune
+[ThinkingCap-Qwen3.8-27B](https://huggingface.co/bottlecapai/ThinkingCap-Qwen3.8-27B)
+in this repo's fast-variant layout, so it serves without preparation
+([#211](https://github.com/syv-ai/HyperQwen/issues/211)). It starts from an
+AutoRound W4A16 export in AutoRound's GPTQ layout, which this stack's Marlin
+path does not load, and repacks the same int4 g128 symmetric weights into
+`compressed-tensors`. The int4 GPTQ `lm_head` and MTP module (all `mtp.*` keys
+in `model_extra_tensors.safetensors`), the int8 `embed_tokens` and this repo's
+stock `mtp_draft_vocab_ids.pt` match the shipped fast variant (config groups
+and the ids file's hash checked against it). A `-emb4` companion,
+[dewamade/ThinkingCap-Qwen3.8-27B-AutoRound-W4A16-fast-emb4](https://huggingface.co/dewamade/ThinkingCap-Qwen3.8-27B-AutoRound-W4A16-fast-emb4),
+swaps in an int4 embedding table for ~0.6 GB more pool. The author's numbers,
+RTX 3090 at 250 W, vLLM 0.29.0 at 73fd65d, `SPEC=mtp CTX=long VISION=1
+PREFIX_CACHE=1`:
+
+| | pool | PPL en / da / code | GSM8K (200) |
+|---|---|---|---|
+| fast | 201,275 | 10.77 / 10.91 / 3.39 | 0.970 |
+| fast-emb4 | 218,112 | 10.78 / 10.92 / 3.39 | 0.970 |
+
+Community-built; not benchmarked on the reference box, and no decode rate was
+reported. The base model declares its own license on the Hub (`other`); read
+it before redistributing.
+
 **Any other export**, including single-shard and asymmetric-AWQ ones the base
 model's three `quant_*.py` scripts cannot open, goes through the streaming
 requant (contributed in

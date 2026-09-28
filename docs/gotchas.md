@@ -1388,6 +1388,12 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     ~32.6K pair; where its collision knee sits is not measured, so a workload of
     many short-to-medium chats is the one to try it on, and one that keeps two
     or more long documents live should stay on the default.
+    One report from the other direction, on a different box
+    ([#208](https://github.com/syv-ai/HyperQwen/issues/208), 2x3090 TP=2,
+    DFlash2 k=3, so a 2048-token block, with its own client): at 32 streams of
+    32K each, 12 blocks (24576) read 130.6 tok/s and 92% cached against 6
+    blocks' (12288) 116.4 and 90%, and dense read 55.0 and 67%. So under heavy
+    concurrency of long prompts, a coarser interval than the default can pay.
     On 0.30, 0.29's forcing to dense is gone (vllm #55760 went to the 0.29 release
     branch only), and an unset interval means 0: the replay boundaries only. That does not zero
     reuse, but each turn's hit now ends inside the previous prompt, two blocks (864
