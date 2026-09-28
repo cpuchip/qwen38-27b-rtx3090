@@ -15,8 +15,8 @@ Realistic chat prompts (8 mixed English/Danish/code tasks in
 [bench/prompts_real.jsonl](../bench/prompts_real.jsonl), 1,024-token answers),
 `vllm bench serve --dataset-name custom`, RTX 3090 at 250 W:
 
-> These are vLLM 0.27.1 baseline measurements, now two pins old. Re-benchmark on a
-> GPU after the v0.29.0 upgrade before using the figures for capacity planning.
+> These are vLLM 0.27.1 baseline measurements, now three pins old. Re-benchmark on a
+> GPU after the v0.30.0 upgrade before using the figures for capacity planning.
 
 Quote these against that harness. A client with a different output length is not
 measuring the same thing, and mixing the two is how
@@ -308,7 +308,7 @@ k=4 is the fastest but not the default: on the FlashInfer attention backend
 context fit) the vLLM 0.28.0 FlashInfer path dies with an illegal memory access as soon as one
 request finishes while another is mid-generation with 4 drafts (with or
 without our patches; the vendored PR #50021 bounds fix does not cure it;
-**measured on 0.28.0 and not re-verified on 0.29.0** -- the pin moved under this
+**measured on 0.28.0 and not re-verified on 0.29.0 or 0.30.0** -- the pin moved under this
 paragraph, so treat k=4 on FlashInfer as unproven either way until someone re-runs it;
 club-3090 sees the same "n=4 eventually dies, n=3 stable" on their rigs, and
 vLLM has a family of open MTP illegal-memory-access reports on Qwen3.5/3.6,
@@ -426,7 +426,7 @@ included (`tools` + `tool_choice: "auto"` come back as `tool_calls`).
 | `MAX_SEQS` | 8 | how many requests are *admitted*, not how many the pool can hold: each resident request needs k+1 recurrent-state slots (0.88 GiB at DFlash2 k=7 — seven residents with short prompts, five at 4k, two at 16k), and the launcher prints the number at boot |
 | `MAX_LEN` | 65536 (`fast`) / 150000 (`long`) | 150k needs `GPU_UTIL` 0.93 |
 | `GPU_UTIL` | 0.93 | soak-tested with a 100k prompt and 4×6k-token generations; batch mode's 0.972 OOMs in the MTP path (docs/gotchas.md, gotcha 4) |
-| `MTP_DRAFT_VOCAB` | 1 | set 0 to draft with the full lm_head (more acceptance, slower per draft) |
+| `MTP_DRAFT_VOCAB` | 1 | set 0 to draft with the full lm_head (more acceptance, slower per draft); set 0 for Chinese or other traffic outside the list's English/Danish/code corpus (docs/gotchas.md 61) |
 | `TOOLS` | 1 | tool/function calling (`--enable-auto-tool-choice --tool-call-parser`). `TOOL_PARSER` (`qwen3_coder`) must match the XML call format this model's chat template emits — `hermes` parses the JSON a Qwen model does *not* produce here, and fails silently. 0 = off, and `tool_choice: "auto"` then 400s |
 | `VISION` | 0 | 1 keeps the vision tower instead of `--language-model-only` (0.858 GiB of BF16 weights on this checkpoint), for a client that sends images: one image per prompt and a 2048-image-token pixel cap, both overridable from `EXTRA_ARGS` |
 | `VISION_OFFLOAD` | 1 | with `VISION=1`, keeps the tower's weights in pinned host RAM and copies each module to the GPU for its own forward (`patches/vision-tower-cpu-offload.patch`). **On 24 GB, `SPEC=dflash2` + `VISION=1` does not boot with this off** — the tower is 0.85 GiB of the ~1.1 GiB transient margin, and graph capture OOMs allocating the 960 MiB split-KV verify buffer with 787 MiB free. With it on, the same config comes up at the full 69,758-token pool and reads images. Costs 296 → 333 ms of encode per 8192-patch image, output bit-exact. 0 only on a card with headroom to spare. `VLLM_VISION_CPU_OFFLOAD_GB` (default 1) is the budget in GiB |

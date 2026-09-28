@@ -54,8 +54,10 @@
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# flashinfer-cubin (the no-nvcc route, README Setup) publishes 0.6.13 against
-# flashinfer-python 0.6.16.post3; without this the import refuses the pair (#35).
+# flashinfer-cubin (the no-nvcc route, docs/install.md) must match flashinfer-python.
+# This used to cover a pair PyPI could not match (cubin 0.6.13 against python
+# 0.6.16.post3, #35); install.md now takes the cubin from flashinfer.ai at the
+# same version, so the export is kept only for venvs built the old way.
 export FLASHINFER_DISABLE_VERSION_CHECK=1
 
 # A dead engine leaves its OffloadingConnector region behind as
@@ -489,7 +491,6 @@ if [ "$SPEC" = "dflash2" ]; then
          "miss is a loud OutOfMemoryError; on WSL2 it is SILENT: no error, prefill" \
          "5-10x slower. Ladder 4k/16k TTFT against known-good rates before trusting it." >&2
   fi
-  [ -n "$KV_MEM" ] && EXTRA_ARGS="--kv-cache-memory=$KV_MEM ${EXTRA_ARGS}"
 elif [ "$SPEC" = "off" ] || [ "$SPEC" = "none" ]; then
   MAX_SEQS=${MAX_SEQS:-8}
   SPEC_CFG=""
@@ -503,6 +504,11 @@ else
   echo "silently running mtp -- an unrecognized SPEC in an A/B measures the wrong thing." >&2
   exit 1
 fi
+# The pin applies in every mode. The dflash2 branch above gives KV_MEM a default; under
+# mtp and off it is only ever the user's own export (docs/multi-gpu.md's "pin the KV
+# pool"). It used to be passed inside the dflash2 branch alone, so SPEC=mtp and SPEC=off
+# ignored an exported KV_MEM without a word (#68, #210).
+[ -n "${KV_MEM:-}" ] && EXTRA_ARGS="--kv-cache-memory=$KV_MEM ${EXTRA_ARGS}"
 SPEC_ARGS=()
 [ -n "$SPEC_CFG" ] && SPEC_ARGS=(--speculative-config "$SPEC_CFG")
 
@@ -516,39 +522,49 @@ if [ "${PREFIX_CACHE:-0}" = "1" ]; then
   # hits land on tile boundaries (a non-multiple of 128 corrupts the pool).
   [ "$CTX" = "huge" ] && EXTRA_ARGS="--prefix-match-unit 128 ${EXTRA_ARGS}"
   # CTX=huge + DFlash2: retain one Mamba state snapshot in six rather than one per
-  # block (#174). vLLM's default is dense, and at dense the snapshots of two long
+  # block (#174). 0.29's default was dense, and at dense the snapshots of two long
   # conversations advanced in turn do not fit beside each other: on the reference
   # 3090 two ~32.6K chats alternating reused 0% and re-prefilled for 31.8 s on every
   # turn; with one in six they reuse 93-99.5% at 0.4-2.6 s (0.28). On 0.29 the first
   # reuse after a cold turn lands on the last retained snapshot, not the last block: at
   # 32.6K a side it was 80.0% (26,112 = 2 x 13056) at 7.0 s, then 99.3-99.4% at ~0.5 s
-  # from the next turn on, against 0% and ~29 s per turn dense. One ~103K chat on its own
-  # keeps 98.7-99.8%, and a passcode inside the reused prefix comes back right 3/3,
-  # so the sparser restore path returns the right state.
+  # from the next turn on, against 0% and ~29 s per turn dense. On 0.30 the first reuse
+  # lands further in: 86.6% (28,288) at 4.7-5.0 s at 32.6K a side, and one ~60K chat
+  # reuses 94.5% (56,576) at 4.1 s where 0.29 reuses 87.2% at 8.9-9.0 s. One ~103K
+  # chat on its own keeps 98.7-99.8%, and a passcode inside the reused prefix comes
+  # back right 3/3, so the sparser restore path returns the right state.
   # The interval is in tokens and vLLM refuses one that is not a multiple of the
   # attention block, and that block moves with the draft count (the Mamba page holds
   # the speculative state slots): 2176 at 7 drafts, 2432 at 15, both measured. Other
   # draft counts stay dense and say how to set it by hand. PREFIX_RETENTION= (empty)
   # forces dense; --prefix-cache-retention-interval in EXTRA_ARGS always wins, then an
   # exported VLLM_PREFIX_CACHE_RETENTION_INTERVAL.
-  # On 0.29 the interval has to go in as the flag. `vllm serve` still reads the
-  # deprecated env var (and logs the deprecation), but the flag's own unset default
-  # overrides it, so hybrid + EAGLE falls back to dense with no error: an exported
-  # 13057, which the flag refuses, boots. An exported value is carried over as the flag.
-  if [ "$CTX" = "huge" ] && [ "$SPEC" = "dflash2" ]; then
+  # Every draft profile passes the interval explicitly, because vLLM's unset default moved. 0.29
+  # resolved it to dense for a hybrid model with a draft (vllm #55760, merged to the 0.29 release
+  # branch only); 0.30's is 0, which keeps only the replay boundaries. Measured on the reference
+  # 3090 with the interval unset (one ~20K conversation, 1,000-token replies): 0.30's hit stops
+  # inside the previous PROMPT, two blocks (864 tokens) short of 0.29's, which reached a few hundred
+  # tokens into the reply (87-90% hit against 91-94%, ~0.7-0.8 s a turn). With None (dense), 0.30
+  # prefills a fresh ~20-22K and 37-48K prompt within 0.5% of both. So: the measured interval above for CTX=huge
+  # DFlash2 at 7/15 drafts, else None, which is 0.29's behaviour. The flag in EXTRA_ARGS wins, then
+  # an exported VLLM_PREFIX_CACHE_RETENTION_INTERVAL (a spelling 0.30 no longer reads, carried
+  # over as the flag), then PREFIX_RETENTION (0 keeps boundaries only; empty means dense).
+  if [ -n "$SPEC_CFG" ]; then
     case " ${EXTRA_ARGS:-} " in
       *"--prefix-cache-retention-interval"*) ;;
       *)
-        case $DRAFT_TOKENS in 7) RETENTION=13056 ;; 15) RETENTION=14592 ;; *) RETENTION= ;; esac
+        RETENTION=
+        if [ "$CTX" = "huge" ] && [ "$SPEC" = "dflash2" ]; then
+          case $DRAFT_TOKENS in 7) RETENTION=13056 ;; 15) RETENTION=14592 ;; esac
+          if [ -z "$RETENTION" ] && [ -z "${PREFIX_RETENTION+x}" ] && [ -z "${VLLM_PREFIX_CACHE_RETENTION_INTERVAL+x}" ]; then
+            echo "[start_qwen] CTX=huge DFLASH_TOKENS=$DRAFT_TOKENS: no measured block size, so" \
+                 "prefix retention stays dense and two long conversations advanced in turn will" \
+                 "evict each other (#174). Set PREFIX_RETENTION to 6x the 'attention block size'" \
+                 "line this boot prints." >&2
+          fi
+        fi
         RETENTION=${VLLM_PREFIX_CACHE_RETENTION_INTERVAL-${PREFIX_RETENTION-$RETENTION}}
-        if [ -n "$RETENTION" ]; then
-          EXTRA_ARGS="--prefix-cache-retention-interval $RETENTION ${EXTRA_ARGS}"
-        elif [ -z "${PREFIX_RETENTION+x}" ] && [ -z "${VLLM_PREFIX_CACHE_RETENTION_INTERVAL+x}" ]; then
-          echo "[start_qwen] CTX=huge DFLASH_TOKENS=$DRAFT_TOKENS: no measured block size, so" \
-               "prefix retention stays dense and two long conversations advanced in turn will" \
-               "evict each other (#174). Set PREFIX_RETENTION to 6x the 'attention block size'" \
-               "line this boot prints." >&2
-        fi ;;
+        EXTRA_ARGS="--prefix-cache-retention-interval ${RETENTION:-None} ${EXTRA_ARGS}" ;;
     esac
     unset VLLM_PREFIX_CACHE_RETENTION_INTERVAL
   fi

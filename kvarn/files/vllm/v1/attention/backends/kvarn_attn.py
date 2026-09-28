@@ -486,6 +486,20 @@ class KVarNMetadataBuilder(AttentionMetadataBuilder[KVarNMetadata]):
         # valid tile) lazily, oldest first, only when slot allocation runs
         # dry — residency therefore never shrinks live capacity.
         self._retired_sinks: dict[int, None] = {}
+        # Recycled pages (issue #208): pages the scheduler has handed to ANOTHER
+        # KV-cache group since this builder last flushed, filled by
+        # note_scheduled_blocks() before the step's forward. On a hybrid model
+        # every group's layers share one tensor per layer position, so a page a
+        # mamba group now holds is the same bytes as this group's block of that
+        # id. Anything the pool still holds for such a page (a finished
+        # request's unflushed last block, a retired sink) is dead: allocating
+        # the page evicted its prefix-cache hash, so no request can read the
+        # tile again, and flushing it would overwrite the new owner's data.
+        # _page_tokens is this group's manager block (kernel blocks per page =
+        # _page_tokens // _group), set by the same call.
+        self._recycled_pages: set[int] = set()
+        self._page_tokens: int = 0
+        self._recycled_dropped = 0
 
         # Max model length (for the fixed FA grid bound + max_blocks_per_req).
         try:
@@ -576,6 +590,36 @@ class KVarNMetadataBuilder(AttentionMetadataBuilder[KVarNMetadata]):
             impl for name, impl in self._impl_by_name.items()
             if KVarNMetadataBuilder._owner.get(name) is self
         ]
+
+    def _drop_recycled_pages(self, blocks_needed, dict_map, free_slots,
+                             b2s_t, is_sink_t, sinks) -> None:
+        """Release, without flushing, every pool slot held for a page that
+        another KV-cache group has taken (see _recycled_pages)."""
+        pages, self._recycled_pages = self._recycled_pages, set()
+        per_page = max(1, self._page_tokens // self._group)
+        dropped = [bid for bid in dict_map
+                   if bid // per_page in pages and bid not in blocks_needed]
+        for bid in dropped:
+            free_slots.append(dict_map.pop(bid))
+            self._block_fill.pop(bid, None)
+            self._retired_sinks.pop(bid, None)
+            if bid < b2s_t.shape[0]:
+                b2s_t[bid] = -1
+            if bid in sinks:
+                sinks.discard(bid)
+                if bid < is_sink_t.shape[0]:
+                    is_sink_t[bid] = False
+        if dropped:
+            from vllm.logger import init_logger
+            _log = init_logger(__name__)
+            if self._recycled_dropped == 0:
+                _log.info("KVarN: dropped the pending tiles of %d block(s) on "
+                          "pages another KV-cache group now holds (#208); "
+                          "later drops log at DEBUG", len(dropped))
+            else:
+                _log.debug("KVarN: dropped %d recycled block(s): %s",
+                           len(dropped), sorted(dropped))
+            self._recycled_dropped += len(dropped)
 
     def build_for_cudagraph_capture(
         self, common_attn_metadata: CommonAttentionMetadata
@@ -729,6 +773,19 @@ class KVarNMetadataBuilder(AttentionMetadataBuilder[KVarNMetadata]):
             dict_map = KVarNAttentionImpl._block_to_slot_dict[gk]
             free_slots = KVarNAttentionImpl._free_slots[gk]
             sinks = KVarNAttentionImpl._global_sink_blocks[gk]
+
+            # (0) Forget pages another KV-cache group has taken (#208), before
+            # anything below can flush into them: the reclaim flushes a finished
+            # request's last full block one step after the request left, and the
+            # eviction in (3) flushes a retired sink whenever the pool runs dry,
+            # however long ago its request finished. Both runners write mamba
+            # state before this build (preprocess_state / preprocess_mamba), so
+            # when the page had become a mamba state page the int4 tile landed on
+            # live state, which read back as NaN, and the request printed token 0
+            # ("!!!!") from there on.
+            if _allow_flush and self._recycled_pages:
+                self._drop_recycled_pages(blocks_needed, dict_map, free_slots,
+                                          b2s_t, is_sink_t, sinks)
 
             # ORDER MATTERS: mark sinks → FLUSH (frees just-completed blocks'
             # slots) → ALLOCATE (the new tails, reusing the freed slots). Doing
@@ -1039,6 +1096,53 @@ class KVarNMetadataBuilder(AttentionMetadataBuilder[KVarNMetadata]):
             vq_qlen=vq_qlen,
             causal=causal_flag,   # port(0.27.1): plain bool (plan §2.1.8)
         )
+
+
+def note_scheduled_blocks(scheduler_output, kv_cache_config) -> None:
+    """Called by the model runner once per step, after it has applied the
+    scheduler's block ids and before the forward: record, for each KVarN
+    builder, the pages this step put in any OTHER KV-cache group (#208).
+
+    Every block id in another group's table is either newly allocated there or
+    a hit on something that group wrote after allocating it; either way the
+    page has left this group since KVarN last held it, so whatever KVarN still
+    has pending for it must not be flushed. The builder's own group is left
+    out: its tables carry prefix-cache hits on this group's own blocks, and a
+    hit on a finished request's last block needs that block's flush.
+    """
+    builders = {b for b in KVarNMetadataBuilder._owner.values()}
+    if not builders:
+        return
+    groups = kv_cache_config.kv_cache_groups
+    if len(groups) < 2:
+        return
+    pages: list[set[int]] = [set() for _ in groups]
+
+    def _add(block_ids) -> None:
+        for i, ids in enumerate(block_ids):
+            if i < len(pages) and ids:
+                pages[i].update(ids)
+
+    for req in scheduler_output.scheduled_new_reqs:
+        _add(req.block_ids)
+    for block_ids in scheduler_output.scheduled_cached_reqs.new_block_ids:
+        if block_ids is not None:
+            _add(block_ids)
+    if not any(pages):
+        return
+    for b in builders:
+        own = getattr(b, "_kv_group_ids", None)
+        if own is None:
+            own = [i for i, g in enumerate(groups)
+                   if b._layer_names_set.intersection(g.layer_names)]
+            b._kv_group_ids = own
+            if own:
+                b._page_tokens = groups[own[0]].kv_cache_spec.block_size
+        if len(own) != 1:
+            continue
+        foreign = set().union(*(p for i, p in enumerate(pages) if i != own[0]))
+        foreign.discard(0)       # the null block
+        b._recycled_pages |= foreign
 
 
 # ──────────────────────────────────────────────────────────────────────────────

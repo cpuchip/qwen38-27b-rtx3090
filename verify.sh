@@ -24,7 +24,7 @@ PY=${PY:-$HERE/venv/bin/python}
 echo "== environment"
 [ -x "$PY" ] && ok "python: $PY" || { fail "no $PY (see README Setup)"; exit 1; }
 VER=$($PY -c "import vllm; print(vllm.__version__)" 2>/dev/null | tail -n1)
-[ "$VER" = "0.29.0" ] && ok "vllm $VER" || warn "vllm ${VER:-missing} (patches were written against 0.29.0)"
+[ "$VER" = "0.30.0" ] && ok "vllm $VER" || warn "vllm ${VER:-missing} (patches were written against 0.30.0)"
 SP=$($PY -c "import vllm, os; print(os.path.dirname(vllm.__file__))" 2>/dev/null | tail -n1)
 [ -n "$SP" ] && [ -d "$SP" ] && ok "vllm package at $SP" || { fail "cannot import vllm with $PY"; exit 1; }
 if [ $INSTALL = 0 ]; then
@@ -39,10 +39,15 @@ for t in triton compressed_tensors; do $PY -c "import $t" 2>/dev/null && ok "pyt
 # a bare `import flashinfer` passes while vLLM still falls back to torch.topk:
 # has_flashinfer() additionally wants nvcc on PATH or the flashinfer-cubin
 # package (#35). Test what the server will actually use.
-export FLASHINFER_DISABLE_VERSION_CHECK=1  # cubin publishes 0.6.13 vs python 0.6.16.post3; the launchers export this too
+export FLASHINFER_DISABLE_VERSION_CHECK=1  # the launchers export this too (docs/install.md: harmless when the versions match)
+# The fix names the cubin for the installed flashinfer-python, from flashinfer.ai:
+# PyPI stops at 0.6.13, and the vllm wheel pins flashinfer-python exactly. This
+# line used to say flashinfer-cubin==0.6.13, a mismatch on the 0.29.0 pin (0.6.18)
+# that the check export above then hides.
 $PY -c "from vllm.utils.flashinfer import has_flashinfer; assert has_flashinfer()" 2>/dev/null \
   && ok "flashinfer usable by vLLM (nvcc or flashinfer-cubin present)" \
-  || fail "flashinfer unusable: DFlash2 selector will run torch.topk at ~half speed. pip install flashinfer-python flashinfer-cubin==0.6.13 (#35)" 
+  || { FIV=$($PY -c "from importlib.metadata import version; print(version('flashinfer-python'))" 2>/dev/null | tail -n1)
+       fail "flashinfer unusable: DFlash2 selector will run torch.topk at ~half speed. Put nvcc on PATH, or pip install --extra-index-url https://flashinfer.ai/whl/ flashinfer-cubin==${FIV:-<installed flashinfer-python version>} (#35)"; }
 
 echo "== vLLM patches (order: patches/series)"
 # A later patch can rewrite the region an earlier one added -- both still apply, in
@@ -90,12 +95,16 @@ $PY -c "import vllm.envs as e, sys; sys.exit(0 if 'VLLM_MARLIN_INT8_INCLUDE_RE' 
 
 echo "== KVarN (optional, kvarn/)"
 if [ -f "$SP/v1/attention/backends/kvarn_attn.py" ]; then
-  if patch -p1 -R --dry-run -s --fuzz 0 -d "$SP" < kvarn/kvarn-0.29.0.patch >/dev/null 2>&1; then
+  if patch -p1 -R --dry-run -s --fuzz 0 -d "$SP" < kvarn/kvarn-0.30.0.patch >/dev/null 2>&1; then
     $PY -c "from vllm.v1.attention.backends.registry import AttentionBackendEnum; AttentionBackendEnum.KVARN.get_class()" 2>/dev/null && ok "KVarN backend importable, patch applied (KV=kvarn / CTX=huge available)" || fail "KVarN files present but backend does not import"
-  else fail "KVarN modules present but kvarn-0.29.0.patch not applied (bash kvarn/install.sh)"; fi
-  if $PY patches/_check_applied.py kvarn/kvarn-v2-runner-0.29.0.patch "$SP" >/dev/null 2>&1; then
-    ok "kvarn-v2-runner-0.29.0.patch applied (SPEC=dflash2 + CTX=huge available)"
-  else warn "kvarn-v2-runner-0.29.0.patch not applied (re-run bash kvarn/install.sh for DFlash2 at 240k)"; fi
+  else fail "KVarN modules present but kvarn-0.30.0.patch not applied (bash kvarn/install.sh)"; fi
+  if $PY patches/_check_applied.py kvarn/kvarn-v2-runner-0.30.0.patch "$SP" >/dev/null 2>&1; then
+    ok "kvarn-v2-runner-0.30.0.patch applied (SPEC=dflash2 + CTX=huge available)"
+  else warn "kvarn-v2-runner-0.30.0.patch not applied (re-run bash kvarn/install.sh for DFlash2 at 240k)"; fi
+  if $PY patches/_check_applied.py kvarn/kvarn-recycled-pages-0.30.0.patch "$SP" >/dev/null 2>&1 \
+      && grep -q "def note_scheduled_blocks" "$SP/v1/attention/backends/kvarn_attn.py"; then
+    ok "kvarn-recycled-pages-0.30.0.patch applied (no late KVarN flush into mamba state, #208)"
+  else warn "kvarn-recycled-pages-0.30.0.patch not applied: CTX=huge + PREFIX_CACHE=1 can print \"!!!!\" (#208; bash kvarn/install.sh)"; fi
 else warn "KVarN not installed (optional; bash kvarn/install.sh for 262k context)"; fi
 
 if [ $INSTALL = 0 ]; then

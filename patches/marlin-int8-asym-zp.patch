@@ -21,13 +21,13 @@ Apply from the installed vllm package directory:
 
 Validated against vLLM 0.28.0; the same two hunks apply to 0.29.0 at an offset.
 
---- exported from cpuchip/vllm 291980422 (marlin-int8-asym-zp); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from cpuchip/vllm fb8fdb59e (marlin-int8-asym-zp); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/model_executor/kernels/linear/mixed_precision/marlin.py b/model_executor/kernels/linear/mixed_precision/marlin.py
-index 891cd3b3a..c7e177d78 100644
+index 8c3537505..e85d0ca49 100644
 --- a/model_executor/kernels/linear/mixed_precision/marlin.py
 +++ b/model_executor/kernels/linear/mixed_precision/marlin.py
-@@ -143,7 +143,10 @@
+@@ -129,7 +129,10 @@
          is_a_8bit = c.act_type is not None and c.act_type.itemsize == 1
  
          if is_a_8bit:
@@ -40,10 +40,10 @@ index 891cd3b3a..c7e177d78 100644
              )
  
 diff --git a/model_executor/layers/quantization/utils/marlin_utils.py b/model_executor/layers/quantization/utils/marlin_utils.py
-index 2284750e9..cb90d6260 100644
+index d3fcf3fea..4a5f8858c 100644
 --- a/model_executor/layers/quantization/utils/marlin_utils.py
 +++ b/model_executor/layers/quantization/utils/marlin_utils.py
-@@ -738,7 +738,9 @@
+@@ -722,7 +722,9 @@
  
      a_scales = None
      if input_dtype == torch.int8:

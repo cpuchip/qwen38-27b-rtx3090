@@ -25,8 +25,10 @@
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# flashinfer-cubin (the no-nvcc route, README Setup) publishes 0.6.13 against
-# flashinfer-python 0.6.16.post3; without this the import refuses the pair (#35).
+# flashinfer-cubin (the no-nvcc route, docs/install.md) must match flashinfer-python.
+# This used to cover a pair PyPI could not match (cubin 0.6.13 against python
+# 0.6.16.post3, #35); install.md now takes the cubin from flashinfer.ai at the
+# same version, so the export is kept only for venvs built the old way.
 export FLASHINFER_DISABLE_VERSION_CHECK=1
 
 # A dead engine leaves its OffloadingConnector region behind as
@@ -119,7 +121,13 @@ INT8_LAYERS=${INT8_LAYERS-mlp}
 # for that prefix once and paying for it every time: 64 requests sharing a 5.8k-token system
 # prompt (conc 32) take 222 s without it and 17 s with it. Costs ~14% of the KV pool
 # (223,821 -> 193,298 tokens) and nothing on workloads with no shared prefix (870 vs 876
-# tok/s on the 128/512 row). Hybrid models keep this opt-in upstream.
+# tok/s on the 128/512 row). Hybrid models keep this opt-in upstream. (All measured when this
+# flag was added, 2026-08-19, on vLLM 0.27.1.) From vLLM 0.28 on, generative hybrid models get
+# prefix caching by default (EngineArgs dropped 0.27's `and not model_config.is_hybrid`
+# opt-in), so PREFIX_CACHE=0 no longer turns it off and =1 only adds align mode. On 0.30 (a
+# 4090 under WSL2, GPU_UTIL=0.91, a ~5K-token system prompt shared by 32 concurrent
+# requests) caching read 934 output tok/s against 395 with --no-enable-prefix-caching, align made no difference to that shape, and
+# caching cost 1.5% of the pool (212,041 -> 208,762 tokens).
 if [ "${PREFIX_CACHE:-0}" = "1" ]; then
   EXTRA_ARGS="--enable-prefix-caching --mamba-cache-mode align ${EXTRA_ARGS}"
 fi

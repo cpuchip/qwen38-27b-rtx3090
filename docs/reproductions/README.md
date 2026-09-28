@@ -13,6 +13,11 @@ full reproductions; the list below collects the shorter reports from issues.
   batch arm only a headless box can run
 - [../wsl2-4090.md](../wsl2-4090.md) — RTX 4090 under Windows 11 / WSL2, the
   cross-platform half of the same campaign
+- [cmp-170hx-64gb.md](cmp-170hx-64gb.md) — the third sm80 box the README asked for:
+  unlocked CMP 170HX 64 GB, Docker, vLLM 0.27.1 AND 0.29.0. The #72/#98 fault did
+  not reproduce on either image (including a stock positive control and the
+  maintainer's closing protocol past the 24-request boundary on main), plus the two
+  boot-log lines the thread asked for and a 0.29.0 harness row
 
 ## Results from other hardware
 
@@ -49,6 +54,13 @@ will not have in production.
 | RTX 3090, Windows 11 / WSL2 | 250 W | 110.7 tok/s | setup B, greedy, `tok/step` 3.28 — the reference profile's own acceptance, so this is the WSL2 tax on step *time*, not on the drafter. 125.9 at the card's stock 370 W cap, which is a burst effect: see the power note below | [#156](https://github.com/syv-ai/HyperQwen/issues/156) |
 | RTX 4080 Super 32 GB (sm89), WSL2 | 250 W | 115.2 tok/s | setup B, greedy, GSM8K 0.960 over 200; a clamshell memory-modded board (the stock SKU is 16 GB, which this stack does not fit), confirmed by the reporter with `nvidia-smi` and the startup log | [#149](https://github.com/syv-ai/HyperQwen/issues/149) |
 | 2x RTX 3060 12 GB (TP=2), setup D | 170 W stock (draws ~135) | 59.1 tok/s | the first 12 GB-card harness row: `SPEC=mtp CTX=long`, greedy (52.9 at the default temperature), `tok/step` 3.01, GSM8K 0.965 over 200. About 60% of a 3090 on the same setup (98.0): acceptance is normal, the gap is the PCIe all-reduce on every layer. That is vLLM 0.28; re-run on 0.29 it reads 58.3 greedy and 58.2 at the default temperature (tok/step 2.96 / 3.01), with the per-card KV pin lowered by ~105 MiB to boot. Run with `MAX_SEQS=1`, so only its C1 row is a measurement | [#68](https://github.com/syv-ai/HyperQwen/issues/68) |
+| RTX 3090, setup D on vLLM 0.29 | 250 W | 95.4 tok/s | `SPEC=mtp CTX=long`, greedy (89.8 at the default temperature), `tok/step` 2.62, GSM8K 0.955 over 200. Two runs on one boot: the same harness uncapped (420 W) reads 99.4, +4%, the burst effect in the power note above. Docker image at 1cf8665 | [#192](https://github.com/syv-ai/HyperQwen/issues/192) |
+| RTX 3090, `SPEC=dflash2 CTX=long` | 250 W | 113.4 tok/s | greedy (120.3 at the default temperature), `tok/step` 3.23 / 3.27, GSM8K 0.960 over 200, Docker at 73fd65d (vLLM 0.29). This profile is int8 KV on `TRITON_ATTN` (the launcher's DFlash2 long-context arm), not setup D's fp8 | [#194](https://github.com/syv-ai/HyperQwen/issues/194) |
+| 2x RTX 3060 12 GB (TP=2), setup D, a second box | 170 W | 62.4 tok/s | greedy (56.7 at the default temperature), `tok/step` 2.73 / 2.58, GSM8K 0.955 over 200, vLLM 0.29 at 1cf8665. Peer-to-peer enabled by a community-patched driver (aikitoria's open-gpu-kernel-modules) but custom all-reduce off, `VISION=1`, `MAX_SEQS=4`, `GPU_UTIL=0.89`, `MAX_LEN=131072`: not the same launch as the row above, so read the +7% loosely | [#205](https://github.com/syv-ai/HyperQwen/issues/205) |
+| 4x RTX 3060 Ti 8 GB (TP=4), setup E | 110 W/card | 118.1 tok/s | the only official profile that boots on 4x8 GB: `SPEC=dflash2 CTX=huge` at the launcher's own settings (380,218-token pool), greedy, `tok/step` 3.50 (113.9 / 3.45 at the default temperature), GSM8K 0.955 over 200. C8 lost 3/8 requests at the default temperature and 1/8 greedy. A, B, C and D all ran out of memory at startup; the adapted profiles that booted, and what each needed, are in the issue | [#210](https://github.com/syv-ai/HyperQwen/issues/210) |
+| CMP 170HX 64 GB unlocked (sm80) | 180 W pinned | **164.7 tok/s** | setup B (`SPEC=dflash2 CTX=fast`), greedy (155.3 at the default temperature), `tok/step` 3.38, vLLM 0.29.0 at da8a8e9, Docker. At the pin this is a power-capped number (see the note above), yet still 3090-class. Also the #72/#98 non-repro on this card, the stock-image positive control, and the boot-log lines from the thread: [cmp-170hx-64gb.md](cmp-170hx-64gb.md) | this write-up |
+| 2x RTX 3090 (TP=2), no NVLink, peer-to-peer by a patched driver | 420 W (uncapped) | 90.9 tok/s | setup D as shipped: greedy (80.5 at the default temperature), `tok/step` 2.73 / 2.53, GSM8K 0.950 over 200, vLLM 0.29 at 1cf8665. The same profile with `EXTRA_ARGS="--attention-backend TRITON_ATTN --kv-cache-dtype int8_per_token_head"` reads **156.0** greedy (146.2 default) at the same `tok/step` 2.59 / 2.57, so the gap is the fp8/FlashInfer path's step time, not the drafter (~31 to ~18 ms per step). `SPEC=dflash2` on the same box, 170.6 greedy / 166.9 default at 3.40 / 3.41, GSM8K 0.960. Uncapped, so read it against other uncapped rows | [#217](https://github.com/syv-ai/HyperQwen/issues/217) |
+| 2x RTX 3080 20 GB (memory-modded, TP=2) | 220 W | 117.8 tok/s | `SPEC=dflash2 CTX=long` (int8 KV on `TRITON_ATTN`), greedy (114.8 at the default temperature), `tok/step` 3.28 / 3.25, GSM8K 0.970 over 200, on a third-party finetune (`ukisai/Swift-1.5-Qwen3.8-27b-W4A16-AutoRound`) with the stock DFlash2 drafter. Native Fedora, Docker, vLLM 0.29 at 1cf8665. `CTX=fast` read 122.0 greedy in one indicative run | [#216](https://github.com/syv-ai/HyperQwen/issues/216) |
 
 Batch profile (setup A), `bench/run_benchmarks.sh batch`, 64 concurrent on
 128 in / 512 out, aggregate decode:
@@ -106,6 +118,61 @@ other only loosely, and not rows for either table above:
   cap, ~50 tok/s at 49k context and ~35 at 80k by its own client, so not
   comparable to the table. The harness row above is the other dual-3060 box in
   the same thread ([#68](https://github.com/syv-ai/HyperQwen/issues/68)).
+- **2x RTX 3060 12 GB, a third box, 0.27.1 against 0.29**: x4 slots, no
+  peer-to-peer (NCCL over host shared memory), `SPEC=mtp CTX=long` at 128k,
+  its own streaming client. Short-context decode 62.9 against 50 tok/s
+  (1.26x), a tie at 48k, and 96k decode ~16% lower on 0.29 (the 0.27.1 side is
+  a six-day-old single run). The finding that matters for 12 GB cards: at
+  `GPU_UTIL=0.915` with no pin, 0.29 sized the fp8 pool at 3.01 GiB per card
+  against 0.27.1's 2.41, and the MTP/FlashInfer workspaces then ran out of
+  memory in warmup. The fix was the pin vLLM's own error suggests,
+  `--kv-cache-memory=2975129437` (155,316 tokens, still enough for 128k).
+  See the pin section of [multi-gpu.md](../multi-gpu.md)
+  ([#68](https://github.com/syv-ai/HyperQwen/issues/68)).
+- **2x RTX 3090 NVLink (TP=2), KVarN k4v2 + DFlash2 at 262k**: its own client
+  and its own launch (DFlash2 k=3, 32 sequences, an OffloadingConnector tier
+  over 32 GiB of RAM and NVMe), on a Swift-Qwen3.8 AutoRound build. A
+  1,593,093-token pool (6.08 requests at 262k), C1 greedy 140.9 tok/s at depth
+  0, 78.6 at 131k and 61.2 at 200k (39.3 with no drafter), 648 tok/s aggregate
+  at 16 streams. GSM8K 0.970 over 200, verbatim reproduction from 200-227k cold
+  prompts 40/40, needles at 131k and 240k 8/8, 24 conversations restored from
+  the tier 24/24. It also carries eight patches: four KVarN fixes, including
+  one for the "!!!!" output (a late KVarN flush into a block that now holds
+  another request's mamba state), and four vLLM backports for evicted DFlash2
+  conversations ([#208](https://github.com/syv-ai/HyperQwen/issues/208)). The
+  "!!!!" fix is reworked in #222; the other seven are not in the series yet.
+- **2x RTX 3090, PCIe x8 without NVLink (TP=2)**: peer access through a
+  community-patched driver lets vLLM's custom all-reduce run with the
+  launcher's `expandable_segments:False` default. C1 greedy 207.5-211.9 tok/s
+  against 194.9-197.6 with NCCL (+6.5 to +7.2%, `bench/real_rep.sh`, not the
+  harness, so not a table row), `tok/step` 4.09 in both arms, GSM8K 0.970. A
+  fragmentation soak with 200k prefills plus concurrent 60k prompts held 10/10
+  up to `GPU_UTIL=0.96`, and both allocator settings failed identically at
+  0.97 ([#163](https://github.com/syv-ai/HyperQwen/issues/163)).
+- **2x RTX 3080 20 GB (TP=2), on a box that also holds an RTX 5080**: the
+  table row above, plus three setup notes. On a mixed box CUDA orders devices
+  fastest first, so `CUDA_VISIBLE_DEVICES=0,1` paired the 5080 with a 3080;
+  `CUDA_DEVICE_ORDER=PCI_BUS_ID` makes the indices match `nvidia-smi`. The
+  AutoRound export loads through vLLM 0.29's GPTQ path after two `config.json`
+  edits (`quant_method` to `gptq`, and `desc_act: false` added), because 0.29
+  has no `auto-round` entry. The harness client's SSE reader gave up on
+  prompts of 48k and more while the server completed them, so those prefill
+  rows come from the engine log
+  ([#216](https://github.com/syv-ai/HyperQwen/issues/216)).
+- **2x RTX 3090 (TP=2) with peer-to-peer from aikitoria's patched driver, no
+  NVLink**: setup D's fp8/FlashInfer path is the slow part at TP=2. Moving the
+  same profile to int8 KV on `TRITON_ATTN` took C1 from 80.5 to 146.2 tok/s at
+  the default temperature with acceptance unchanged, which is what #105 found
+  at TP4 and #156 found under WSL2. `SPEC=dflash2` stayed ahead at 166.9, and
+  it was also the reporter's best result in real coding traffic (over 100
+  tok/s, against 40-50 for the MTP arms)
+  ([#217](https://github.com/syv-ai/HyperQwen/issues/217)).
+- **2x RTX 4090 without peer-to-peer (x8 + x4, Docker on WSL2)**: TP=2 is
+  slower than one card, single-user and batch, and two independent engines
+  (`--data-parallel-size 2`) give 1.92x one card on a batch burst. The numbers
+  and the NCCL knob that recovers part of TP=2's loss are in
+  [multi-gpu.md](../multi-gpu.md)
+  ([#190](https://github.com/syv-ai/HyperQwen/issues/190)).
 - **3x RTX 3090**: confirms TP=3 is refused by the checkpoint rather than by this
   repo (4 KV heads, 64 layers: neither TP=3 nor an even PP=3 split exists), so
   the third card idles under `--tensor-parallel-size 2` by construction. The

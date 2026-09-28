@@ -2,11 +2,11 @@
 #
 # vLLM's own wheel supplies the compiled libraries and the Rust frontend (VLLM_USE_PRECOMPILED); the
 # Python tree comes from the fork branch, which is the patch series as commits on the release tag
-# (see PATCHES.md and docs/vllm-0.29.md). The two routes produce byte-identical Python trees; this one
+# (see PATCHES.md and docs/vllm-0.30.md). The two routes produce byte-identical Python trees; this one
 # ports to a new pin with `git rebase` and carries authorship. Nothing in patches/ or kvarn/ is applied
 # here; verify.sh still checks every patch is present in the installed tree, because the content is.
 #
-#   docker build -f Dockerfile.fork -t qwen38-27b-rtx3090:fork-0.29 .
+#   docker build -f Dockerfile.fork -t qwen38-27b-rtx3090:fork-0.30 .
 #   docker build -f Dockerfile.fork --build-arg VLLM_FORK_COMMIT=<sha> .
 FROM nvidia/cuda:13.0.1-base-ubuntu24.04
 
@@ -25,8 +25,8 @@ RUN venv/bin/pip install -r docker/requirements.txt
 
 # The fork: pinned by commit, built as a wheel over the release wheel's compiled parts.
 ARG VLLM_FORK_REPO=https://github.com/cpuchip/vllm
-ARG VLLM_FORK_COMMIT=27929a385651057c5f4fc8648d528b4040addf9f
-ARG VLLM_VERSION=0.29.0
+ARG VLLM_FORK_COMMIT=5bebeb439f037bc9dcb802e21d51dad12259d7d5
+ARG VLLM_VERSION=0.30.0
 RUN set -e; \
     venv/bin/pip install "setuptools>=77" setuptools_scm setuptools-rust wheel; \
     venv/bin/pip download "vllm==${VLLM_VERSION}" --no-deps -d /tmp/wheel; \
