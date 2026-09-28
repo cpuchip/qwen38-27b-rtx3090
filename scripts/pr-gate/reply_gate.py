@@ -3,7 +3,7 @@
 
     python scripts/pr-gate/reply_gate.py comment.md
 
-Exit 1 on a FAIL (em-dash, attribution line, retracted phrase); WARNs are for a person to read.
+Exit 1 on a FAIL (em-dash, session URL or Claude-Session line, retracted phrase); WARNs are for a person to read.
 """
 import os, re, sys
 
@@ -21,8 +21,8 @@ def main():
     fails, warns = [], []
     if "—" in text:
         fails.append(f"{text.count(chr(8212))} em-dash(es)")
-    if re.search(r"claude\.ai/code|Co-Authored-By|Claude-Session", text, re.I):
-        fails.append("attribution line or session URL")
+    if re.search(r"claude\.ai/code|Claude-Session", text, re.I):  # Co-Authored-By is allowed (2026-09-28)
+        fails.append("session URL or Claude-Session line")
     for l in open(os.path.join(HERE, "retracted.txt"), encoding="utf-8"):
         if l.strip() and not l.startswith("#"):
             ph = l.split("\t")[0].strip()

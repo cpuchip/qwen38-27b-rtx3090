@@ -206,8 +206,10 @@ def main():
         report("WARN", "numbers-config", f"{len(bare)} line(s) carry a measurement with no configuration token, e.g. '{bare[0]}'")
     if "—" in body:
         report("FAIL", "voice", f"{body.count(chr(8212))} em-dash(es) in the body")
-    if re.search(r"claude\.ai/code|Co-Authored-By|Claude-Session", text_all, re.I):
-        report("FAIL", "voice", "attribution line or session URL present")
+    # A Co-Authored-By trailer is allowed when Claude produced or ported the content (re-ruled 2026-09-28); a session
+    # URL or Claude-Session line is not, on any surface.
+    if re.search(r"claude\.ai/code|Claude-Session", text_all, re.I):
+        report("FAIL", "voice", "session URL or Claude-Session line present")
     if title:
         tw = {w.lower() for w in re.findall(r"[A-Za-z][A-Za-z0-9_-]{3,}", title)}
         cw = {w.lower() for w in re.findall(r"[A-Za-z][A-Za-z0-9_-]{3,}", lead_commit.splitlines()[0])}
