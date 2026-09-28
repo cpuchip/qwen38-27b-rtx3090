@@ -13,7 +13,7 @@ cp -r "$HERE/files/vllm/." "$SP/"
 # --fuzz 0 and a FAILED grep: both files are exported from the fork branch at their position after the
 # whole patches/ series, so a hunk that needs slack is a hunk cut against a tree this is not. `patch -N`
 # exits 1 for "already applied" too (a rerun), so the exit code cannot be the signal; the text can.
-apply_kvarn() { local out; out=$(patch -p1 -N --fuzz 0 -r /dev/null -d "$SP" < "$HERE/$1" 2>&1) || true; echo "$out"
+apply_kvarn() { local out; out=$(patch -p1 -N --fuzz 0 --no-backup-if-mismatch -r /dev/null -d "$SP" < "$HERE/$1" 2>&1) || true; echo "$out"
   case "$out" in *FAILED*) echo "ERROR: $1 has a hunk that does not apply to this vLLM tree (re-cut it against the pin)" >&2; exit 1 ;; esac; }
 apply_kvarn kvarn-0.30.0.patch
 # V2-runner port: lets SPEC=dflash2 run with CTX=huge (KVarN KV + prefix caching, 240k).
