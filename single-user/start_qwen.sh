@@ -524,9 +524,11 @@ if [ "${PREFIX_CACHE:-0}" = "1" ]; then
   # turn; with one in six they reuse 93-99.5% at 0.4-2.6 s (0.28). On 0.29 the first
   # reuse after a cold turn lands on the last retained snapshot, not the last block: at
   # 32.6K a side it was 80.0% (26,112 = 2 x 13056) at 7.0 s, then 99.3-99.4% at ~0.5 s
-  # from the next turn on, against 0% and ~29 s per turn dense. One ~103K chat on its own
-  # keeps 98.7-99.8%, and a passcode inside the reused prefix comes back right 3/3,
-  # so the sparser restore path returns the right state.
+  # from the next turn on, against 0% and ~29 s per turn dense. On 0.30 the first reuse
+  # lands further in: 86.6% (28,288) at 4.7-5.0 s at 32.6K a side, and one ~60K chat
+  # reuses 94.5% (56,576) at 4.1 s where 0.29 reuses 87.2% at 8.9-9.0 s. One ~103K
+  # chat on its own keeps 98.7-99.8%, and a passcode inside the reused prefix comes
+  # back right 3/3, so the sparser restore path returns the right state.
   # The interval is in tokens and vLLM refuses one that is not a multiple of the
   # attention block, and that block moves with the draft count (the Mamba page holds
   # the speculative state slots): 2176 at 7 drafts, 2432 at 15, both measured. Other
