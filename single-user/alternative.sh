@@ -90,11 +90,20 @@ PREFIX_ARGS=""
 [ "$PREFIX_CACHE" = 1 ] && PREFIX_ARGS="--enable-prefix-caching --mamba-cache-mode align"
 # With the drafter on, pass the retention interval explicitly: 0.30's unset default is 0 (the replay
 # boundaries only), where 0.29 resolved it to dense (vllm #55760); start_qwen.sh has the measurement.
-# PREFIX_RETENTION sets it (0 = boundaries only, empty = dense); the flag in EXTRA_ARGS wins.
+# The default here depends on a KV tier (the connector check above): without one it is 0, because at dense two
+# ~60K conversations on this int4 pool evicted each other completely (0 / 0 cached where 0 held 93.5% for both);
+# with one it is None (dense), which the tier serves from (gotcha 60). PREFIX_RETENTION sets it (0 = boundaries
+# only, empty = dense); the flag in EXTRA_ARGS wins.
 if [ "$PREFIX_CACHE" = 1 ] && [ "$SPEC" = dflash2 ]; then
   case " ${EXTRA_ARGS:-} " in
     *"--prefix-cache-retention-interval"*) ;;
-    *) R=${PREFIX_RETENTION-}; PREFIX_ARGS="$PREFIX_ARGS --prefix-cache-retention-interval ${R:-None}" ;;
+    *)
+      case " ${EXTRA_ARGS:-} " in
+        *"--kv-offloading-size"*|*"--kv-transfer-config"*) R_DEFAULT=None ;;
+        *) R_DEFAULT=0 ;;
+      esac
+      if [ "${PREFIX_RETENTION+set}" = set ]; then R=${PREFIX_RETENTION:-None}; else R=$R_DEFAULT; fi
+      PREFIX_ARGS="$PREFIX_ARGS --prefix-cache-retention-interval $R" ;;
   esac
 fi
 
