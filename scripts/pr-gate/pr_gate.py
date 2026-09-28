@@ -206,10 +206,18 @@ def main():
         report("WARN", "numbers-config", f"{len(bare)} line(s) carry a measurement with no configuration token, e.g. '{bare[0]}'")
     if "—" in body:
         report("FAIL", "voice", f"{body.count(chr(8212))} em-dash(es) in the body")
-    # A Co-Authored-By trailer is allowed when Claude produced or ported the content (re-ruled 2026-09-28); a session
-    # URL or Claude-Session line is not, on any surface.
+    # A session URL or Claude-Session line is never allowed, on any surface.
     if re.search(r"claude\.ai/code|Claude-Session", text_all, re.I):
         report("FAIL", "voice", "session URL or Claude-Session line present")
+    # Nor a Claude co-author trailer in anything bound for syv-ai: no commit on syv-ai main has carried one since
+    # 09-03, and Mads asked for the one in patches/sampler-warmup-cuda.patch's header to go (#233). Michael,
+    # 2026-09-28: "I want to match them in their repo". Every commit on the branch, the body, and every added line
+    # (patch headers included, which is where export-patch.sh copies a native fork commit's trailers).
+    claude_trailer = re.compile(r"^\s*co-authored-by:.*claude|generated with \[?claude code", re.I | re.M)
+    msgs = git(["log", "--format=%B", f"{base}..{branch}"], a.git)
+    hits = [f"commit or body: '{m.group(0).strip()[:60]}'" for m in claude_trailer.finditer(msgs + "\n" + body)]
+    hits += [f"{f}: '{l.strip()[:60]}'" for f, ls in added_lines.items() for l in ls if claude_trailer.search(l)]
+    report("FAIL" if hits else "OK", "attribution", "; ".join(hits[:3]) if hits else "no Claude trailer in the commits, body or added lines")
     if title:
         tw = {w.lower() for w in re.findall(r"[A-Za-z][A-Za-z0-9_-]{3,}", title)}
         cw = {w.lower() for w in re.findall(r"[A-Za-z][A-Za-z0-9_-]{3,}", lead_commit.splitlines()[0])}
