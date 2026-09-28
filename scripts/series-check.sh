@@ -39,7 +39,11 @@ fi
 echo "== 6: ledger rows vs fork commits named in them"
 ROWS=$(grep -E '^\| [a-z]' PATCHES.md | grep -v '^| patch' | awk -F'|' '{t=$2; gsub(/^ +| +$/,"",t); print t}' | sed 's|^kvarn/||')
 NROWS=$(echo "$ROWS" | wc -l); ok "$NROWS rows in PATCHES.md"
-KV="kvarn/kvarn-$PIN.patch kvarn/kvarn-v2-runner-$PIN.patch"   # older kvarn-*.patch files are history, not the series
+# The KVarN patches install.sh applies, in its order (older kvarn-*.patch files are history, not the series). A fixed
+# pair missed 0.30's third (kvarn-recycled-pages, #222) and reported its two runner files as drift.
+KV=$(grep -oE '^apply_kvarn [a-z0-9._-]+\.patch' kvarn/install.sh 2>/dev/null | awk '{print "kvarn/"$2}' | tr '
+' ' ')
+[ -n "$KV" ] || KV="kvarn/kvarn-$PIN.patch kvarn/kvarn-v2-runner-$PIN.patch"
 for p in patches/*.patch $KV; do n=$(basename "$p" .patch); echo "$ROWS" | grep -qx "$n" || bad "patch file without a row: $n"; done
 [ "$fail" = 0 ] && ok "every patch file has a row"
 
