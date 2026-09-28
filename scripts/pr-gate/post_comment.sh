@@ -16,6 +16,10 @@ readback() { # $1 = comment id
   [ "$n" = 0 ]
 }
 if [ -n "${READBACK_URL:-}" ]; then readback "${READBACK_URL##*-}"; exit $?; fi
+# Sweep first: no post without a sweep of the repo from the last hour (sweep.sh writes the stamp).
+STAMP="${HOME}/.cache/pr-gate/sweep-${REPO//\//_}.stamp"
+age=$(( $(date -u +%s) - $(date -u -d "$(cat "$STAMP" 2>/dev/null || echo 1970-01-01T00:00:00Z)" +%s) ))
+[ "$age" -le 3600 ] || { echo "post_comment: no sweep of $REPO in the last hour; run bash scripts/pr-gate/sweep.sh first"; exit 4; }
 python "$HERE/reply_gate.py" "$BODY"
 [ "${DRY:-0}" = 1 ] && { echo "post_comment: DRY=1, gate passed; nothing posted"; exit 0; }
 URL=$(gh "$KIND" comment "$NUM" -R "$REPO" --body-file "$BODY")
