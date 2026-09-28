@@ -34,7 +34,7 @@ build by name instead of landing by guess. Regenerate a file with `bash scripts/
 | marlin-int8-asym-zp | fix | the Marlin int8-activation path (`INT8_ACT=int8`) accepts zero-point `uint4` weights, so asymmetric AWQ exports (compressed-tensors `symmetric: false`) run W4A8 like the symmetric ones; the `kS8 x kU4` kernel is already compiled, only two asserts refused it | none yet | 0.30.0 | upstream PR |
 | marlin-int8-layer-select | local | env vars to pick which layers run W4A8 with the Marlin kernel | none | 0.30.0 | stays |
 | marlin-int8-negative-scales | fix | Marlin W4A8 reads group scales as unsigned; AutoRound exports negative ones | none yet | 0.30.0, adapted to #54809 (activation ordering removed: g_idx, perm, is_k_full gone) | upstream PR |
-| marlin-repack-staged-sm80 | local | one grow-only staging buffer for the sm80 Marlin repack (fork #27) | none | 0.30.0, adapted to #54809 (activation ordering removed: g_idx, perm, is_k_full gone) | stays |
+| marlin-repack-staged-sm80 | local | one grow-only staging buffer for the sm80 Marlin repack (fork #27), opt-in with `VLLM_MARLIN_REPACK_STAGED=1` | none | 0.30.0, adapted to #54809 (activation ordering removed: g_idx, perm, is_k_full gone) | stays |
 | marlin-tune-table | local | wiring for a locally built tunable Marlin extension, off by default | none | 0.30.0, adapted to #54809 (activation ordering removed: g_idx, perm, is_k_full gone) | stays |
 | offload-dflash-eagle-groups | fix | OffloadingConnector under dflash flagged every KV group as draft attention (fork #33) | none yet | 0.30.0: re-cut from the main-track resolution | upstream PR |
 | offload-wsl2-devptr | local | CPU offload tier device pointers on WSL2 | none | 0.30.0 | stays |

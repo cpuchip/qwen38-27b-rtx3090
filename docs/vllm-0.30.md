@@ -55,7 +55,8 @@ Adapted to upstream #54809, which removed GPTQ activation ordering (`has_g_idx`,
 
 - `marlin-int8-negative-scales`: the `has_g_idx` guard is gone. **Without this, every `INT8_ACT=int8` boot (batch
   mode's default, and single-user with `INT8_ACT`) died at load** with an AttributeError.
-- `marlin-repack-staged-sm80`: the staged repack no longer passes `perm` (sm80, or `VLLM_MARLIN_REPACK_STAGED=1`).
+- `marlin-repack-staged-sm80`: the staged repack no longer passes `perm` (`VLLM_MARLIN_REPACK_STAGED=1`; it was on for
+  sm80 by default until it went opt-in).
 - `marlin-tune-table`: the standalone tuned build keeps its 0.27.1 schema and gets `None, None` and
   `is_k_full=True` (off by default; not booted, it needs the standalone build).
 

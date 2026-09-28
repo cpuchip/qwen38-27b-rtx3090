@@ -618,6 +618,12 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     independent Xid-31 trigger. Not shipped here (no sm80 to regression-test
     against); recorded so the next GA100/A100 report starts from the answer
     instead of from five reboots.
+    **On a GA100 mining card such as the CMP 170HX, set `VLLM_MARLIN_REPACK_STAGED=1`**
+    (opt-in since 2026-09-28). `marlin-repack-staged-sm80` stages the repack's
+    per-layer transients through one grow-only GPU buffer; on the 170HX that took the
+    repack window from the CPU fallback's 403.7 s to 44.9 s, bit-exact (the patch
+    header has the A/B). It is off by default everywhere because on a real A100 40 GB,
+    against the stock GPU repack, it saves 0.85 s of load and holds 1.19 GiB of pool.
 38. **The OffloadingConnector's CPU tier can be silently useless: uniform
     blocks meet asymmetric chunk sizes, and one request evicts everything
     (issue #33).** The tier allocates equal-size blocks sized for the LARGEST
