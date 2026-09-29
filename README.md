@@ -51,7 +51,7 @@ First start pulls the image (9.5 GB) and requantizes the model (~20 GB, once,
 into `./models`), then serves on `:18020`. One GPU runs one mode at a time.
 
 - **Before exposing it** — the server binds `0.0.0.0` with no auth:
-  `echo "VLLM_API_KEY=$(openssl rand -hex 24)" > .env`
+  `echo "VLLM_API_KEY=$(openssl rand -hex 24)" >> .env`
 - **Docker Desktop on WSL2** — keep `VLLM_WSL2_ENABLE_PIN_MEMORY=1` in `.env`, or
   the V2 runner aborts with `RuntimeError: UVA is not available`
 - **No compose, or no Docker at all** —

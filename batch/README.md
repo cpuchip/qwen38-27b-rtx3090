@@ -1,3 +1,7 @@
+> **New here?** Start at [docs/quickstart.md](../docs/quickstart.md) for the
+> canonical Docker path, then come back. Setup steps live in [## Setup](#setup) below.
+
+
 # Batch mode
 
 For serving many concurrent requests: API backends, data processing pipelines,

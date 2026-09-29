@@ -18,6 +18,9 @@ full reproductions; the list below collects the shorter reports from issues.
   not reproduce on either image (including a stock positive control and the
   maintainer's closing protocol past the 24-request boundary on main), plus the two
   boot-log lines the thread asked for and a 0.29.0 harness row
+- [a5000-230w.md](a5000-230w.md) — RTX A5000 24 GB (sm86) at a 230 W cap: the
+  1× batch profile, and the first 4× TP4 1M A/B (0.29 regresses vs 0.28,
+  reproduced over two days) — consolidates the #228 / #229 field reports
 
 ## Results from other hardware
 
@@ -69,6 +72,7 @@ Batch profile (setup A), `bench/run_benchmarks.sh batch`, 64 concurrent on
 |---|---|---|---|---|
 | 1x RTX 3090 (reference) | 250 W | ~1,035 tok/s | 948 e2e; ~1,222 with every layer int8 | [main README](../../README.md) |
 | 2x RTX 3090 NVLink (TP=2) | 250 W/card | **1,439 tok/s** | 1,344 e2e, median of three measured runs within 1%; documented batch defaults plus TP=2, KV pool 872,938 tokens, GSM8K 0.965 over 200; NCCL arm, so not the +6.4% custom-all-reduce path above | [#164](https://github.com/syv-ai/HyperQwen/issues/164) |
+| 1x A5000 24 GB (sm86) | 230 W | **958.6 tok/s** | 64 conc, 128 in / 512 out, second run; ~0.92x the 250 W 3090 reference — the power-cap ratio, not an A5000 anomaly. Cohorts 39.7/75.2/142/278 tok/s (C1/C2/C4/C8), 0.84–0.92x the 3090 throughout; 149k prefill 1.68k tok/s; PPL 8.44, GSM8K 94.0% | [#228](https://github.com/syv-ai/HyperQwen/issues/228) |
 
 Measured with their own clients rather than the harness — comparable to each
 other only loosely, and not rows for either table above:
@@ -78,6 +82,18 @@ other only loosely, and not rows for either table above:
   and 97.8 tok/s on their own w8a16 int8 target after the sm80 repack
   workaround in [#27](https://github.com/syv-ai/HyperQwen/issues/27)
   (gotcha 41).
+- **4x A5000 24 GB (sm86, 230 W/card), 1M context, TP=4**: the first 4× TP4 1M
+  the repo has. 0.29 vs 0.28, identical command line except the image, both
+  pods 230 W: prefill −22 % (16k/32k) → −14 % (512k) → −10.5 % / −10.2 % (1M,
+  30:55/539 vs 27:41–28:21/602 tok/s), C8 decode −35 % raw (232 vs 356-385) and
+  −12…−19 % with `max_cudagraph_capture_size:16` + `silu`-only (312-313 tok/s);
+  reproduced over two independent days. No config lever closes the prefill gap
+  (KV layout, mamba-cache-mode, GDN backend, int8 prefill attention, 8192
+  chunks, custom-all-reduce — all negative or no-ops); quality is untouched
+  (PPL 8.41, GSM8K 95.5%). The 1M usable budget is ≈ 999.8k (the chat template
+  is counted on top). Full A/B and levers:
+  [#229](https://github.com/syv-ai/HyperQwen/issues/229), write-up in
+  [a5000-230w.md](a5000-230w.md).
 - **RTX 5090 32 GB (sm120)**: ~410-449 tok/s on code and ~198 on prose at
   `CTX=fast`, 500 W cap, roughly flat out to `CTX=huge` at 240k — different
   prompts, output length and rate definition, so deliberately not in the table

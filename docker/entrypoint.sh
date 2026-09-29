@@ -15,6 +15,9 @@ cd /app
 cmd=${1:-single}; shift || true
 case "$cmd" in
   single|batch)
+    echo "entrypoint: first-boot stages: [1/3] docker/prepare.sh [2/3] verify.sh --no-server [3/3] start_qwen.sh ($cmd)"
+    echo "entrypoint: stage 1 is minutes on first boot (download + requantize), seconds once prepared"
+    echo "entrypoint: use log timestamps as the elapsed timer; total first boot can exceed 30 min"
     if [ "${PREPARE:-1}" != "0" ]; then
       bash docker/prepare.sh
     fi

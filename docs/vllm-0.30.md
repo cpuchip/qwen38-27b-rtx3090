@@ -55,7 +55,8 @@ Adapted to upstream #54809, which removed GPTQ activation ordering (`has_g_idx`,
 
 - `marlin-int8-negative-scales`: the `has_g_idx` guard is gone. **Without this, every `INT8_ACT=int8` boot (batch
   mode's default, and single-user with `INT8_ACT`) died at load** with an AttributeError.
-- `marlin-repack-staged-sm80`: the staged repack no longer passes `perm` (sm80, or `VLLM_MARLIN_REPACK_STAGED=1`).
+- `marlin-repack-staged-sm80`: the staged repack no longer passes `perm` (`VLLM_MARLIN_REPACK_STAGED=1`; it was on for
+  sm80 by default until it went opt-in).
 - `marlin-tune-table`: the standalone tuned build keeps its 0.27.1 schema and gets `None, None` and
   `is_k_full=True` (off by default; not booted, it needs the standalone build).
 
@@ -167,7 +168,8 @@ tell the two apart (the EAGLE drop caps both at the same boundary); only an exte
 
 So both single-user launchers pass the interval on every draft profile: the measured one for `CTX=huge SPEC=dflash2`
 (13056 at 7 drafts, 14592 at 15), else `None`, which is 0.29's behaviour. `PREFIX_RETENTION=0` asks for boundaries
-only, and a flag in `EXTRA_ARGS` wins. Batch mode runs no draft, so #55760 never applied to it and nothing changes.
+only, and a flag in `EXTRA_ARGS` wins. (Since the port, `alternative.sh` passes `0` when no KV tier is configured and
+`None` when one is; gotcha 60 has why. The verification below was run before that change.) Batch mode runs no draft, so #55760 never applied to it and nothing changes.
 Verified on the reference 3090 with the launchers read out of the image against the commit: the default MTP profile
 shows `'prefix_cache_retention_interval': None` in the engine's arguments and its turn 2 hits S1 (20,304, 92.0%);
 alternative.sh shows None and keeps its 302,094 pool; `CTX=huge SPEC=dflash2` keeps 13056 (pool 268,169) and still
@@ -225,4 +227,5 @@ Two lessons for the reading:
    the GPU tier's EAGLE drop, which 0.29 never did.
 7. **Draft profiles pass `--prefix-cache-retention-interval None` unless measured or set**, keeping 0.29's multi-turn
    reuse. Boundaries-only (0.30's default) is one `PREFIX_RETENTION=0` away, and would be the better choice for many
-   alternating long conversations on a small pool (gotcha 60); this port does not change that trade.
+   alternating long conversations on a small pool (gotcha 60); this port does not change that trade. After it,
+   `alternative.sh` took `0` as its default when no KV tier is configured, from the two-conversation measurement.

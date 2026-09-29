@@ -84,7 +84,27 @@ API_SERVERS=${API_SERVERS:-1}
 # KV=int4pth: vLLM's built-in int4 per-token-head KV cache on the Triton
 # attention backend: 262k context with no extra install, ~1.5x slower decode /
 # 2.3x slower prefill at 100k than fp8 (docs/long-context.md).
+# Under WSL2 an unset GPU_UTIL means 0.91, or 0.88 for KV=kvarn, whose unset MAX_LEN there means 131072. Above
+# these the batch pool spills to system RAM (docs/wsl2-4090.md). On a 4090 (0.30, one boot per value), fp8 ran clean
+# up to 0.92, while at 0.93 its first sampled batch needed ~250 MB more than the card had: Windows moved it to system
+# RAM (the adapter's Shared Usage counter stepped 382 -> 632 MB) and 64-way decode fell to 25-40% for the rest of the
+# run. kvarn spills above 0.89 as soon as its KV cache is allocated at boot, and 262144 tokens fit at no setting that
+# stays on the card. fp8 and kvarn each keep one 0.01 step below their highest clean value, the margin 0.95 keeps
+# natively; int4pth, whose default 0.93 did not spill under WSL2 either, takes fp8's.
+# Native Linux is unchanged, and an explicit GPU_UTIL or MAX_LEN always wins.
+WSL=0
+if grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null || [ -n "${WSL_DISTRO_NAME:-}" ]; then WSL=1; fi
 KV=${KV:-fp8}
+if [ "$WSL" = 1 ]; then
+  if [ "$KV" = "kvarn" ] && [ -z "${MAX_LEN:-}" ]; then
+    MAX_LEN=131072
+    echo "WSL detected: KV=kvarn MAX_LEN=131072 (262144 does not fit without spilling to system RAM; set it explicitly to override)"
+  fi
+  if [ -z "${GPU_UTIL:-}" ]; then
+    if [ "$KV" = "kvarn" ]; then GPU_UTIL=0.88; else GPU_UTIL=0.91; fi
+    echo "WSL detected: GPU_UTIL=$GPU_UTIL (above it the batch pool spills to system RAM; set it explicitly to override)"
+  fi
+fi
 if [ "$KV" = "int4pth" ]; then
   MAX_LEN=${MAX_LEN:-262144}
   GPU_UTIL=${GPU_UTIL:-0.93}
@@ -207,7 +227,7 @@ fi
 export PATH="$REPO/venv/bin:$PATH"
 # Off under WSL, where the VMM calls break Marlin repack — see the long note in
 # single-user/start_qwen.sh. Overridable both ways.
-if grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null || [ -n "${WSL_DISTRO_NAME:-}" ]; then
+if [ "$WSL" = 1 ]; then
   ALLOC_DEFAULT=expandable_segments:False
   [ -z "${PYTORCH_CUDA_ALLOC_CONF:-}" ] && echo \
     "WSL detected: PYTORCH_CUDA_ALLOC_CONF=$ALLOC_DEFAULT (VMM breaks Marlin repack under the paravirt driver; set it explicitly to override)"

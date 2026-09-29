@@ -116,7 +116,7 @@ while IFS= read -r name; do
   case "$name" in
     dflash2-backport.patch) echo "skip $name (DFlash2 is native since vLLM 0.28.0)"; continue ;;
   esac
-  patch -p1 -d "$SP" < "patches/$name"
+  patch -p1 --no-backup-if-mismatch -d "$SP" < "patches/$name"
 done
 # optional: the KVarN 4/2-bit KV cache for 262k context (docs/long-context.md)
 bash kvarn/install.sh
@@ -137,8 +137,9 @@ First start takes a few minutes (torch.compile, CUDA graph capture, flashinfer
 JIT). Test it:
 
 ```bash
+OPENAI_API_KEY=$(cat api_key.txt 2>/dev/null)
 curl http://localhost:18020/v1/chat/completions \
-  -H "Authorization: Bearer $(cat api_key.txt 2>/dev/null)" \
+  -H "Authorization: Bearer $OPENAI_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"model": "qwen3.8-27b",
        "messages": [{"role": "user", "content": "hej"}],

@@ -1,3 +1,7 @@
+> **New here?** Start at [docs/quickstart.md](../docs/quickstart.md) for the
+> canonical Docker path, then come back. Setup steps live in [## Setup](#setup) below.
+
+
 # Single-user mode
 
 For one person (or a handful) chatting with the model: coding assistant,
