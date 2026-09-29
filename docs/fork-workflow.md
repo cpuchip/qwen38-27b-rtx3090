@@ -20,13 +20,17 @@ In cpuchip/vllm:
 
 - `upstream/main` and the release tags: read-only, fetched, never committed to.
 - `qwen38/<pin>` (for example `qwen38/0.29`): the integration branch the image is built from. Base = the release
-  tag. One commit per topic, authored by whoever wrote it, signed off by the committer, Co-authored-by only where
-  an AI produced the content (vLLM's own contributing rule, applied here as well so a commit can go upstream
-  unchanged). A new pin is a new branch: `git rebase --onto v<new> v<old>` of the old one, then the acceptance
-  harness on two boxes against a control image built from the same repo commit with the old pin.
+  tag. One commit per topic, authored by whoever wrote it. A topic written here has no `Source:` line, so
+  `scripts/export-patch.sh` makes its whole message the patch file's header, so that message is prose only, with
+  no trailers. A commit imported from a patch file keeps what sits below its
+  `Source:` line (the sign-off and any co-author line), which the export never copies. A new pin is a new branch:
+  `git rebase --onto v<new> v<old>` of the old one, then the acceptance harness on two boxes against a control image
+  built from the same repo commit with the old pin.
 - `up/<topic>`: cut from `upstream/main`, one topic cherry-picked from the integration branch, conflicts resolved
-  against main, PR opened from it with the disclosure vLLM asks for. Deleted when merged; the integration branch
-  keeps its copy until the pin that ships the merge, when the commit retires.
+  against main, PR opened from it. This commit carries vLLM's attribution, added here rather than on the integration
+  branch: `Signed-off-by` from the submitter and, where an AI produced or ported the content, a `Co-authored-by:`
+  line, with the disclosure in the PR description (vLLM's docs/contributing, "AI Assisted Contributions"). Deleted
+  when merged; the integration branch keeps its copy until the pin that ships the merge, when the commit retires.
 
 In this repository (our fork of syv-ai):
 
