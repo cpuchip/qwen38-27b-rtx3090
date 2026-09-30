@@ -1,0 +1,38 @@
+KVarN: never flush into a page another KV-cache group has taken (#208, the "!!!!" output).
+
+Backport of kvarn-recycled-pages-0.30.0 to the 0.29.0 pin. The KVarN half is the
+vendored backend (kvarn/files/.../kvarn_attn.py) in this same commit; this patch is
+the runner-side half, and it is one hunk here rather than two because 0.29 has no
+split V2 runner (v1/worker/gpu/model_runner.py does not exist yet).
+
+Why it matters here: KVarN flushes a finished request's last full block to int4 in
+the first metadata build after the request leaves the batch, and evicts retired sinks
+whenever its pool runs dry. Every KV-cache group on this model shares one tensor per
+layer position, so by then the page can belong to another group -- and both runners
+write mamba state before they build attention metadata, so a late tile write lands on
+state that is already there. The state reads back as NaN and the request prints token
+0, "!", from then on. The reported trigger is two requests prefilling in the same
+steps while one of them finishes, which is also why PREFIX_CACHE=0 makes it go away.
+
+The guard itself is in the vendored backend: note_scheduled_blocks() records the
+pages this step moved to another group, and the next flushing build releases whatever
+its pool still holds for them without writing the tile.
+
+--- adapted by hand from cpuchip/qwen38-27b-rtx3090 kvarn-recycled-pages-0.30.0; re-export with scripts/export-patch.sh if it is ever cut from a fork commit ---
+
+--- a/v1/worker/gpu_model_runner.py
++++ b/v1/worker/gpu_model_runner.py
+@@ -1230,6 +1230,13 @@
+         # stale NaN/data from corrupting attention or SSM computation.
+         if scheduler_output.new_block_ids_to_zero:
+             self._zero_block_ids(scheduler_output.new_block_ids_to_zero)
++        if self.cache_config.cache_dtype.startswith("kvarn"):
++            # port(kvarn-v2): tell KVarN which pages this step moved to another
++            # KV-cache group, before preprocess_mamba writes state into them
++            # (#208).
++            from vllm.v1.attention.backends.kvarn_attn import note_scheduled_blocks
++
++            note_scheduled_blocks(scheduler_output, self.kv_cache_config)
+         if scheduler_output.kv_cache_block_copies:
+             copy_kv_cache_blocks_inplace(
+                 self.kv_caches,

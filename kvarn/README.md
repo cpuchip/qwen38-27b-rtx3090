@@ -18,9 +18,12 @@ What's in it:
   layer, and the hybrid-model page alignment branch).
 - `kvarn-v2-runner-0.29.0.patch` — the V2 runner, sliding-cache, and DFlash2
   correctness fixes layered on top of the base port.
+- `kvarn-recycled-pages-0.29.0.patch` — the runner-side half of the #208 fix (never
+  flush into a page another KV-cache group has taken); the KVarN half is in `files/`.
+  Backported from the 0.30.0 tree, where it is `kvarn-recycled-pages-0.30.0.patch`.
 - `install.sh` — copies the modules into `venv/lib/python3.12/site-packages/vllm`
   and applies both patches at `--fuzz 0` (safe to re-run; a rejected hunk stops it).
-  Both patch files are exported from their commits on the fork branch (`cpuchip/vllm`
+  Both older patch files are exported from their commits on the fork branch (`cpuchip/vllm`
   `qwen38/0.29`), which sit after the whole `patches/` series, so they are never edited by hand.
 
 Port notes, for whoever bumps vLLM next:
