@@ -39,9 +39,12 @@ fi
 echo "== 6: ledger rows vs fork commits named in them"
 ROWS=$(grep -E '^\| [a-z]' PATCHES.md | grep -v '^| patch' | awk -F'|' '{t=$2; gsub(/^ +| +$/,"",t); print t}' | sed 's|^kvarn/||')
 NROWS=$(echo "$ROWS" | wc -l); ok "$NROWS rows in PATCHES.md"
-# The KVarN patches install.sh applies, in its order (older kvarn-*.patch files are history, not the series). A fixed
-# pair missed 0.30's third (kvarn-recycled-pages, #222) and reported its two runner files as drift.
-KV=$(grep -oE '^apply_kvarn [a-z0-9._-]+\.patch' kvarn/install.sh 2>/dev/null | awk '{print "kvarn/"$2}' | tr '
+# The KVarN patches, in apply order (older kvarn-*.patch files are history, not the series). Since #242 (syv e1459c7)
+# patches/apply.sh holds the list as its KVARN array and install.sh only calls `apply.sh --kvarn`; before that,
+# install.sh named them in `apply_kvarn` lines. A fixed pair missed 0.30's third (kvarn-recycled-pages, #222) and
+# reported its two runner files as drift, which is what the old parse fell back to after #242 (2026-10-01).
+KV=$(sed -nE 's/^KVARN=\((.*)\)$/\1/p' patches/apply.sh 2>/dev/null | tr ' ' '\n' | sed -e '/^$/d' -e 's|^|kvarn/|' | tr '\n' ' ')
+[ -n "$KV" ] || KV=$(grep -oE '^apply_kvarn [a-z0-9._-]+\.patch' kvarn/install.sh 2>/dev/null | awk '{print "kvarn/"$2}' | tr '
 ' ' ')
 [ -n "$KV" ] || KV="kvarn/kvarn-$PIN.patch kvarn/kvarn-v2-runner-$PIN.patch"
 for p in patches/*.patch $KV; do n=$(basename "$p" .patch); echo "$ROWS" | grep -qx "$n" || bad "patch file without a row: $n"; done
@@ -77,7 +80,7 @@ if [ -n "$FORK" ] && [ -z "$NOFORK" ]; then
     # count, so a broken temp worktree or a bad commit id reads as DRIFT, not as an empty diff (2026-09-14).
     while IFS= read -r name; do case "$name" in dflash2-backport.patch) continue ;; esac
       patch -p1 -N -s --fuzz 0 -r /dev/null -d "$TMP/tag/vllm" < "patches/$name" >/dev/null 2>&1 || bad "patch does not apply to v$PIN at --fuzz 0: $name"
-    done < <(sed -e 's/#.*//' -e 's/^[[:space:]]*//;s/[[:space:]]*$//' -e '/^$/d' patches/series)
+    done < <(if [ -x patches/apply.sh ]; then bash patches/apply.sh --list; else sed -e 's/#.*//' -e 's/^[[:space:]]*//;s/[[:space:]]*$//' -e '/^$/d' patches/series; fi)
     cp -r kvarn/files/vllm/. "$TMP/tag/vllm/" 2>/dev/null
     for p in $KV; do patch -p1 -N -s --fuzz 0 -r /dev/null -d "$TMP/tag/vllm" < "$p" >/dev/null 2>&1 || bad "kvarn patch does not apply to v$PIN at --fuzz 0: $(basename $p)"; done
     find "$TMP/tag/vllm" -name '*.orig' -delete
