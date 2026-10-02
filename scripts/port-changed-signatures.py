@@ -21,7 +21,11 @@ parameters @triton.autotune / @triton.heuristics supply left optional. Any other
 locals. Definitions are the --new tag's, except those the series itself adds or re-signs (signature lines in the
 series' added lines, or a file the series adds), which are read from the branch, so a signature the series changes is
 the one a call is held to. Binding follows Python's rules: positional count, keyword names, required parameters,
-*args / **kwargs on the def.
+*args / **kwargs on the def. A constructor reached through a @support_torch_compile class is bound the way that
+decorator's wrapper binds it: vllm_config= and prefix= are the wrapper's own (dropped when the original __init__ lacks
+them, re-injected as keywords when it has them, so passing either positionally is "multiple values"). Its positional
+isinstance check is not modelled; it is off by one on vLLM main at writing (it zips args against a parameter list
+that includes self), so a positional construction of a decorated class can raise with correct types.
 
   BREAKS   the resolved definition does not accept the call: a TypeError the moment the path runs
 
@@ -37,7 +41,12 @@ series callers #52188 changed, "changed v0.28.0..v0.29.0" (the chains call, the 
 topic's kernel launch), and the post-rebase run (qwen38/0.29) reports the one the rebase left stale, chains. Mutants of
 4a72a6018 built with plumbing (never pushed): a keyword renamed through an import, a positional dropped from a
 constructor, an extra positional on a self. method, a series classmethod re-signed (two callers), a series kernel
-re-signed and an unknown keyword on a launch went red on exactly those seven calls and nothing else.
+re-signed and an unknown keyword on a launch went red on exactly those seven calls and nothing else. The decorated
+constructor, both ways (a positional prefix must break, a vllm_config= to a class without one must not), was wrong
+in the first cut and is right now, matching vLLM's own wrapper run on the rc3 tree.
+Reviewed 2026-10-02 by binding every call this check binds with inspect.signature on an installed rc3 tree (185 of
+185 agree) and by hunting the skipped calls for a miss (none found; the names whose parameters changed this port were
+bound by hand).
 """
 import argparse
 import ast
@@ -48,6 +57,9 @@ from collections import defaultdict
 
 sys.stdout.reconfigure(encoding="utf-8")
 MAX_DEPTH = 6
+# @support_torch_compile replaces a class's __init__ with (*args, vllm_config=None, prefix="", **kwargs) and passes
+# vllm_config / prefix on to the original as keywords only when the original takes them (vllm/compilation/decorators.py).
+STC_KEYWORDS = ("vllm_config", "prefix")
 TRITON_LAUNCH_OPTIONS = {"num_warps", "num_stages", "num_ctas", "maxnreg", "enable_fp_fusion", "waves_per_eu",
                          "matrix_instr_nonkdim", "kpack", "launch_cooperative_grid", "launch_pdl", "warmup", "debug",
                          "num_buffers_warp_spec", "num_consumer_groups", "reg_dec_producer", "reg_inc_consumer"}
@@ -115,11 +127,14 @@ class Sig:
         star = [f"*{self.vararg}"] if self.vararg else ["*"] if self.kwonly else []
         return f"({', '.join(self.params + star + self.kwonly + ([f'**{self.kwarg}'] if self.kwarg else []))})"
 
-    def binds(self, npos, kwnames, bound, launch=False):
+    def binds(self, npos, kwnames, bound, launch=False, stc=False):
         params = list(self.params)
         nreq = len(params) - self.ndefaults
         if bound and self.is_method and not self.static and params:
             params, nreq = params[1:], nreq - 1
+        if stc:  # the wrapper takes these itself, drops them, or re-injects them as keywords
+            kwnames = [k for k in kwnames if k not in STC_KEYWORDS] + [
+                k for k in STC_KEYWORDS if k in params or k in self.kwonly]
         if launch:  # kernel[grid](...): the launch options are Triton's, not the kernel's parameters
             kwnames = [k for k in kwnames if k in params or k in self.kwonly or k not in TRITON_LAUNCH_OPTIONS]
             if self.tuned:
@@ -156,7 +171,10 @@ class Module:
                            if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))}
                 bases = [b.id if isinstance(b, ast.Name) else b.attr if isinstance(b, ast.Attribute) else None
                          for b in node.bases]
-                self.classes[node.name] = {"bases": [b for b in bases if b], "methods": methods}
+                decos = {(d.func if isinstance(d, ast.Call) else d) for d in node.decorator_list}
+                self.classes[node.name] = {"bases": [b for b in bases if b], "methods": methods,
+                                           "decos": {d.id if isinstance(d, ast.Name) else getattr(d, "attr", "")
+                                                     for d in decos}}
             elif isinstance(node, (ast.Import, ast.ImportFrom)):
                 self._imports(node, pkg)
             elif isinstance(node, ast.If):  # TYPE_CHECKING blocks and similar
@@ -251,7 +269,7 @@ def main():
                         oc = o.classes.get(cname) if o is not None else None
                         if cname not in m.classes and not series_only(oc is not None):
                             continue
-                        tc = m.classes.setdefault(cname, {"bases": c["bases"], "methods": {}})
+                        tc = m.classes.setdefault(cname, {"bases": c["bases"], "methods": {}, "decos": c["decos"]})
                         for mname, sig in c["methods"].items():
                             if is_ours(sig) or (mname not in tc["methods"]
                                                 and series_only(oc is not None and mname in oc["methods"])):
@@ -307,6 +325,23 @@ def main():
                     return hit
         return None
 
+    def init_of(path, cname, depth=0):
+        """(the __init__ a `Class(...)` call reaches, whether a @support_torch_compile class on the way wraps it)."""
+        m = target(path)
+        if m is None or cname not in m.classes or depth > MAX_DEPTH:
+            return None, False
+        c = m.classes[cname]
+        stc = "support_torch_compile" in c.get("decos", ())
+        if "__init__" in c["methods"]:
+            return c["methods"]["__init__"], stc
+        for bname in c["bases"]:
+            r = resolve_name(path, bname)
+            if r and r[0] == "class":
+                sig, wrapped = init_of(r[1], r[2], depth + 1)
+                if sig:
+                    return sig, wrapped or stc
+        return None, False
+
     def changed_since_old(sig, path, cname, fname):
         m = module(a.old, path)
         if m is None:
@@ -340,7 +375,7 @@ def main():
             if any(isinstance(x, ast.Starred) for x in node.args) or any(k.arg is None for k in node.keywords):
                 skipped += 1
                 continue
-            fn, sig, bound, owner = node.func, None, False, (None, None)
+            fn, sig, bound, owner, stc = node.func, None, False, (None, None), False
             launch = isinstance(fn, ast.Subscript)
             if launch:
                 fn = fn.value
@@ -349,7 +384,7 @@ def main():
                 if r and r[0] == "func":
                     sig, owner = r[1], (r[2], None)
                 elif r and r[0] == "class":
-                    sig, bound, owner = resolve_method(r[1], r[2], "__init__"), True, (r[1], r[2])
+                    (sig, stc), bound, owner = init_of(r[1], r[2]), True, (r[1], r[2])
                 name = fn.id
             elif isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name):
                 recv, name = fn.value.id, fn.attr
@@ -383,7 +418,7 @@ def main():
                 continue
             checked += 1
             npos, kws = len(node.args), [k.arg for k in node.keywords]
-            if sig.binds(npos, kws, bound, launch):
+            if sig.binds(npos, kws, bound, launch, stc):
                 if a.verbose:
                     call = f"{name}{'[grid]' if launch else ''}({npos} positional{', ' + ', '.join(kws) if kws else ''})"
                     print(f"ok       {path}:{node.lineno}: {call} -> {sig.where} {sig.text()}")
@@ -404,7 +439,8 @@ def main():
             call = f"{name}{'[grid]' if launch else ''}({npos} positional{', ' + ', '.join(kws) if kws else ''})"
             ours_line = min(n for n in span if n in added[path])  # blame the series' line, not the call's first
             print(f"BREAKS   {topic(path, ours_line)[:50]:50}  {path}:{node.lineno}: {call}  [{when}]")
-            print(f"         takes {sig.where} {sig.text()}")
+            print(f"         takes {sig.where} {sig.text()}"
+                  + ("  through @support_torch_compile (vllm_config / prefix go by keyword)" if stc else ""))
     print(f"port-changed-signatures {a.old} -> {a.new}, {mode}: {checked} resolved calls on the series' added lines in "
           f"{len(touched)} files bound against {a.new}; {skipped} skipped (receiver type unknown, or *args/**kwargs "
           f"spread); {breaks} BREAKS")
