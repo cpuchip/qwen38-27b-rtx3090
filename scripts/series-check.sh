@@ -43,10 +43,16 @@ NROWS=$(echo "$ROWS" | wc -l); ok "$NROWS rows in PATCHES.md"
 # patches/apply.sh holds the list as its KVARN array and install.sh only calls `apply.sh --kvarn`; before that,
 # install.sh named them in `apply_kvarn` lines. A fixed pair missed 0.30's third (kvarn-recycled-pages, #222) and
 # reported its two runner files as drift, which is what the old parse fell back to after #242 (2026-10-01).
-KV=$(sed -nE 's/^KVARN=\((.*)\)$/\1/p' patches/apply.sh 2>/dev/null | tr ' ' '\n' | sed -e '/^$/d' -e 's|^|kvarn/|' | tr '\n' ' ')
+# #262 (syv 10bb488) wrapped the array onto two lines, the one-line parse read nothing, and a fixed-pair fallback
+# applied 2 of the 4: three files reported as drift (2026-10-05). So: ask apply.sh when it can list them (#275's
+# `--list --kvarn`), else read the array across lines without evaluating it, and a list nobody can read is DRIFT, never a
+# guess.
+KV=$(bash patches/apply.sh --list --kvarn 2>/dev/null | sed -e '/^$/d' -e 's|^|kvarn/|' | tr '\n' ' ')
+[ -n "$KV" ] || KV=$(awk '/^KVARN=\(/{f=1} f{print} f&&/\)/{exit}' patches/apply.sh 2>/dev/null | sed -e 's/^KVARN=(//' \
+  -e 's/).*$//' | tr -d '"' | tr -s ' \t' '\n' | grep -E '\.patch$' | sed 's|^|kvarn/|' | tr '\n' ' ')
 [ -n "$KV" ] || KV=$(grep -oE '^apply_kvarn [a-z0-9._-]+\.patch' kvarn/install.sh 2>/dev/null | awk '{print "kvarn/"$2}' | tr '
 ' ' ')
-[ -n "$KV" ] || KV="kvarn/kvarn-$PIN.patch kvarn/kvarn-v2-runner-$PIN.patch"
+[ -n "$KV" ] || bad "could not read the KVarN patch list (patches/apply.sh KVARN array, or kvarn/install.sh apply_kvarn lines)"
 for p in patches/*.patch $KV; do n=$(basename "$p" .patch); echo "$ROWS" | grep -qx "$n" || bad "patch file without a row: $n"; done
 [ "$fail" = 0 ] && ok "every patch file has a row"
 
