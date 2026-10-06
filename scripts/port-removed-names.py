@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Find names our series still uses that upstream removed between two pins.
 
-    python scripts/port-removed-names.py --fork ../../vllm.git --old v0.29.0 --new v0.30.0 --branch qwen38/0.30
+    python scripts/port-removed-names.py --fork ../vllm --old v0.29.0 --new v0.30.0 --branch qwen38/0.30
 
 A name is REMOVED when it occurs somewhere in the old tag's Python tree and nowhere in the new tag's. The net diff
 new tag..branch is read for the lines the series adds; any removed name on such a line is reported with its topic

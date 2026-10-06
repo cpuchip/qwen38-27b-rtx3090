@@ -5,7 +5,7 @@
 # to-do list (docs/vllm-0.29.md "Porting the next pin", step 1, made mechanical).
 #
 #   bash scripts/port-triage.sh <fork bare repo or checkout> <old tag> <new tag> <fork branch or commit> [out.md]
-#   e.g. bash scripts/port-triage.sh ../../vllm.git v0.29.0 v0.30.0 qwen38/0.29-hq2
+#   e.g. bash scripts/port-triage.sh ../vllm v0.29.0 v0.30.0 qwen38/0.29-hq2
 #
 # Each topic is tried on top of the new tag plus every topic that applied before it, the order a real rebase takes.
 # A conflicting topic is recorded and skipped, so later topics that depend on it may report conflicts that go away

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Find calls our series adds that no longer bind to the signature the target pin gives their callee.
 
-    python scripts/port-changed-signatures.py --fork ../../vllm.git --old v0.30.0 --new v0.31.0rc3 --branch qwen38/0.31-rc3
+    python scripts/port-changed-signatures.py --fork ../vllm --old v0.30.0 --new v0.31.0rc3 --branch qwen38/0.31-rc3
 
 Born 2026-10-02 from syv-ai #261. vLLM #52188 (in 0.29.0) added cp_rank, cp_size and cp_interleave to
 prepare_dflash_inputs and updated its own caller. The series' second caller, in dflash2-ngram-chains, was not updated,
@@ -34,16 +34,16 @@ Each hit names the series topic that owns the call's line (by blame) and where t
 broken before this port), or "the series' own definition" (we re-signed it and missed a caller). --accept NAME=REASON
 lists a reviewed call as accepted; --verbose lists every call that binds. Exit 1 on any unaccepted BREAKS.
 
-The falsifier, 2026-10-02 (ten runs, each as predicted). Red, the chains call alone: qwen38/0.30 (cut9),
-qwen38/0.31-rc3 before 4a72a6018, and the preview of cut9 against rc3. Green: qwen38/0.30-chainfix, 4a72a6018 and
-qwen38/0.31-rc3-dropguard. Historical: at the 0.29 port, the preview (qwen38/0.28 against v0.29.0) reports all three
-series callers #52188 changed, "changed v0.28.0..v0.29.0" (the chains call, the lookup-drafting call and the prewarm
-topic's kernel launch), and the post-rebase run (qwen38/0.29) reports the one the rebase left stale, chains. Mutants of
-4a72a6018 built with plumbing (never pushed): a keyword renamed through an import, a positional dropped from a
-constructor, an extra positional on a self. method, a series classmethod re-signed (two callers), a series kernel
-re-signed and an unknown keyword on a launch went red on exactly those seven calls and nothing else. The decorated
-constructor, both ways (a positional prefix must break, a vllm_config= to a class without one must not), was wrong
-in the first cut and is right now, matching vLLM's own wrapper run on the rc3 tree.
+The falsifier, 2026-10-02 (ten runs, each as predicted). Red, the chains call alone: the 0.30 series before #261,
+the 0.31rc3 port before its chains fix, and a preview of the 0.30 series against v0.31.0rc3. Green: both after the
+fix. Historical: at the 0.29 port, the preview (the 0.28 series against v0.29.0) reports all three series callers
+#52188 changed, "changed v0.28.0..v0.29.0" (the chains call, the lookup-drafting call and the prewarm topic's kernel
+launch), and the post-rebase run reports the one the rebase left stale, chains. Mutants of the fixed rc3 series built
+with plumbing: a keyword renamed through an import, a positional dropped from a constructor, an extra positional on a
+self. method, a series classmethod re-signed (two callers), a series kernel re-signed and an unknown keyword on a
+launch went red on exactly those seven calls and nothing else. The decorated constructor, both ways (a positional
+prefix must break, a vllm_config= to a class without one must not), was wrong in the first cut and is right now,
+matching vLLM's own wrapper run on the rc3 tree (vllm-project/vllm#60202 has the type-check bug it turned up).
 Reviewed 2026-10-02 by binding every call this check binds with inspect.signature on an installed rc3 tree (185 of
 185 agree) and by hunting the skipped calls for a miss (none found; the names whose parameters changed this port were
 bound by hand).

@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Move every mechanical vLLM pin in this repo from one release to the next, in one pass.
 
-    python scripts/pin-bump.py --from 0.29.0 --to 0.30.0 --fork ../../vllm.git [--repo .] [--dry-run]
+    python scripts/pin-bump.py --from 0.29.0 --to 0.30.0 --fork ../vllm [--repo .] [--dry-run]
 
 What it changes (and only this; narrative docs that describe a past pin are left for a person):
   - docker/requirements.txt  vllm==<old>          -> vllm==<new>
   - verify.sh                the version check, the kvarn patch names
+  - patches/apply.sh         the KVARN array's kvarn-*-<old>.patch names (the list lives here since syv-ai #242)
   - Dockerfile               the header comment's "vLLM <old>"
-  - kvarn/install.sh         kvarn-<old>.patch / kvarn-v2-runner-<old>.patch and the "vLLM <old> venv" comment
+  - kvarn/install.sh         the "vLLM <old> venv" comment
   - docs/install.md          the `pip install vllm==<old>` line, the patches' "written against", and
                              flashinfer-cubin==<x>, read from vLLM's own requirements/cuda.txt at the NEW tag
     (the cubin package is not on PyPI and must match flashinfer-python exactly; 0.30.0 moved it to 0.6.18.post1)
@@ -39,13 +40,16 @@ def main():
     old, new, root = a.old, a.new, Path(a.repo)
     fi_old, fi_new = flashinfer_at(a.fork, f"v{old}"), flashinfer_at(a.fork, f"v{new}")
     o = re.escape(old)
+    # Every KVarN patch is named kvarn-[<part>-]<pin>.patch (four at 0.30.0: kvarn, kvarn-v2-runner,
+    # kvarn-recycled-pages, kvarn-fp16-dequant), so one pattern follows the list as it grows.
+    kv = (rf"\bkvarn-((?:[a-z0-9]+-)*){o}\.patch", rf"kvarn-\g<1>{new}.patch")
     edits = {
         "docker/requirements.txt": [(rf"^vllm=={o}(?=\r?$)", f"vllm=={new}"), (rf"# vllm=={o} ", f"# vllm=={new} ")],
         "verify.sh": [(rf'\[ "\$VER" = "{o}" \]', f'[ "$VER" = "{new}" ]'), (rf"written against {o}\)", f"written against {new})"),
-                      (rf"kvarn-{o}\.patch", f"kvarn-{new}.patch"), (rf"kvarn-v2-runner-{o}\.patch", f"kvarn-v2-runner-{new}.patch")],
+                      kv],
+        "patches/apply.sh": [kv],
         "Dockerfile": [(rf"# vLLM {o} ", f"# vLLM {new} ")],
-        "kvarn/install.sh": [(rf"kvarn-{o}\.patch", f"kvarn-{new}.patch"), (rf"kvarn-v2-runner-{o}\.patch", f"kvarn-v2-runner-{new}.patch"),
-                             (rf"vLLM {o} venv", f"vLLM {new} venv")],
+        "kvarn/install.sh": [(rf"vLLM {o} venv", f"vLLM {new} venv")],
         # (?![.\w]), not \b: "0.6.18\b" also matches inside "0.6.18.post1", so a second run would append ".post1" again
         "README.md": [(rf'alt="vLLM {o}"', f'alt="vLLM {new}"'), (rf"badge/vLLM-{o}-", f"badge/vLLM-{new}-")],
         "docs/docker.md": [(rf"vLLM {o} pinned", f"vLLM {new} pinned")],

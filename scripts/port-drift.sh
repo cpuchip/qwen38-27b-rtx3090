@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Port drift: compare every topic on a new integration branch with the same topic on the old one, by content (the lines
-# each commit adds, per file), so a port that took a resolution from somewhere else (qwen38/main-track, a hand merge)
+# each commit adds, per file), so a port that took a resolution from somewhere else (a rebase onto upstream main, a hand merge)
 # cannot silently lose work the old line gained later. The replay oracle proves the patch files match the new fork
 # branch; this proves the new fork branch still carries what the old one meant.
 #
 #   bash scripts/port-drift.sh <fork repo> <new tag> <new branch> <old tag> <old branch> [--show]
-#   e.g. bash scripts/port-drift.sh ../../vllm.git v0.30.0 qwen38/0.30 v0.29.0 qwen38/0.29-hq2
+#   e.g. bash scripts/port-drift.sh ../vllm v0.30.0 qwen38/0.30 v0.29.0 qwen38/0.29-hq2
 #
 # Every line it prints is a difference to explain: an upstream retirement, a resolution against moved upstream code,
 # or a line order change. --show prints the lines themselves under each DRIFT row ("LOST" = the old topic added it and
