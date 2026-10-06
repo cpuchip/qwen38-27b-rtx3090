@@ -123,6 +123,20 @@ NVLink**, 275 W):
   down to `SYS`, and vLLM's custom all-reduce faulted on that driver even at
   TP=2. Neither is reproducible on this repo's single-card box, so treat both as
   field reports, not as defaults — try TP first without them.
+- **With a P2P-patched consumer driver, NCCL usually will not use P2P until
+  you set `NCCL_P2P_LEVEL`, and the cause is wider than separate root ports.**
+  NCCL's default allows P2P only up to `PXB`, cards behind a PCIe switch.
+  Consumer boards put the cards on CPU root ports, which NCCL classes as `PHB`
+  or `SYS`, so it falls back to host shared memory even when every pair reports
+  peer access; the one exception built into NCCL 2.29 is two GPUs on an AMD
+  host. Boot once with `NCCL_DEBUG=INFO NCCL_DEBUG_SUBSYS=INIT,P2P` and look
+  for `via P2P` or `via SHM`. If it says SHM, `NCCL_P2P_LEVEL=PHB` turns P2P on
+  for cards under one host bridge, and `SYS` across sockets. On 4x RTX 5060 Ti
+  at TP4 that gave 2-6% more decode at C1 and 10-16% at C4 with prefill
+  unchanged, because P2P cuts the latency of the small allreduces in each
+  decode step ([#254](https://github.com/syv-ai/HyperQwen/issues/254), one box;
+  the numbers are in [reproductions](reproductions/README.md)). When you A/B
+  P2P yourself, read the transport out of the log for each arm.
 
 ```bash
 NCCL_P2P_LEVEL=SYS SPEC=dflash2 PREFIX_CACHE=1 \
@@ -268,6 +282,20 @@ Greedy, 256-token generations, median of three:
 | PP=2 + `SPEC=off` | 32.9 | 61.4 | 55.6 | | 778,942 |
 | PP=2 + async + `SPEC=off` | 36.9 | 68.8 | **134.2** | | **844,852** |
 
+- **A current TP=2 baseline on the same two cards** (RTX 3090 + RTX A4000, no
+  peer-to-peer; reporter's follow-up, 2026-10). A vLLM 0.29-based recipe, MTP
+  k=4 with probabilistic draft sampling, `MAX_LEN=262144` per slot,
+  `MAX_SEQS=2`, FlashInfer attention with **fp8** KV (not the int4 KV of the
+  table above), 2048 batched tokens, prefix caching on: KV pool 342,065 tokens,
+  single stream about 54.6 tok/s, two streams 94.0 aggregate, TTFT about
+  111 ms, and 99-123 tok/s streaming decode across 16K-190K prompts once warm.
+  It has run in production for two weeks with no repetition or corruption, so
+  MTP's acceptance at TP=2 is normal and the collapse above is specific to
+  pipeline parallelism. The lower single-stream number against the 75.6 above
+  is most likely the different KV dtype and attention backend rather than a
+  regression: the fp8/FlashInfer path is the slow one on sm86 (see the 3090
+  rows in the reproductions page), though the report did not A/B it
+  ([#160](https://github.com/syv-ai/HyperQwen/issues/160)).
 - **PP=2 + MTP.** It only boots with a local patch: upstream's
   `_pp_broadcast_prev_sampled_token_ids` asserts one sampled token per request,
   which speculation breaks. With the patch, acceptance falls from 45.6% to about

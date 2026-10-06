@@ -9,7 +9,7 @@ them in the order of `patches/series` onto the installed vLLM wheel; `verify.sh`
 - **local**: this hardware or environment (WSL2, sm80, a tuned build, env knobs). Stays.
 - **own**: a fix to a feature this repo introduced. Rides with that feature.
 
-Cut against: the pin the current hunks were generated on. Every file is exported from its commit on one fork branch, `cpuchip/vllm` **`qwen38/0.30`** (v0.30.0 + one commit per row, in series order, subject `[qwen38] <topic>`; export point tagged `qwen38/0.30-cut5`; this branch adds `sampler-warmup-cuda` on `qwen38/0.30-warmup`, tagged `qwen38/0.30-warmup-cut1`, so a later rewrite of the branch never orphans a hash these files name), so the series applies to the 0.30.0 tree with exact context; `patches/apply.sh` (which the Dockerfile and the install pages call),
+Cut against: the pin the current hunks were generated on. Every file is exported from its commit on one fork branch, `cpuchip/vllm` **`qwen38/0.30`** (v0.30.0 + one commit per row, in series order, subject `[qwen38] <topic>`; export point tagged `qwen38/0.30-cut5`; this branch adds `sampler-warmup-cuda` on `qwen38/0.30-warmup`, tagged `qwen38/0.30-warmup-cut1`, and `pinned-kv-empty-cache` on `qwen38/0.30-pinned-kv-empty-cache`, tagged `qwen38/0.30-pinned-kv-cut1`, so a later rewrite of the branch never orphans a hash these files name), so the series applies to the 0.30.0 tree with exact context; `patches/apply.sh` (which the Dockerfile and the install pages call),
 `patches/check_vllm_series.sh`, `kvarn/install.sh` and `verify.sh` apply and check with `--fuzz 0`, and a hunk whose context has moved fails the
 build by name instead of landing by guess. Regenerate a file with `bash scripts/export-patch.sh <fork checkout>
 <commit> patches/<topic>.patch`; do not edit the files by hand. A patch that reads an env knob registers it in
@@ -37,6 +37,7 @@ build by name instead of landing by guess. Regenerate a file with `bash scripts/
 | marlin-tune-table | local | wiring for a locally built tunable Marlin extension, off by default | none | 0.30.0, adapted to #54809 (activation ordering removed: g_idx, perm, is_k_full gone) | stays |
 | offload-dflash-eagle-groups | fix | OffloadingConnector under dflash flagged every KV group as draft attention (fork #33) | none yet | 0.30.0: re-cut from the main-track resolution | upstream PR |
 | offload-wsl2-devptr | local | CPU offload tier device pointers on WSL2 | none | 0.30.0 | stays |
+| pinned-kv-empty-cache | fix | with `kv_cache_memory_bytes` pinned (the launchers' `KV_MEM`), synchronize and empty the allocator cache after the profile run, so a cold compile cache's scratch (1.2 GiB on a 24 GiB card) does not stay under the KV cache and over-commit the card, which under WSL2's driver moves GPU memory to system RAM and slows the KVarN kernels; `memory-profile-after-warmup` does the same on the measured path only | none yet | 0.30.0 | upstream empties the cache on the pinned path |
 | qwen3_5-embed-quant | fix | pass `quant_config` to the token embedding (main model and MTP module) | none yet | 0.30.0 | upstream PR |
 | qwen3_5-mtp-draft-vocab | feature | vocab-truncated draft head for MTP | none | 0.30.0 | upstreamed |
 | sampler-small-topk-fast-softmax | feature | sort-free top-k/top-p for small k, multi-block row softmax | none | 0.30.0: re-cut from the main-track resolution | upstreamed or superseded |
@@ -65,6 +66,7 @@ build by name instead of landing by guess. Regenerate a file with `bash scripts/
 | kvarn/kvarn-0.30.0 | feature | KVarN cache dtypes, quant mode, backend registration, page size | none (KVarN is Huawei CSL's, Apache-2.0) | 0.30.0: re-cut from the main-track resolution, with its #54713 replay_boundaries fixup | upstreamed |
 | kvarn/kvarn-v2-runner-0.30.0 | own | KVarN with the V2 runner and DFlash2 (SW groups, Mamba block index, selector guards) | none | 0.30.0: re-cut from the main-track resolution, with its #54713 replay_boundaries fixup; #53007 rewrote _largest_kernel_block_within and the SW divisor rule is carried into it by hand | rides with KVarN |
 | kvarn/kvarn-recycled-pages-0.30.0 | own | both runners hand KVarN each step's block ids, so it drops (never flushes) what it still holds for a page another KV-cache group has taken: a late flush of a finished request's last block, or of an evicted retired sink, into another request's mamba state was the "!!!!" output (#208); the KVarN half is in `kvarn/files` | none | 0.30.0 | rides with KVarN |
+| kvarn/kvarn-fp16-dequant-0.30.0 | own | registers `KVARN_FP16_DEQUANT` (#240's fp16 dequant in the fused KVarN decode kernels, default off) in `envs.py`, so `kvarn/files` reads it through `vllm.envs` and it is in the torch.compile cache key | none | 0.30.0 | rides with KVarN |
 
 Retired at 0.30.0 and removed from the tree: `offload-mtp-serve` (vllm #52771, #52807 and #54288, all in 0.30.0) and `mamba-align-retire-null-gaps` (vllm #55450, in 0.30.0).
 
