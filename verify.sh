@@ -325,7 +325,7 @@ else warn "no DFlash2 drafter (venv/bin/python prepare/fetch_dflash2.py; SPEC=df
 echo "== keys / units"
 # A key is optional: with neither api_key.txt nor VLLM_API_KEY the launchers export
 # nothing and vLLM serves unauthenticated, which is a fine way to run this locally.
-# With no key the launchers bind 127.0.0.1 (resolve_bind_host in resolve_api_key.sh), so that is a WARN.
+# With no key the launchers bind 127.0.0.1 (resolve_bind_host in launcher_common.sh), so that is a WARN.
 # It is a FAIL only when the bind is explicitly set off loopback (HOST=0.0.0.0 and no key). A container
 # keeps 0.0.0.0 by default, so a keyless container is a WARN: the published port is what limits it.
 if [ -s api_key.txt ] || [ -n "${VLLM_API_KEY:-}" ]; then ok "API key configured (api_key.txt or VLLM_API_KEY)"
