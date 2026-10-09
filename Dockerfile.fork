@@ -25,7 +25,7 @@ RUN venv/bin/pip install -r docker/requirements.txt
 
 # The fork: pinned by commit, built as a wheel over the release wheel's compiled parts.
 ARG VLLM_FORK_REPO=https://github.com/cpuchip/vllm
-ARG VLLM_FORK_COMMIT=626f7da75eb4c062aa8b174c1e2d978e28de8138
+ARG VLLM_FORK_COMMIT=0c62805500ee9a4525b32a9b4a6b2e42f56ad7cc
 ARG VLLM_VERSION=0.30.0
 RUN set -e; \
     venv/bin/pip install "setuptools>=77" setuptools_scm setuptools-rust wheel; \
