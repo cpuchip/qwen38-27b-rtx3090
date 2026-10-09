@@ -44,6 +44,18 @@ jobs:
       - name: Check the KVARN_FP16_DEQUANT numerics gate without a GPU
         run: python kvarn/tests/test_kvarn_fp16_dequant_torch.py
 
+  patch-index:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check the PATCHES.md table matches the patch headers
+        run: |
+          python scripts/patches_md.py
+          git diff --exit-code PATCHES.md || { echo "::error::PATCHES.md is not current: run python3 scripts/patches_md.py and commit the result"; exit 1; }
+
   git-apply:
     runs-on: ubuntu-latest
     steps:

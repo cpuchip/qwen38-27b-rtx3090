@@ -52,7 +52,13 @@ import torch; assert torch.cuda.is_available()
 p=torch.cuda.get_device_properties(0)
 print(f"  PASS  GPU: {p.name}, {p.total_memory/2**30:.1f} GiB, sm{p.major}{p.minor}, torch {torch.__version__}")
 EOF
-command -v nvidia-smi >/dev/null && { PL=$(nvidia-smi --query-gpu=power.limit --format=csv,noheader,nounits | head -1); ok "power limit ${PL} W (README numbers are at 250 W)"; }
+# Ask about the card torch will use: nvidia-smi ignores CUDA_VISIBLE_DEVICES, so
+# its first row can be a different GPU (#258). torch's device 0 is the one the
+# server gets; select it by UUID.
+command -v nvidia-smi >/dev/null && {
+  UUID=$($PY -c "import torch; print('GPU-'+str(torch.cuda.get_device_properties(0).uuid))" 2>/dev/null)
+  PL=$(nvidia-smi ${UUID:+-i "$UUID"} --query-gpu=power.limit --format=csv,noheader,nounits | head -1)
+  ok "power limit ${PL} W (README numbers are at 250 W)"; }
 fi
 for t in triton compressed_tensors; do $PY -c "import $t" 2>/dev/null && ok "python module $t" || fail "python module $t missing"; done
 # a bare `import flashinfer` passes while vLLM still falls back to torch.topk:
