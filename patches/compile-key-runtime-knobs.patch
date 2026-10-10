@@ -10,8 +10,6 @@ graph reads (syv-ai/HyperQwen #183). The deprecated env spelling of
 --prefix-cache-retention-interval joins them, matching
 CacheConfig.compute_hash, which already leaves that field out.
 
-Cut by hand against 0.29.0 with the series applied (not an export from the fork).
-
 Kind: fix
 What: keeps this repo's runtime-only env knobs (`VLLM_ENGINE_STALL_SENTINEL_S`,
   `VLLM_MAMBA_ALIGN_KEEP_CHECKPOINTS`, `VLLM_DFLASH2_CHAIN_LOG_SEC`, `VLLM_MARLIN_TUNE_DIR`) and the
