@@ -1359,7 +1359,7 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     fine. The knee scales with the pool (#174 found it at ~50-55K per side on a
     542K pool, and halving `--kv-cache-memory` halved it), so it is capacity, not
     a structural trigger. It is invisible in single-user benchmarks and is
-    exactly how a two-agent deployment runs. Fix: retain one snapshot in six
+    how two agents taking turns on one server run. Fix: retain one snapshot in six
     (`VLLM_PREFIX_CACHE_RETENTION_INTERVAL`, a CLI flag from 0.29 on), which the
     launcher now sets at `CTX=huge` with DFlash2 — 93-99.5% reuse on the same
     pair, no cost to a single long chat, and a reuse needle inside the restored
@@ -1387,13 +1387,20 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     | two ~32.6K chats alternating | **0%** (31.8 s) | 93% (2.7 s) | 93-99.5% |
 
     So the default trades a few seconds on each new conversation's early turns for
-    never losing a long one outright. The knob runs one way: a **smaller** interval
+    never losing a long one outright while conversations take turns. The knob runs one way: a **smaller** interval
     (`PREFIX_RETENTION`, any multiple of the block) gives finer early hits and
     less capacity before two long conversations collide; a **larger** one the
     reverse. Two blocks already halves the early-turn cost and still held the
     ~32.6K pair; where its collision knee sits is not measured, so a workload of
     many short-to-medium chats is the one to try it on, and one that keeps two
     or more long documents live should stay on the default.
+    **Turns, not concurrency.** The retained snapshots keep long conversations that
+    are advanced one request at a time; two whose requests are in flight together
+    still evict each other. On a native RTX 3090, pool 268,169, 7 drafts, retention
+    13056: two ~60K conversations taking turns reused 94.5% on turn 2 (56,576
+    tokens, 4.1 s), the same as one alone, on two fresh boots of 0.30.0; the same
+    two with both requests in flight reused anything in 1 of 20 conversations
+    across 0.30.0 and 0.31.0. Other intervals were not tried concurrently.
     One report from the other direction, on a different box
     ([#208](https://github.com/syv-ai/HyperQwen/issues/208), 2x3090 TP=2,
     DFlash2 k=3, so a 2048-token block, with its own client): at 32 streams of
