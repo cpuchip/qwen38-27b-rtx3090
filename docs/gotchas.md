@@ -194,7 +194,7 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     of its pool or dies mid-request. `patches/hybrid-kv-groups-v2-cudagraph.patch`
     fixes the first two; for the third, pin the pool in bytes
     (`--kv-cache-memory`, what `KV_MEM` does) instead of tuning utilization. That
-    runner also answers `thinking_token_budget` with 400, and the first request
+    runner also answered `thinking_token_budget` with 400 (on vLLM 0.30 it enforces the budget instead), and the first request
     after a cold start JIT-compiles four Triton kernels (~5 s once; cached in
     `~/.triton`).
 16. **`INT8_LAYERS=.` needs `GPU_UTIL=0.95`.** Quantizing the activations of every linear

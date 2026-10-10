@@ -36,15 +36,14 @@ the same cached prefix at once -- which is a likelier source of trouble than the
 worth ruling in or out with PREFIX_CACHE=0 before blaming the drafter.
 """
 
-import json
 import os
 import sys
 import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-KEY = open(os.path.expanduser("~/qwen-serving/api_key.txt")).read().strip()
-BASE = "http://127.0.0.1:18020"
+import harness
+
 CORPUS = os.path.expanduser("~/bench/labd_corpus.txt")
 
 
@@ -68,9 +67,8 @@ TASKS = [
 
 
 def metrics():
-    req = urllib.request.Request(BASE + "/metrics", headers={"Authorization": "Bearer " + KEY})
     d = {}
-    for line in urllib.request.urlopen(req).read().decode().splitlines():
+    for line in urllib.request.urlopen(harness.request("/metrics")).read().decode().splitlines():
         for k in ("vllm:spec_decode_num_drafts_total",
                   "vllm:spec_decode_num_accepted_tokens_total"):
             if line.startswith(k + " ") or line.startswith(k + "{"):
@@ -85,11 +83,8 @@ def ask(task):
                "messages": [{"role": "user", "content": "Dokument:\n\n" + doc + "\n\n" + q}],
                "max_tokens": MAXTOK, "temperature": 0,
                "chat_template_kwargs": {"enable_thinking": False}}
-    req = urllib.request.Request(BASE + "/v1/chat/completions", data=json.dumps(payload).encode(),
-                                 headers={"Content-Type": "application/json",
-                                          "Authorization": "Bearer " + KEY})
     t0 = time.time()
-    r = json.loads(urllib.request.urlopen(req, timeout=1800).read())
+    r = harness.post("/v1/chat/completions", payload, timeout=1800)
     return {"task": name, "wall": time.time() - t0,
             "tokens": r["usage"]["completion_tokens"],
             "text": r["choices"][0]["message"]["content"]}

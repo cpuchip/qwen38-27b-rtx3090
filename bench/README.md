@@ -23,8 +23,9 @@ its exit code means. CI runs the ones that `.github/workflows/patch-integrity.ym
 
 Needs: **CPU** is Python 3 and its standard library. **torch** is a CPU torch wheel. **image**
 is the patched vLLM venv (the Docker image or `venv/`), with no GPU. **GPU** is the patched
-venv on a CUDA card. **server** is a running server on `PORT` (default 18020), with the key
-from `VLLM_API_KEY` or `api_key.txt`. **model** is the checkpoint under `models/`.
+venv on a CUDA card. **server** is a running server at `VLLM_API` (a trailing `/v1` is fine), else on
+`PORT` (default 18020), with the key from `OPENAI_API_KEY`, `VLLM_API_KEY` or `api_key.txt`, in that
+order (`bench/harness.py`). **model** is the checkpoint under `models/`.
 
 | file | kind | needs | exit | what it does |
 |---|---|---|---|---|
@@ -35,6 +36,7 @@ from `VLLM_API_KEY` or `api_key.txt`. **model** is the checkpoint under `models/
 | `concurrent_collapse.py` | reproducer | server | 0, or 1 if a trial collapsed or a request errored | The "!!!!" collapse from #208. |
 | `demo/` | demo | Node | n/a | The canvas renderer for the README video. See `demo/README.md`. |
 | `demo_capture.py` | demo | server | 0 | Records one lane of the demo video: each token and the time it arrived. |
+| `harness.py` | library | CPU | n/a | How the scripts reach the server: the key, the URL and the request. |
 | `interleave_dose.py` | measurement | server | 0 | Prefix reuse against a dose of interleaved traffic, with the single-conversation control. |
 | `labd_accept.py` | measurement | server | 0, or 1 if the server ignores `return_tokens_as_token_ids` | Teacher-forced tokens per step for lookup-augmented drafting. |
 | `labd_bench.py` | measurement | server | 0 | Six long-context greedy tasks: decode speed and tokens per step. |
@@ -58,6 +60,7 @@ from `VLLM_API_KEY` or `api_key.txt`. **model** is the checkpoint under `models/
 | `seat_ttft.py` | measurement | server | 0, or 2 if every request failed | Cold and warm TTFT at N=1. |
 | `spec_attn_ctx_scan.py` | measurement | GPU | 0 | Verify attention cost against context length. |
 | `test_bench_sse_keepalive.py` | test | image | 0 or 1 | `vllm bench serve` against a server that sends an SSE keep-alive. |
+| `test_harness.py` | test | CPU, bash | 0 or 1 | `harness.py` against a stub server. Its key chain is checked against `resolve_api_key.sh`. |
 | `test_kvarn_recycled_pages.py` | test | image | 0 or 1 | KVarN's recycled-page drop (#208). |
 | `test_lookup_kernels.py` | kernel test | GPU | 0 or 1 | The LABD kernels against a Python reference. |
 | `test_marlin_int8_asym.py` | kernel test | GPU | 0 or 1 | Marlin W4A8-INT8 with zero points against W4A16. |

@@ -29,18 +29,20 @@ import sys
 import time
 import urllib.request
 
+import harness
+
 sys.stdout.reconfigure(encoding="utf-8")
 TAG, PORT, DEPTH, N = sys.argv[1], int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
-KEY = os.environ.get("VLLM_API_KEY", "")
+# The PORT argument names the server, even when VLLM_API is set.
+os.environ["VLLM_API"] = f"http://127.0.0.1:{PORT}"
 CORPUS = os.environ.get("DEPTH_CORPUS_GLOB", "*.txt")  # any glob of plain-text files to build fresh prompts from
 TEXT = "\n\n".join(open(f, encoding="utf-8").read() for f in sorted(glob.glob(CORPUS)))
 while len(TEXT) < (N + 2) * DEPTH + 100000:
     TEXT += "\n\n" + TEXT
-H = {"Content-Type": "application/json", "Authorization": f"Bearer {KEY}"}
 
 
 def metrics():
-    r = urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{PORT}/metrics", headers=H), timeout=30).read().decode()
+    r = urllib.request.urlopen(harness.request("/metrics"), timeout=30).read().decode()
     out = {}
     for line in r.splitlines():
         if (line.startswith("vllm:kv_offload") or line.startswith("vllm:prefix_cache") or line.startswith("vllm:external_prefix_cache")) and "_bucket" not in line and "_created" not in line:
@@ -51,10 +53,10 @@ def metrics():
 
 
 def ask(label, prompt, max_tokens=32):
-    body = json.dumps({"model": "qwen3.8-27b", "messages": [{"role": "user", "content": prompt}],
-                       "max_tokens": max_tokens, "temperature": 0, "stream": True, "stream_options": {"include_usage": True}})
+    req = harness.request("/v1/chat/completions", {"model": "qwen3.8-27b", "messages": [{"role": "user", "content": prompt}],
+                          "max_tokens": max_tokens, "temperature": 0, "stream": True, "stream_options": {"include_usage": True}})
     t0 = time.time()
-    resp = urllib.request.urlopen(urllib.request.Request(f"http://127.0.0.1:{PORT}/v1/chat/completions", data=body.encode(), headers=H), timeout=None)
+    resp = urllib.request.urlopen(req, timeout=None)
     first = None
     usage = None
     for raw in resp:

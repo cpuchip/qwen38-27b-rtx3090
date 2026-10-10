@@ -88,7 +88,8 @@ import sys
 import time
 import urllib.request
 
-KEY = open(os.path.expanduser("~/qwen-serving/api_key.txt")).read().strip()
+import harness
+
 CORPUS = os.path.expanduser("~/bench/labd_corpus.txt")
 TARGETS = os.path.expanduser("~/bench/targets")
 TAG = sys.argv[1] if len(sys.argv) > 1 else "run"
@@ -102,7 +103,8 @@ def flag(name):
     return name in sys.argv
 
 
-BASE = arg("--base", "http://127.0.0.1:18020")
+if flag("--base"):
+    os.environ["VLLM_API"] = arg("--base", "")
 MODEL = arg("--model", "qwen3.8-27b")
 CTX = int(arg("--ctx", 20000))
 MAXTOK = int(arg("--max-tokens", 512))
@@ -116,20 +118,11 @@ PER_POS = "vllm:spec_decode_num_accepted_tokens_per_pos_total"
 POS_RE = re.compile(r'position="(\d+)"')
 
 
-def post(path, payload, stream=False, timeout=1800):
-    req = urllib.request.Request(BASE + path, data=json.dumps(payload).encode(),
-                                 headers={"Content-Type": "application/json",
-                                          "Authorization": "Bearer " + KEY})
-    r = urllib.request.urlopen(req, timeout=timeout)
-    return r if stream else json.loads(r.read().decode())
-
-
 def metrics():
     """(drafts, draft_slots, accepted, {position: accepted}) summed over engines."""
-    req = urllib.request.Request(BASE + "/metrics", headers={"Authorization": "Bearer " + KEY})
     scal = {k: 0.0 for k in SCALARS}
     pos = {}
-    for line in urllib.request.urlopen(req).read().decode().splitlines():
+    for line in urllib.request.urlopen(harness.request("/metrics")).read().decode().splitlines():
         if not line or line[0] == "#":
             continue
         # "name{labels} value" or "name value"; prometheus_client also emits _created lines,
@@ -147,9 +140,9 @@ def metrics():
 
 def tokenize_chat(content):
     """The prompt token ids /v1/chat/completions would build for this message."""
-    r = post("/tokenize", {"model": MODEL, "messages": [{"role": "user", "content": content}],
-                           "add_generation_prompt": True,
-                           "chat_template_kwargs": {"enable_thinking": False}}, timeout=600)
+    r = harness.post("/tokenize", {"model": MODEL, "messages": [{"role": "user", "content": content}],
+                                   "add_generation_prompt": True,
+                                   "chat_template_kwargs": {"enable_thinking": False}}, timeout=600)
     return r["tokens"], r["max_model_len"]
 
 
@@ -170,7 +163,7 @@ def generate(prompt_ids, max_tokens):
                "stream": True, "stream_options": {"include_usage": True}}
     toks, usage, t_first = [], {}, None
     t0 = time.time()
-    with post("/v1/completions", payload, stream=True) as r:
+    with urllib.request.urlopen(harness.request("/v1/completions", payload), timeout=1800) as r:
         for raw in r:
             line = raw.decode().strip()
             if not line.startswith("data: "):

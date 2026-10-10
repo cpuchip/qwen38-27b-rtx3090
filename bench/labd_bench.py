@@ -25,8 +25,8 @@ import sys
 import time
 import urllib.request
 
-KEY = open(os.path.expanduser("~/qwen-serving/api_key.txt")).read().strip()
-BASE = "http://127.0.0.1:18020"
+import harness
+
 TAG = sys.argv[1] if len(sys.argv) > 1 else "run"
 
 
@@ -40,9 +40,8 @@ MAXTOK = int(arg("--max-tokens", 512))
 
 
 def metrics():
-    req = urllib.request.Request(BASE + "/metrics", headers={"Authorization": "Bearer " + KEY})
     d = {}
-    for line in urllib.request.urlopen(req).read().decode().splitlines():
+    for line in urllib.request.urlopen(harness.request("/metrics")).read().decode().splitlines():
         for k in ("vllm:spec_decode_num_drafts_total", "vllm:spec_decode_num_accepted_tokens_total"):
             if line.startswith(k + " ") or line.startswith(k + "{"):
                 d[k] = float(line.split()[-1])
@@ -85,10 +84,7 @@ for warm in (64, 64):
                              "\n\nGengiv ordret de første 10 linjer af dokumentet."}],
                "max_tokens": warm, "temperature": 0,
                "chat_template_kwargs": {"enable_thinking": False}}
-    req = urllib.request.Request(BASE + "/v1/chat/completions", data=json.dumps(payload).encode(),
-                                 headers={"Content-Type": "application/json",
-                                          "Authorization": "Bearer " + KEY})
-    urllib.request.urlopen(req, timeout=900).read()
+    harness.post("/v1/chat/completions", payload, timeout=900)
 
 tot = {"steps": 0.0, "acc": 0.0, "out": 0.0, "dec": 0.0}
 rows = []
@@ -98,9 +94,7 @@ for name, q in TASKS:
                "max_tokens": MAXTOK, "temperature": 0, "stream": True,
                "stream_options": {"include_usage": True},
                "chat_template_kwargs": {"enable_thinking": False}}
-    req = urllib.request.Request(BASE + "/v1/chat/completions", data=json.dumps(payload).encode(),
-                                 headers={"Content-Type": "application/json",
-                                          "Authorization": "Bearer " + KEY})
+    req = harness.request("/v1/chat/completions", payload)
     d0, a0 = metrics()
     t0 = time.time()
     t_first = None

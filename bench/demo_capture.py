@@ -25,8 +25,8 @@ import sys
 import time
 import urllib.request
 
-KEY = open(os.path.expanduser("~/qwen-serving/api_key.txt")).read().strip()
-BASE = os.environ.get("DEMO_BASE", "http://127.0.0.1:18020")
+import harness
+
 LANE = sys.argv[1] if len(sys.argv) > 1 else "lane"
 OUT = os.path.expanduser(
     sys.argv[sys.argv.index("--out") + 1] if "--out" in sys.argv else "~/bench/demo")
@@ -60,10 +60,7 @@ def run(key, label, content, max_tokens=None):
                "chat_template_kwargs": {"enable_thinking": False}}
     if max_tokens:
         payload["max_tokens"] = max_tokens
-    req = urllib.request.Request(BASE + "/v1/chat/completions",
-                                 data=json.dumps(payload).encode(),
-                                 headers={"Content-Type": "application/json",
-                                          "Authorization": "Bearer " + KEY})
+    req = harness.request("/v1/chat/completions", payload)
     t0 = time.time()
     first = None
     toks = []          # (ms since first token, text)

@@ -47,25 +47,15 @@ reproduce here: 105 / 98 / 86 tok/s at N=1/2/3, SPEC=mtp k=3 PREFIX_CACHE=1) and
 extended for issue #25 (dflash2 reported to collapse from N=2 up on 4-8 independent
 long streams).
 """
-import json, os, sys, time, urllib.request, threading, re
+import json, sys, time, urllib.request, threading, re
 
-HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(HERE)
-PORT = os.environ.get("PORT", "18020")
-API = f"http://127.0.0.1:{PORT}"
-
-
-def _key(path):  # a key is optional; keyless servers ignore the header
-    try:
-        return open(path).read().strip()
-    except OSError:
-        return ""
+import harness
 
 
 def _arg(flag, default, cast=int):
     return cast(sys.argv[sys.argv.index(flag) + 1]) if flag in sys.argv else default
 
 
-KEY = os.environ.get("VLLM_API_KEY") or _key(os.path.join(REPO, "api_key.txt"))
 MAXN = _arg("--max-n", 8)
 # --n 1,2,4,8 runs those stream counts only. Long prompts make the full ladder mostly
 # prefill, and the interesting N are the powers of two.
@@ -112,8 +102,7 @@ def _short(name):
 
 
 def metrics():
-    req = urllib.request.Request(API + "/metrics", headers={"Authorization": f"Bearer {KEY}"})
-    txt = urllib.request.urlopen(req, timeout=20).read().decode()
+    txt = urllib.request.urlopen(harness.request("/metrics"), timeout=20).read().decode()
     out = {}
     for name in COUNTERS + GAUGES:
         m = re.findall(rf"^{re.escape(name)}\{{[^}}]*}} ([0-9.e+-]+)$", txt, re.M)
@@ -122,16 +111,13 @@ def metrics():
 
 
 def stream(i, salt, res, first_tok):
-    body = json.dumps({
+    req = harness.request("/v1/chat/completions", {
         "model": "qwen3.8-27b",
         "messages": [{"role": "user", "content": make_prompt(i, salt)}],
         "max_tokens": NOUT, "temperature": 0.0, "stream": True,
         "stream_options": {"include_usage": True},
         "chat_template_kwargs": {"enable_thinking": False},
-    }).encode()
-    req = urllib.request.Request(API + "/v1/chat/completions", data=body,
-                                 headers={"Authorization": f"Bearer {KEY}",
-                                          "Content-Type": "application/json"})
+    })
     t0 = time.perf_counter(); first = None; last = None; ntok = 0
     with urllib.request.urlopen(req, timeout=3600) as r:
         for raw in r:
