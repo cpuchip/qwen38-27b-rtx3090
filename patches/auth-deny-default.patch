@@ -40,10 +40,10 @@ Upstream: vllm #59892
 Cut-against: 0.30.0
 Retires-when: upstream PR
 
---- exported from ff2ccf845 (auth-deny-default); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from 2404e8b156 (auth-deny-default); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/entrypoints/launchers/cli_args.py b/entrypoints/launchers/cli_args.py
-index 89af22cdc..d21c7e6ed 100644
+index 89af22cdc8..d21c7e6ed5 100644
 --- a/entrypoints/launchers/cli_args.py
 +++ b/entrypoints/launchers/cli_args.py
 @@ -298,13 +298,13 @@
@@ -67,10 +67,15 @@ index 89af22cdc..d21c7e6ed 100644
      """The file path to the SSL key file."""
      ssl_certfile: str | None = None
 diff --git a/entrypoints/serve/middleware/authenticate.py b/entrypoints/serve/middleware/authenticate.py
-index e8a61b21e..5f3c2af30 100644
+index e8a61b21ee..7c04269f35 100644
 --- a/entrypoints/serve/middleware/authenticate.py
 +++ b/entrypoints/serve/middleware/authenticate.py
-@@ -8,7 +8,29 @@
+@@ -4,11 +4,34 @@
+ import secrets
+ from collections.abc import Awaitable
+ 
++from starlette._utils import get_route_path
+ from starlette.datastructures import Headers
  from starlette.responses import JSONResponse
  from starlette.types import ASGIApp, Receive, Scope, Send
  
@@ -101,7 +106,7 @@ index e8a61b21e..5f3c2af30 100644
  
  
  class AuthenticationMiddleware:
-@@ -19,8 +41,10 @@
+@@ -19,8 +42,10 @@
      Notes
      -----
      There are two cases in which authentication is skipped:
@@ -114,7 +119,7 @@ index e8a61b21e..5f3c2af30 100644
      """
  
      def __init__(self, app: ASGIApp, tokens: list[str]) -> None:
-@@ -45,18 +69,22 @@
+@@ -45,18 +70,23 @@
          return token_match
  
      def __call__(self, scope: Scope, receive: Receive, send: Send) -> Awaitable[None]:
@@ -126,8 +131,11 @@ index e8a61b21e..5f3c2af30 100644
              # scope["type"] can be "lifespan" or "startup" for example,
              # in which case we don't need to do anything
              return self.app(scope, receive, send)
-         root_path = scope.get("root_path", "")
-         url_path = scope["path"].removeprefix(root_path)
+-        root_path = scope.get("root_path", "")
+-        url_path = scope["path"].removeprefix(root_path)
++        # The path the router matches: removeprefix("/") would turn /health
++        # into "health" under --root-path /.
++        url_path = get_route_path(scope)
 +        # This middleware runs ahead of the router, so a path that differs from
 +        # an allowlisted one only by a trailing slash never reaches FastAPI's
 +        # redirect_slashes: match on the normalized path, or a liveness probe
