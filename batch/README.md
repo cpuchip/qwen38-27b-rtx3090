@@ -199,6 +199,7 @@ All overridable as env vars, defaults in the script:
 | `MAX_SEQS` | 64 | scheduler slots; with fp16 state ~70 short requests fit the page pool |
 | `MAX_LEN` | 150000 | max context. Raising it much past this fails startup, the pool can't hold a longer request |
 | `TOOLS` | 1 | tool/function calling (`--enable-auto-tool-choice --tool-call-parser`). `TOOL_PARSER` (`qwen3_coder`) must match the XML call format this model's chat template emits — `hermes` parses the JSON a Qwen model does *not* produce here, and fails silently. 0 = off, and `tool_choice: "auto"` then 400s |
+| `TOOL_STRICT` | parameter | vLLM 0.31's `--tool-strict-level`. `parameter` holds every tool call to the tool's argument schema, as 0.30 did; upstream's default `auto` does so only for tools that send `strict: true`, so a forced call to a tool with no parameters invented arguments (20 of 20 seeds) where 0.30 sent `{}`. `auto` restores upstream's default |
 | `PORT` | 18020 | |
 | `PRINT_ARGV` | 0 | 1 = print the `vllm serve` argv, one argument per line, and exit 0 instead of starting the server. Every profile check, default and warning runs first, so it is a dry run that needs no GPU |
 | `GPU_UTIL` | 0.94 | do not raise: on 0.31, 0.95 runs out of memory when 64 new prompts land in one step (the launcher comment has the measurement); 0.972, the 0.28 default, OOMs in warmup on vLLM 0.29 (#182; the ladder is in `docs/vllm-0.29.md`). Use 0.93 when you want `prompt_logprobs` (quality checks) |
