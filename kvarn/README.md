@@ -31,7 +31,7 @@ What's in it:
 - `install.sh` — copies the modules into the venv's `site-packages/vllm` (found by asking the venv's python, so any Python version)
   and applies the four patches at `--fuzz 0` (safe to re-run; a rejected hunk stops it).
   Like the `patches/` files, each one is the source and is written by `scripts/export-patch.sh` from a commit that
-  sits after the whole `patches/` series, so they are never edited by hand.
+  sits after the whole `patches/` series, so their hunks are never edited by hand.
 
 Port notes, for whoever bumps vLLM next:
 

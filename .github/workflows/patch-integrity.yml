@@ -55,6 +55,8 @@ jobs:
         run: |
           python scripts/patches_md.py
           git diff --exit-code PATCHES.md || { echo "::error::PATCHES.md is not current: run python3 scripts/patches_md.py and commit the result"; exit 1; }
+      - name: Check that a re-export keeps the file's preamble
+        run: bash scripts/test_export_patch.sh
 
   git-apply:
     runs-on: ubuntu-latest

@@ -12,7 +12,8 @@ them in the order of `patches/series` onto the installed vLLM wheel; `verify.sh`
 Cut against: the pin the current hunks were generated on. The files are the source. Each contributor keeps the topics as commits (subject `[qwen38] <topic>`) in any vLLM 0.30.0 checkout, and `scripts/export-patch.sh` turns a commit into a file whose `--- exported from` line names that commit, so the series applies to the 0.30.0 tree with exact context; `patches/apply.sh` (which the Dockerfile and the install pages call),
 `patches/check_vllm_series.sh`, `kvarn/install.sh` and `verify.sh` apply and check with `--fuzz 0`, and a hunk whose context has moved fails the
 build by name instead of landing by guess. Regenerate a file with `bash scripts/export-patch.sh <vllm checkout>
-<commit> patches/<topic>.patch`; do not edit the files by hand. A patch that reads an env knob registers it in
+<commit> patches/<topic>.patch`; never edit the hunks by hand. The preamble above the marker is edited in the file, and
+a re-export keeps it (a new file takes the commit body). A patch that reads an env knob registers it in
 `envs.py` in its own hunk (so the knob is in the torch.compile cache key), and reads it through `vllm.envs`.
 
 The table. Each file ends its preamble with its row as headers: `Kind:`, `What:`, `Upstream:`, `Cut-against:` and
