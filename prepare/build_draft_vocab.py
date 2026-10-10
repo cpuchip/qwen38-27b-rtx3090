@@ -33,6 +33,7 @@ import torch
 from safetensors import safe_open
 
 from atomic_publish import backup_once, publish, save_tensors, write_json
+from quant_schema import index_packed
 
 d = sys.argv[1].rstrip("/") + "/"
 N = int(sys.argv[sys.argv.index("--n") + 1]) if "--n" in sys.argv else 40960
@@ -145,7 +146,6 @@ save_tensors(tensors, d + extra, meta or {"format": "pt"})
 torch.save(ids_t, d + "mtp_draft_vocab_ids.pt.tmp")
 publish(d + "mtp_draft_vocab_ids.pt.tmp", d + "mtp_draft_vocab_ids.pt")
 # The index is the commit point, so it goes last.
-for s in ("weight_packed", "weight_scale", "weight_shape"):
-    wm[f"mtp.draft_lm_head.{s}"] = extra
+index_packed(wm, "mtp.draft_lm_head", extra)
 write_json(d + "model.safetensors.index.json", idx)
 print("done")

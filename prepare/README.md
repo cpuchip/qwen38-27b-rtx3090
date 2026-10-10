@@ -18,7 +18,7 @@ therefore has to already be in **compressed-tensors `pack-quantized`** form.
 | the base W4A16 quant they were written for — `quant_method: "compressed-tensors"`, `ignore`, `config_groups.group_0` | run them, as below |
 | a checkpoint **already prepared** for HyperQwen (int8 heads + drafter) | none of `prepare/` — download it and start the server |
 | a **native AutoRound export** — `quant_method: "auto-round"`, `bits`/`group_size`/`sym`/`data_type` | not usable as it ships. It has no `group_0` and no `ignore` list to extend, so it has to be **converted** to compressed-tensors first; neither these scripts nor vLLM do that |
-| **single-shard or asymmetric AWQ** bodies | `quant_heads_stream.py`, see [A different checkpoint](#a-different-checkpoint) |
+| a **single-shard** export too big to read into RAM | `quant_heads_stream.py`, see [A different checkpoint](#a-different-checkpoint) |
 
 The directory name is not a guide either way: the base checkpoint these scripts were
 written for is itself a compressed-tensors re-export that keeps `-AutoRound` in its name.
@@ -56,12 +56,13 @@ list, and `--corpus` counts your own instead. It needs
 ## A different checkpoint
 
 `quant_heads_stream.py` does the work of `quant_lm_head.py` + `quant_embed.py` +
-`quant_mtp.py` in one pass, for checkpoints those three cannot open: **single-shard**
-ones (they read a shard into RAM whole; the uncensored build ships one 18.6 GB
-`model.safetensors`) and **asymmetric AWQ** bodies (they clone `config_groups.group_0`
-onto the symmetric tensors they write, so vLLM then looks for a `weight_zero_point`
-that does not exist). Same math, same output tensors, peak RSS well under the shard
-size (9.7 GB measured on the 18.6 GB example here -- still not a low-RAM tool).
+`quant_mtp.py` in one pass, for **single-shard** checkpoints those three cannot open
+(they read a shard into RAM whole; the uncensored build ships one 18.6 GB
+`model.safetensors`). Same math, same output tensors and config groups (all four use
+`prepare/quant_schema.py`), peak RSS well under the shard size (9.7 GB measured on the
+18.6 GB example here -- still not a low-RAM tool). An asymmetric AWQ body is fine for
+all four: the groups they add always declare the symmetric, zero-point-free tensors
+they write.
 
 ```bash
 $V prepare/fetch_thirdparty.py                          # ~18.6 GB (or: fetch_thirdparty.py <hf-repo>)
