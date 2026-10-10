@@ -1431,3 +1431,21 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     `CTX=long` k=3, still below the full head's 80.6 there. The truncated head's
     win in the `CTX=fast` k=4 ladder has not been re-measured at `CTX=long`.
     DFlash2 does not use this list.
+
+    The list's per-script shortfall is measurable rather than described:
+    `prepare/build_draft_vocab.py <model> --ids prepare/draft_vocab_ids.json --stats`
+    prints it against your own checkpoint's tokenizer. On this one the 40,960 ids
+    hold 3 of 55,328 Han, 2 of 5,476 kana, 4 of 6,807 Hangul, 1 of 18,580 Cyrillic
+    -- 10 of 67,842 CJK rows, 0.0%. Those are row counts; #196's 5.4-8.0% is
+    token-weighted over running text, so it is the higher bound of the same gap.
+
+    A third option, beside the full head and a rebuild from scratch, is
+    `--add-scripts`: it writes a *variant* list -- the base ids unchanged and in
+    order, whole-UTF-8 rows of the named scripts appended, ranked by your corpus
+    and capped at `--script-budget` rows (default 16,384). The cap is the point: a
+    head row is 2,560 B on this checkpoint, so a complete CJK union is +168.8 MB
+    against +41.9 MB for the cap, and 2.6x the shipped head against 1.4x. At
+    16,384 rows over a small Chinese sample, Han coverage goes 0.0% -> 28.7%.
+    The shipped list and the default head are untouched; a variant is a second
+    run with `--ids`. Numbers and caveats: gotcha 61 above, and the
+    syv-ai/HyperQwen#196 thread.
