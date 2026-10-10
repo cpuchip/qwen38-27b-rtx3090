@@ -116,7 +116,7 @@ if [ -f "$SP/v1/attention/backends/kvarn_attn.py" ]; then
   if patch -p1 -R --dry-run -s --fuzz 0 -d "$SP" < kvarn/kvarn-0.31.0.patch >/dev/null 2>&1; then
     $PY -c "from vllm.v1.attention.backends.registry import AttentionBackendEnum; AttentionBackendEnum.KVARN.get_class()" 2>/dev/null && ok "KVarN backend importable, patch applied (KV=kvarn / CTX=huge available)" || fail "KVarN files present but backend does not import"
   else fail "KVarN modules present but kvarn-0.31.0.patch not applied (bash kvarn/install.sh)"; fi
-  # Exact, like the kvarn-0.30.0 check above: each KVarN patch reverses cleanly on its own in a fully
+  # Exact, like the kvarn-0.31.0 check above: each KVarN patch reverses cleanly on its own in a fully
   # installed tree. The content check (_check_applied.py) passes a tree that misses one hunk in a file
   # whose other hunks carry most of the added lines, so it is not used here.
   if patch -p1 -R --dry-run -s --fuzz 0 -d "$SP" < kvarn/kvarn-v2-runner-0.31.0.patch >/dev/null 2>&1; then
