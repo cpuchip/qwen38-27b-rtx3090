@@ -113,24 +113,36 @@ $PY -c "import vllm.envs as e, sys; sys.exit(0 if 'VLLM_MARLIN_INT8_INCLUDE_RE' 
 
 echo "== KVarN (optional, kvarn/)"
 if [ -f "$SP/v1/attention/backends/kvarn_attn.py" ]; then
-  if patch -p1 -R --dry-run -s --fuzz 0 -d "$SP" < kvarn/kvarn-0.30.0.patch >/dev/null 2>&1; then
-    $PY -c "from vllm.v1.attention.backends.registry import AttentionBackendEnum; AttentionBackendEnum.KVARN.get_class()" 2>/dev/null && ok "KVarN backend importable, patch applied (KV=kvarn / CTX=huge available)" || fail "KVarN files present but backend does not import"
-  else fail "KVarN modules present but kvarn-0.30.0.patch not applied (bash kvarn/install.sh)"; fi
-  # Exact, like the kvarn-0.30.0 check above: each KVarN patch reverses cleanly on its own in a fully
-  # installed tree. The content check (_check_applied.py) passes a tree that misses one hunk in a file
-  # whose other hunks carry most of the added lines, so it is not used here.
-  if patch -p1 -R --dry-run -s --fuzz 0 -d "$SP" < kvarn/kvarn-v2-runner-0.30.0.patch >/dev/null 2>&1; then
-    ok "kvarn-v2-runner-0.30.0.patch applied (SPEC=dflash2 + CTX=huge available)"
-  else warn "kvarn-v2-runner-0.30.0.patch not applied, or partly applied (re-run bash kvarn/install.sh for DFlash2 at 240k)"; fi
-  if patch -p1 -R --dry-run -s --fuzz 0 -d "$SP" < kvarn/kvarn-recycled-pages-0.30.0.patch >/dev/null 2>&1 \
-      && grep -q "def note_scheduled_blocks" "$SP/v1/attention/backends/kvarn_attn.py"; then
-    ok "kvarn-recycled-pages-0.30.0.patch applied (no late KVarN flush into mamba state, #208)"
-  else warn "kvarn-recycled-pages-0.30.0.patch not applied, or partly applied: CTX=huge + PREFIX_CACHE=1 can print \"!!!!\" (#208; bash kvarn/install.sh)"; fi
-  # The KVarN modules read KVARN_FP16_DEQUANT through vllm.envs: without this hunk every KVarN
-  # decode raises AttributeError, so it is a failure, not a warning.
-  if patch -p1 -R --dry-run -s --fuzz 0 -d "$SP" < kvarn/kvarn-fp16-dequant-0.30.0.patch >/dev/null 2>&1; then
-    ok "kvarn-fp16-dequant-0.30.0.patch applied (KVARN_FP16_DEQUANT registered in envs.py)"
-  else fail "kvarn-fp16-dequant-0.30.0.patch not applied: the KVarN modules read KVARN_FP16_DEQUANT through vllm.envs (bash kvarn/install.sh)"; fi
+  mapfile -t KVARN < <(bash patches/apply.sh --list --kvarn 2>/dev/null)
+  if LIST_ERR=$(bash patches/apply.sh --list --kvarn 2>&1 >/dev/null); then
+    ok "the KVARN list in patches/apply.sh names all ${#KVARN[@]} kvarn/ patches"
+  else
+    fail "the KVARN list in patches/apply.sh and kvarn/ disagree (a patch not in the list is never applied):"
+    printf '%s\n' "$LIST_ERR" | sed '1d'
+  fi
+  # Exact: each KVarN patch reverses cleanly on its own in a fully installed tree. The content
+  # check (_check_applied.py) passes a tree that misses one hunk in a file whose other hunks carry
+  # most of the added lines, so it is not used here. A patch with no arm below FAILs when missing.
+  for name in "${KVARN[@]}"; do
+    case "$name" in
+      kvarn-v2-runner-*) sev=warn why="SPEC=dflash2 + CTX=huge available"
+        miss="re-run bash kvarn/install.sh for DFlash2 at 240k" ;;
+      kvarn-recycled-pages-*) sev=warn why="no late KVarN flush into mamba state, #208"
+        miss='CTX=huge + PREFIX_CACHE=1 can print "!!!!" (#208; bash kvarn/install.sh)' ;;
+      # The KVarN modules read KVARN_FP16_DEQUANT through vllm.envs: without this hunk every
+      # KVarN decode raises AttributeError, so it is a failure, not a warning.
+      kvarn-fp16-dequant-*) sev=fail why="KVARN_FP16_DEQUANT registered in envs.py"
+        miss="the KVarN modules read KVARN_FP16_DEQUANT through vllm.envs (bash kvarn/install.sh)" ;;
+      *) sev=fail why="" miss="bash kvarn/install.sh" ;;
+    esac
+    if patch -p1 -R --dry-run -s --fuzz 0 -d "$SP" < "kvarn/$name" >/dev/null 2>&1; then ok "$name applied${why:+ ($why)}"
+    else $sev "$name not applied, or partly applied: $miss"; fi
+  done
+  # #208's fix is also in the overlay kvarn_attn.py (kvarn/files), which no patch carries.
+  grep -q "def note_scheduled_blocks" "$SP/v1/attention/backends/kvarn_attn.py" \
+    || warn "kvarn_attn.py predates #208: CTX=huge + PREFIX_CACHE=1 can print \"!!!!\" (bash kvarn/install.sh)"
+  $PY -c "from vllm.v1.attention.backends.registry import AttentionBackendEnum; AttentionBackendEnum.KVARN.get_class()" 2>/dev/null \
+    && ok "KVarN backend importable (KV=kvarn / CTX=huge available)" || fail "KVarN files present but backend does not import"
 else warn "KVarN not installed (optional; bash kvarn/install.sh for 262k context)"; fi
 
 if [ $INSTALL = 0 ]; then
