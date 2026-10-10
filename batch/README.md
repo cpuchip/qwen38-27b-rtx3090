@@ -201,7 +201,7 @@ All overridable as env vars, defaults in the script:
 | `TOOLS` | 1 | tool/function calling (`--enable-auto-tool-choice --tool-call-parser`). `TOOL_PARSER` (`qwen3_coder`) must match the XML call format this model's chat template emits — `hermes` parses the JSON a Qwen model does *not* produce here, and fails silently. 0 = off, and `tool_choice: "auto"` then 400s |
 | `PORT` | 18020 | |
 | `PRINT_ARGV` | 0 | 1 = print the `vllm serve` argv, one argument per line, and exit 0 instead of starting the server. Every profile check, default and warning runs first, so it is a dry run that needs no GPU |
-| `GPU_UTIL` | 0.95 | do not raise: 0.972, the 0.28 default, OOMs in warmup on vLLM 0.29 (#182; the ladder is in `docs/vllm-0.29.md`). Use 0.93 when you want `prompt_logprobs` (quality checks) |
+| `GPU_UTIL` | 0.94 | do not raise: on 0.31, 0.95 runs out of memory when 64 new prompts land in one step (the launcher comment has the measurement); 0.972, the 0.28 default, OOMs in warmup on vLLM 0.29 (#182; the ladder is in `docs/vllm-0.29.md`). Use 0.93 when you want `prompt_logprobs` (quality checks) |
 
 ## Verify you're getting the numbers
 
