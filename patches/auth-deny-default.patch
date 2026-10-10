@@ -37,17 +37,16 @@ What: --api-key guards every path except /health, /ping, /load and /version (den
   Access-Control-Request-Method) skips the token; a bare OPTIONS needs it, because /metrics answers
   any method. The --api-key help text describes the allowlist
 Upstream: vllm #59892
-Cut-against: 0.30.0: cut against 0.29.0 and applies as cut (authenticate.py is unchanged; the
-  cli_args.py help-text hunk lands at an offset)
+Cut-against: 0.31.0: docstring adjacency only
 Retires-when: upstream PR
 
---- exported from ff2ccf845 (auth-deny-default); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from e4c0e1ad1 (auth-deny-default); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/entrypoints/launchers/cli_args.py b/entrypoints/launchers/cli_args.py
-index 89af22cdc..d21c7e6ed 100644
+index ce6692565..850f824d9 100644
 --- a/entrypoints/launchers/cli_args.py
 +++ b/entrypoints/launchers/cli_args.py
-@@ -298,13 +298,13 @@
+@@ -318,13 +318,13 @@
      """If provided, the server will require one of these keys to be presented in
      the header.
  
@@ -68,7 +67,7 @@ index 89af22cdc..d21c7e6ed 100644
      """The file path to the SSL key file."""
      ssl_certfile: str | None = None
 diff --git a/entrypoints/serve/middleware/authenticate.py b/entrypoints/serve/middleware/authenticate.py
-index e8a61b21e..5f3c2af30 100644
+index 0a0c1daee..94a17b8c9 100644
 --- a/entrypoints/serve/middleware/authenticate.py
 +++ b/entrypoints/serve/middleware/authenticate.py
 @@ -8,7 +8,29 @@
@@ -102,7 +101,7 @@ index e8a61b21e..5f3c2af30 100644
  
  
  class AuthenticationMiddleware:
-@@ -19,8 +41,10 @@
+@@ -18,8 +40,10 @@
      Notes
      -----
      There are two cases in which authentication is skipped:
@@ -112,9 +111,9 @@ index e8a61b21e..5f3c2af30 100644
 +           and an Access-Control-Request-Method header.
 +        2. The request path, ignoring a trailing slash, is one of
 +           UNGUARDED_PATHS (e.g. /health).
+ 
      """
  
-     def __init__(self, app: ASGIApp, tokens: list[str]) -> None:
 @@ -45,18 +69,22 @@
          return token_match
  
