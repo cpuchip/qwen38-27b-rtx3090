@@ -5,9 +5,9 @@ is not in ignored_factors). Default off ("0"); "1" runs the dequant math of the
 three fused KVarN decode kernels in fp16. The kernels and the drivers that read
 the knob are in kvarn/files (the kvarn-modules commit on this branch).
 
-Applied after kvarn-0.30.0, kvarn-v2-runner-0.30.0 and
-kvarn-recycled-pages-0.30.0. Both hunks sit at the ends of the TYPE_CHECKING block
-and of environment_variables, away from kvarn-0.30.0's KVARN_* block, so every
+Applied after the kvarn, kvarn-v2-runner and kvarn-recycled-pages patches.
+Both hunks sit at the ends of the TYPE_CHECKING block and of
+environment_variables, away from the kvarn patch's KVARN_* block, so every
 KVarN patch still reverse-applies on its own in a fully installed tree (the
 idempotence check patches/apply.sh --kvarn and verify.sh rely on).
 
