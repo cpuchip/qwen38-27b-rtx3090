@@ -104,7 +104,7 @@ for name in "${SERIES[@]}"; do
   if patch -p1 -R --dry-run -s --fuzz 0 -d "$SP" < "$p" >/dev/null 2>&1; then ok "$name applied"
   elif $PY patches/_check_applied.py "$p" "$SP" 2>/dev/null; then ok "$name applied (content check; hunks overlap another patch)"
   elif s=$(superseded_by "$name"); then ok "$name applied (superseded by $s, which is applied)"
-  elif patch -p1 -N --dry-run -s --fuzz 0 -d "$SP" < "$p" >/dev/null 2>&1; then fail "$name NOT applied (patch -p1 -d $SP < $p)"
+  elif patch -p1 -N --dry-run -s --fuzz 0 -d "$SP" < "$p" >/dev/null 2>&1; then fail "$name NOT applied (patch -p1 --fuzz 0 -d $SP < $p)"
   else fail "$name neither applied nor applicable — vLLM version mismatch?"; fi
 done
 # Behavioural, not textual: the name must be in the live registry, so a comment or docstring cannot satisfy it
