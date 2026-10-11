@@ -40,7 +40,7 @@ headers in the patch file (the files are the source) and run the script.
 | marlin-repack-staged-sm80 | local | one grow-only staging buffer for the sm80 Marlin repack (fork #27), opt-in with `VLLM_MARLIN_REPACK_STAGED=1` | none | 0.31.0 | stays |
 | offload-dflash-eagle-groups | fix | OffloadingConnector under dflash flagged every KV group as draft attention (fork #33) | none yet | 0.31.0 | upstream PR |
 | dflash2-ngram-chains | feature | quantized candidate chains for the drafter; `propose` override | none | 0.31.0: follows CandidateSampler's members; the context-parallel arguments as in #261 (the CP size now read from dcp_size, #56723), and prepare_context_anchor after the hidden-states copy (#57934) | upstreamed |
-| offload-wsl2-devptr | local | CPU offload tier device pointers on WSL2 | none | 0.31.0: keeps upstream #51081's chunked cudaHostRegister; the device-pointer translation queries every chunk and refuses to start if they map at different offsets | stays |
+| offload-wsl2-devptr | local | CPU offload tier device pointers on WSL2 | none | 0.31.0: keeps upstream #51081's chunked cudaHostRegister; under WSL2 the device-pointer translation queries every chunk and refuses to start if they map at different offsets. Native Linux makes no query and uses the host address, as upstream does | stays |
 | spec-decode-int4-kv-mq3d | feature | multi-query 3D int4 verify path | none | 0.31.0 | rides with int4-kv-per-token-head |
 | dflash2-prewarm | fix | compile every DFlash2 rung at boot instead of at first request | none yet | 0.31.0 | upstream PR |
 | marlin-tune-table | local | wiring for a locally built tunable Marlin extension, off by default | none | 0.31.0 | stays |

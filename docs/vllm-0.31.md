@@ -33,7 +33,8 @@ Re-implemented, because upstream rewrote the code under them:
   now read from `dcp_size` (#56723), and calls `prepare_context_anchor` after the hidden-states copy, which #57934 needs.
 - `offload-wsl2-devptr`: upstream #51081 registers host memory in 64 GiB chunks. The chunking is kept; the device-pointer
   translation now queries every chunk and refuses to start if they map at different offsets, which can only happen
-  under WSL2 above 64 GiB.
+  under WSL2 above 64 GiB. Since 2026-10-11 the query runs only under WSL2: native Linux uses the host address, as
+  upstream does, because the query raised under upstream's test that mocks the registration.
 
 Re-cut where upstream lines moved beside ours: `spec-sampler-prewarm` (#57428's renamed GEMM warmup),
 `speed-knobs-envs`, `engine-completion-log`, `auth-deny-default` (a docstring), `pinned-kv-empty-cache` (#58411's
