@@ -14,7 +14,7 @@ transformers below 5.18 and pins `xgrammar==0.2.7`; `docker/requirements.txt`'s 
 
 ## Patch series
 
-All 53 files (49 in the series, 4 KVarN) are re-exported from a vLLM branch that carries the series as one commit per
+All 54 files (50 in the series, 4 KVarN) are re-exported from a vLLM branch that carries the series as one commit per
 topic on v0.31.0. Each keeps its preamble and table headers unchanged except `Cut-against`. They apply to v0.31.0 at
 `--fuzz 0`, 10 hunks in 8 patches at an offset, and the series plus the KVarN files and patches reproduce that branch's
 `vllm/` tree with 0 differing files. Nothing retires: `sampler-warmup-cuda`'s #58092 is in 0.31.0 but still gated to
@@ -140,9 +140,17 @@ long conversations in flight, one's prefill fills the tier while the other is st
 chunk 0 of every group from the request that has not finished, and each turn-2 lookup, which starts at chunk 0, finds
 nothing. 0.30.0 evicts one Mamba group's chunks tail-first and keeps every head (eviction logs on both pins, 3090, 8 GiB
 tier). It takes eviction to show: with a 16 GiB tier, 0.31.0 on the 3090 reuses 96.3% for both and reads 1.08 GB back.
-So until upstream changes it, size the tier above what the conversations hold. `KV_OFFLOAD_GB=N` (#298) sets the same flag, so the same sizing applies to it. At 8 GB on `alternative.sh` a tier does
-worse than none on 0.31.0: beside a tier the launcher picks dense retention for the tier to serve from, so the two
-conversations get 0 and 0, where without one its default (retention 0) keeps 93.5% for both (above).
+The series carries upstream PR #61050 for it as `vllm-pr61050-lru-running-prefix`: each running request gets one
+provisional LRU rank, and its chunks rank tail before head across store batches, so an eviction before the request
+finishes takes its tail. On the native 3090 at 8 GiB the same two conversations then reuse 50,880 and 49,184 tokens
+(85.2% and 82.1%) and read 1.90 GB back, and none of the 120 evicted chunks is a chunk 0 (one boot). A re-rank of the
+request's whole prefix after each store batch gave the same counts to the token and the same victims. The rest of the gap to 0.30.0's 96.3% is
+those evicted tail chunks, attention groups included, where 0.30.0 shed one Mamba group's states inside the hit, which
+a lookup does not need; ordering those first needs each group's window, which only the scheduler knows, so it is left
+for upstream. A tier larger than what it holds still keeps everything, and `KV_OFFLOAD_GB=N` (#298) sets the same
+flag, so the same sizing applies to it. At 8 GB on `alternative.sh` a tier still reuses less than none: beside a tier
+the launcher picks dense retention for the tier to serve from, where without one its default (retention 0) keeps 93.5%
+for both (above).
 
 ## What is still unproven
 
@@ -170,3 +178,6 @@ conversations get 0 and 0, where without one its default (retention 0) keeps 93.
 - `kvarn-v2-runner`'s `has_prefill` guard kept for this port; dropping it is its own change.
 - `offload-wsl2-devptr` refuses to start when 64 GiB host chunks map at different device offsets, rather than
   translating per chunk.
+- The tier fix is upstream's open PR #61050 rather than a fix of our own, so it retires when that lands; its order is
+  tail-first per request rather than group-aware, which the CPU manager cannot see. A tier larger than what it holds
+  still keeps everything.

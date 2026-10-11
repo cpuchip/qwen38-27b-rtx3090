@@ -1476,3 +1476,8 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     cannot see the quota. Leave room for anything else in `/dev/shm`:
     `--mm-processor-cache-type shm` puts the multimodal processor cache there
     too.
+    On vLLM 0.31 the size also matters after boot: a tier that fills while a
+    long request is still running loses chunks its next lookup needs
+    (upstream #51787; the series' `vllm-pr61050-lru-running-prefix` keeps the
+    first chunks, `docs/vllm-0.31.md` has the numbers), so size it above
+    what it holds.
