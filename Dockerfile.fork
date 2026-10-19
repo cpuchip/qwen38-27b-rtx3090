@@ -23,9 +23,17 @@ COPY docker/requirements.txt docker/requirements.txt
 # The release wheel and its dependency set, exactly as the patch route installs them.
 RUN venv/bin/pip install -r docker/requirements.txt
 
+# The optional op libraries, built against the release wheel exactly as Dockerfile builds them, ahead of the
+# fork layer so a pin move does not recompile them: pth-flash-attn (pthfa/, PTH_FA=1) and the fp8-KV FA2 port
+# (fa2/, FA2_FP8KV=1; git, already installed above, fetches CUTLASS into a /tmp the same layer removes).
+COPY pthfa/ pthfa/
+RUN PY=venv/bin/python bash pthfa/install.sh
+COPY fa2/ fa2/
+RUN FA2_CACHE=/tmp/fa2-cache bash fa2/install.sh && rm -rf /tmp/fa2-cache
+
 # The fork: pinned by commit, built as a wheel over the release wheel's compiled parts.
 ARG VLLM_FORK_REPO=https://github.com/cpuchip/vllm
-ARG VLLM_FORK_COMMIT=0d5de9aaeef564706e60093742868ed659f100c9
+ARG VLLM_FORK_COMMIT=0ac3e6a607e66d4725b1c879109c597f3d689ec7
 ARG VLLM_VERSION=0.31.0
 RUN set -e; \
     venv/bin/pip install "setuptools>=77" setuptools_scm setuptools-rust wheel; \
