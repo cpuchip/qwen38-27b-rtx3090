@@ -17,7 +17,8 @@ The container image is the same stack, frozen: Python 3.12 venv, vLLM 0.31.0 pin
 (torch 2.13 / cu130 / Triton 3.7.1), every compatible patch in `patches/` applied
 (`dflash2-backport.patch` is retired because DFlash2 is native since v0.28.0), and
 `verify.sh --install` run at build time, KVarN preinstalled (its 0.31 port is
-described in [vllm-0.31.md](vllm-0.31.md)). Host prerequisites:
+described in [vllm-0.31.md](vllm-0.31.md)), and the pth-flash-attn op library built
+for sm80/86/89 (`pthfa/`, used only with `PTH_FA=1`). Host prerequisites:
 an NVIDIA driver that speaks CUDA 13 (≥ 580), Docker with the
 [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html)
 configured as a runtime. The 250 W power limit is a host setting
@@ -107,6 +108,9 @@ difference is gotcha 16 below.
 - The image carries an nvcc (CUDA "base" + `cuda-nvcc`, not the 8 GB "devel"
   image) because FlashInfer JIT-compiles its fp8-KV attention kernel on first
   use (batch mode, `CTX=long`) and Triton needs a C compiler for its launchers.
+- The image also compiles `fa2/` (`fa2/install.sh`, optional, used by `FA2_FP8KV=1`) against its own torch
+  with that nvcc: two libraries of a few MB each, built before `COPY . .` so an edit elsewhere does not
+  recompile them. Unset `FA2_FP8KV`, the plugin it installs registers nothing.
 - On WSL2 the batch default may fail vLLM's free-memory gate; put
   `GPU_UTIL=0.93` in `.env` (see the WSL2 notes below, an independent
   containerized reproduction that predates this compose file).

@@ -401,8 +401,9 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     Two conditions, and it took two people to see both. The **hit** is necessary:
     a fresh server, one request, no warm-up, never collapses at any length
     ([#13](https://github.com/syv-ai/HyperQwen/pull/13), mjungnickel18) —
-    which is also why `PREFIX_CACHE=0` always looked clean. The **residue** decides
-    whether a hit corrupts, and it is a clean function of the draft count:
+    which is also why `PREFIX_CACHE=0` always looked clean on vLLM 0.27.1, where it meant
+    no caching, as it does again at HEAD. The **residue** decides whether a hit
+    corrupts, and it is a clean function of the draft count:
 
     | config | k | verify block L=k+1 | attention block | broken R | free slots 128-R |
     |---|---|---|---|---|---|
@@ -433,18 +434,24 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     not implicated and the shared multi-query verify against a partially-hit
     prefix is.
 
-    Mitigation, as it stands at HEAD: `CTX=huge` forces `cudagraph_mode=PIECEWISE`
-    for `SPEC=mtp`, which is clean at every residue and costs nothing measurable —
-    `SPEC=mtp` over 8k/16k/32k/50k is 87.8/86.1/70.4/63.5 tok/s captured against
-    93.5/83.8/70.3/59.6 piecewise. This repo previously scoped that workaround to
-    `dflash2` on the theory that MTP's short verify step captures correctly; it
-    does not, and `SPEC=mtp CTX=huge` shipped with the bug.
+    Mitigation, as it stands at HEAD: `CTX=huge PREFIX_CACHE=1` forces
+    `cudagraph_mode=PIECEWISE` for `SPEC=mtp`, which is clean at every residue and
+    costs nothing measurable — `SPEC=mtp` over 8k/16k/32k/50k is 87.8/86.1/70.4/63.5
+    tok/s captured against 93.5/83.8/70.3/59.6 piecewise. This repo previously scoped
+    that workaround to `dflash2` on the theory that MTP's short verify step captures
+    correctly; it does not, and `SPEC=mtp CTX=huge` shipped with the bug. Unset
+    `PREFIX_CACHE` means 1, so unset gets the pin too. A sweep of all 128 residues at
+    an 86% prefix-cache hit rate on vLLM 0.31 found 0 broken (2026-10-17), but it
+    measured the path unset ran before the launcher passed the flag both ways (vLLM's
+    default `FULL_AND_PIECEWISE` and caching, without the launcher's safeguards). It
+    does not lift the pin on `PREFIX_CACHE=1`. The pinned path itself, `CTX=huge
+    SPEC=mtp` with `PREFIX_CACHE` unset at HEAD, swept 0 of 128 broken on 0.31 too.
 
     `dflash2` has since got FULL capture back (`a75ee4b` fixed its residue, and
     `b356e31` swept **all 128** residues under FULL with 0 broken), so the two
-    speculators are no longer on the same default. `mtp` keeps PIECEWISE as a
-    correctness constraint until residue 4 comes back verbatim under a full sweep,
-    not until a particular symptom stops appearing.
+    speculators are no longer on the same default. `mtp` with `PREFIX_CACHE=1` keeps
+    PIECEWISE as a correctness constraint until residue 4 comes back verbatim under a
+    full sweep of that path, not until a particular symptom stops appearing.
 
     A third trap, learned the hard way on `DFLASH_TOKENS=15`: `bench/bugb_sweep.py`
     used to report the RAW prompt length, not the chat-templated one the engine
@@ -792,7 +799,7 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     prefix caching + chunked prefill at 28-34k context; cause unattributed
     between flashinfer's workspace and the async-scheduling window as of this
     entry. If you hit it, the flashinfer-free fallback is the int8 tier:
-    `SPEC=dflash2 CTX=long` ships it by default, and for `SPEC=mtp` it is
+    `SPEC=dflash2 CTX=long` ships it with `FA2_FP8KV=0` (its default is now the fa2/ fp8 arm), and for `SPEC=mtp` it is
     `VLLM_SPEC_DECODE_ATTN=1 EXTRA_ARGS="--attention-backend=TRITON_ATTN
     --kv-cache-dtype=int8_per_token_head"`. Measured cost on the reference
     box: 17.9k in + 256 out takes 23.7 s against fp8/FlashInfer's 18.9
@@ -1007,8 +1014,8 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     inference` lines, for `_k_stats_kernel`, `_k_quant_kernel` and
     `_prefill_attn_kernel`. Same class of gap, different kernels, not yet
     prewarmed.
-46. **`prompt_logprobs` is wrong on `CTX=huge` + `SPEC=mtp` + prefix caching, and
-    the NaN 400s are only its visible half.** Reported as
+46. **`prompt_logprobs` was wrong on `CTX=huge` + `SPEC=mtp` + prefix caching up to vLLM
+    0.28, and the NaN 400s were only its visible half.** Reported as
     [#64](https://github.com/syv-ai/HyperQwen/issues/64) from a WSL2
     3090 — `bench/quality_battery.py --ppl-only` failing with
     `{"message":"Out of range float values are not JSON compliant: nan"}` on
@@ -1028,7 +1035,8 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
 
     So the inflated perplexity and the NaN are one bug, not two: in the broken
     combination the logprobs that come back are ~23% worse on English than the
-    same server produces with prefix caching off, and the requests whose
+    same server produces with `PREFIX_CACHE=0` (measured on vLLM 0.27.1, where that
+    meant no prefix caching), and the requests whose
     corruption reaches a non-finite float are the ones that 400. Every clean
     configuration agrees to four decimals, which is also what makes the broken
     one unmistakable.
@@ -1045,10 +1053,14 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     `MAX_LEN` is not involved: 240000 and the 245760 default both fail and both
     pass depending on the rest.
 
-    Practical rule until the read path is fixed: measure perplexity or anything
-    else using `prompt_logprobs` on KVarN with `PREFIX_CACHE=0`, or on a
-    non-MTP speculator. Ordinary generation is not implicated — needle
-    retrieval and decode rates are normal on the same server.
+    Fixed by the vLLM 0.29 pin (`858c3b7`, #64 closed 2026-09-23): clean on 0.29
+    on two machines, still corrupt on 0.28 on both, and the mechanism was never
+    identified. On 0.31 (a 3090, 332-336k-token pool, 2026-10-17) the `--ppl-only`
+    battery read 10.76 on English with caching off, with `PREFIX_CACHE` unset and
+    with `PREFIX_CACHE=1`, three runs each. If it comes back on a later pin, compare
+    against caching off, which is `PREFIX_CACHE=0` again. Ordinary generation was
+    never implicated — needle retrieval and decode rates were normal on the same
+    server.
 47. **`DFLASH_TOKENS=15` asserted at engine start on the int4 path, because the
     drafter's promoted block only has to *cover* the primary page, not divide
     it.** Filed as
@@ -1481,3 +1493,59 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     (upstream #51787; the series' `vllm-pr61050-lru-running-prefix` keeps the
     first chunks, `docs/vllm-0.31.md` has the numbers), so size it above
     what it holds.
+63. **`PTH_FA=1` is two arms and one cache, and an explicit `CUSTOM` it cannot serve fails at load,
+    not quietly.** The pth-flash-attn backend (`pthfa/`, `docs/long-context.md`) serves exactly
+    `--kv-cache-dtype int8_per_token_head` on compute capability 8.0, 8.6 and 8.9 (A100/A30/CMP
+    170HX, RTX 30xx, RTX 40xx), head sizes 64, 128 and 256, decoder self-attention without ALiBi,
+    attention sinks, a logits soft cap, a bidirectional multimodal prefix or R-SWA, and no DCP/PCP.
+    Causal attention is served at all three head sizes; a sliding window and non-causal attention
+    only at head size 128, the shape of the DFlash2 drafter's five layers (window 2048, non-causal,
+    8 query tokens per request; the windowed kernels exist for D = 128 only). The library carries
+    SASS for those three archs and no PTX, so an sm90 or sm120 card is refused rather than
+    JIT-compiled into something nobody measured. Outside the list, an explicit
+    `--attention-backend CUSTOM` stops at model load with `pth_flash_attn does not support: <what>`,
+    and a sliding window or non-causal layer at head size 64 or 256 is refused at backend selection
+    with `... at head size <D> (the windowed kernels exist for D = 128 only)`
+    (`pthfa/tests/gate_test.py` checks each reason); nothing in vLLM selects `CUSTOM` on its own, so
+    an arm that does not ask for it cannot reach it. That is why the knob is gated to
+    `SPEC=mtp CTX=long` and `SPEC=dflash2 CTX=long`, and why its default is narrower still: an unset
+    `PTH_FA` resolves to 1 only on `SPEC=dflash2 CTX=long`, on a compute capability 8.6 GPU (the only
+    one measured), with the package installed and the measured setup (no explicit `FA2_FP8KV`, KV offload
+    tier or connector, backend flags in `EXTRA_ARGS`, `DRAFT`, `DRAFT_METHOD`, `DFLASH_TOKENS`, `LOOKUP=0`,
+    `DYNAMIC_K` or `VISION=1`); anything else keeps the arm's own default without a word, a missing install
+    says so once, and `PTH_FA=0` opts out. The effective-config line says `PTH_FA=1 (default; ...)` or
+    `(explicit; ...)`. On both arms the target and the drafter run
+    `CUSTOM`: a drafter takes its backend from the speculative config, so the knob writes
+    `"attention_backend":"CUSTOM"` there as well as `--attention-backend CUSTOM`. It writes no
+    `kv_cache_dtype` into the speculative config, so the drafter's cache keeps the target's
+    `int8_per_token_head` (vLLM 0.31.0 overrides the drafter's dtype only when that key is set).
+    The other arms are not measured. Refused rather than combined, all untested here: a KV
+    offload tier (`KV_OFFLOAD_GB`); `--attention-backend`, `--kv-cache-dtype` or
+    `--speculative-config` in `EXTRA_ARGS`, which would silently override what the knob sets (the
+    speculative config is where the drafter's `"attention_backend":"CUSTOM"` lives, and dropping it
+    puts the drafter on another backend); an explicit `FA2_FP8KV=1` with an explicit `PTH_FA=1`, the
+    other knob that picks the dflash2 backend (an unset one, which defaults to 1 on that arm on a compute
+    capability 8.6 GPU, is overridden: `PTH_FA=1`, set or defaulted, keeps it at 0, and the effective-config
+    line reads `FA2_FP8KV=0 (PTH_FA=1 overrides the 8.6 default)`); and on dflash2 any drafting setup but
+    the measured one: `DRAFT_METHOD` other than
+    `dflash` (a different drafter), `DFLASH_TOKENS` other than 7 (a different verify block on the
+    target, adaptive in length above 7), `LOOKUP=0` and `DYNAMIC_K` (a draft count per batch size,
+    which varies the verify block). `VISION=1` on dflash2 is accepted but
+    untested: it adds the vision tower, which does not run on this backend, and leaves the target's
+    attention as it is (on mtp the measured shape has `VISION=1`). There are no tuning knobs: the
+    library reads no environment variables, and its launch shape comes from a planner that is a pure
+    function of the batch descriptor and, for a windowed layer, its window. The numbers so far are
+    from one box, two RTX 3080 20 GB at TP=2, on vLLM 0.30.0 and 0.31.0; on any other card they are
+    still owed (`docs/long-context.md` says which).
+64. **On vLLM 0.31.0 at `GPU_UTIL=0.94`, `prompt_logprobs=10` on a 32k prompt kills the engine with a
+    CUDA OOM, whatever the attention backend.** The V2 runner computes prompt logprobs in chunks of
+    1024 tokens and all-gathers each chunk's logits over the full vocabulary
+    (`v1/worker/gpu/sample/prompt_logprob.py`): 486 MiB wanted with 208 MiB free, `torch.OutOfMemoryError`,
+    HTTP 500, engine dead. Seen on two RTX 3080 20 GB at TP=2 with the `SPEC=mtp CTX=long` production
+    shape (`PREFIX_CACHE=1 VISION=1 MAX_SEQS=2 MAX_LEN=262144`), on `PTH_FA=1`, on `TRITON_ATTN` int8 and
+    on a FlashAttention bf16-KV reference alike, on fresh boots, so it is the engine plus the 0.94 sizing,
+    not this branch or a kernel; the same requests ran on 0.30.0 at the same setting. `GPU_UTIL=0.90`
+    served them on all three, with every KV pool still above 128k tokens. Known class upstream: vllm
+    #5424 and #5907 (prompt_logprobs memory spike; leave headroom). Ordinary generation is not affected;
+    a client that asks for prompt logprobs (perplexity scoring, `bench/quality_battery.py`'s PPL half)
+    needs the headroom.

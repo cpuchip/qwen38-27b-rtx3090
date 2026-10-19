@@ -93,6 +93,13 @@ all — batch ignores `SPEC` and says so on startup. Every knob, and what each c
 [single-user/README.md](single-user/README.md#if-you-are-the-only-user-do-this) ·
 [batch/README.md](batch/README.md).
 
+`SPEC=dflash2 CTX=long` runs on fp8 KV with the FlashAttention-2 plugin in `fa2/` by default (`FA2_FP8KV=1`) on an RTX 3090-class
+GPU (compute capability 8.6); on any other GPU the default stays on int8 + Triton with a note, and `FA2_FP8KV=1` opts in on a 4090;
+`FA2_FP8KV=0` restores the int8 + Triton arm. Native installs need `bash fa2/install.sh` once, and the launcher refuses
+to start without it rather than fall back (the Docker image has it). `KV_OFFLOAD_GB` turns the default off with a note;
+an explicit `FA2_FP8KV=1` refuses it, and refuses any other `SPEC`/`CTX`. The evidence is the T4 battery on the native
+3090 ([#153](https://github.com/syv-ai/HyperQwen/issues/153)): on 2026-10-18 (bare metal, 250 W, vLLM 0.31.0) the fp8 + FA2 arm passed every bar against the shipped int8 + Triton arm: GSM8K 0.950 vs 0.955 (n=200), perplexity +0.04%, 0 of 128 residues broken, a 20-minute soak with no restart, decode 54.0 vs 48.2 tok/s at ~66k and 48.2 vs 37.9 tok/s at ~100k (+27%), cold TTFT 75.5 vs 132.3 s and 54.7 vs 130.5 s, and a 3.3% larger pool (140,902 vs 136,429 tokens).
+
 ### The numbers behind that
 
 | | **batch** → [batch/](batch/) | **single** → [single-user/](single-user/) |
@@ -225,7 +232,7 @@ Everything that used to be in this README, in the folder it belongs to.
 | [docs/optimizations.md](docs/optimizations.md) | Every optimization in full: why it was needed, what it measured, which patch implements it — including what each step buys in tokens per second, the two speculative-decoding modes, and the lookup drafter. |
 | [docs/benchmarks.md](docs/benchmarks.md) | The comparison against ninfer-3090, and quality per configuration. |
 | [docs/quality.md](docs/quality.md) | IFBench, perplexity and GSM8K per configuration. |
-| [docs/long-context.md](docs/long-context.md) | 262k context with the KVarN 4/2-bit KV cache, `CTX=huge` with DFlash2 at 240k, vLLM's own per-token-head KV modes, and the experimental int4 route. |
+| [docs/long-context.md](docs/long-context.md) | 262k context with the KVarN 4/2-bit KV cache, `CTX=huge` with DFlash2 at 240k, vLLM's own per-token-head KV modes, the int8 KV route on the pth-flash-attn kernel (`PTH_FA=1`, `SPEC=mtp` or `SPEC=dflash2` at `CTX=long`), and the experimental int4 route. |
 | [docs/reproductions/](docs/reproductions/README.md) | Other people's hardware running this stack, reports and full write-ups. |
 | [docs/gotchas.md](docs/gotchas.md) | Things that each cost us hours — read before debugging something that looks like a vLLM bug. |
 
@@ -238,6 +245,7 @@ Everything that used to be in this README, in the folder it belongs to.
 | [prepare/](prepare/) | The one-time model-preparation scripts (also `docker compose run --rm prepare`). |
 | [drafter/](drafter/) | How the draft vocabulary, the int4 drafters and the DFlash2 requantization were built — including what did not work. |
 | [kvarn/](kvarn/) | The KVarN 4/2-bit KV cache port. |
+| [fa2/](fa2/) | The fp8-KV FlashAttention-2 source port (optional; `bash fa2/install.sh` builds it, `FA2_FP8KV=1` selects it). |
 
 ## License
 

@@ -9,6 +9,8 @@ them in the order of `patches/series` onto the installed vLLM wheel; `verify.sh`
 - **local**: this hardware or environment (WSL2, sm80, a tuned build, env knobs). Stays.
 - **own**: a fix to a feature this repo introduced. Rides with that feature.
 
+`fa2/` carries a diff against another repository (the fp8-KV FA2 kernel against vllm-project/flash-attention at the commit vLLM pins), so it is not in `patches/` or this table. `fa2/README.md` has its provenance, and the `fa2-upstream` job in `patch-integrity.yml` checks it against that commit.
+
 Cut against: the pin the current hunks were generated on. The files are the source. Each contributor keeps the topics as commits (subject `[qwen38] <topic>`) in any vLLM 0.30.0 checkout, and `scripts/export-patch.sh` turns a commit into a file whose `--- exported from` line names that commit, so the series applies to the 0.30.0 tree with exact context; `patches/apply.sh` (which the Dockerfile and the install pages call),
 `patches/check_vllm_series.sh`, `kvarn/install.sh` and `verify.sh` apply and check with `--fuzz 0`, and a hunk whose context has moved fails the
 build by name instead of landing by guess. Regenerate a file with `bash scripts/export-patch.sh <vllm checkout>
@@ -73,11 +75,17 @@ headers in the patch file (the files are the source) and run the script.
 | qwen3_5-embed-uva | feature | `VLLM_EMBED_UVA=1` keeps the quantized token embedding (main model and MTP module) in pinned host RAM behind a CUDA UVA view, freeing about 1.25 GiB of VRAM for the KV pool (+15.7% tokens on a 3090) at no measured decode or prefill cost, for about 2.1 GiB of host RAM; default off | none | 0.31.0 | stays while the knob exists |
 | vllm-pr40371-prompt-progress | feature | opt-in return_progress on streaming chat/completions; SSE chunks carry prompt_progress (total/cache/processed/time_ms) while the prompt prefills | vllm #40371 (open) | 0.31.0 | the pin that carries #40371 |
 | vllm-pr61050-lru-running-prefix | fix | the CPU KV tier keeps a running request's head chunks; an eviction before the request finishes takes its tail first | vllm #61050 (open); the regression is from vllm #51787 | 0.31.0 | the pin that carries #61050 |
+| kv-cache-seat-budget | feature | one INFO line after "GPU KV cache size": resident requests at ~1k, 32k and max_model_len, from each device group's admission cap at that length and the pool's usable blocks | none; vllm #54840 (open) logs a per-group block budget at the same point | 0.31.0 | upstream logs residency by context length |
 | kvarn/kvarn-0.31.0 | feature | KVarN cache dtypes, quant mode, backend registration, page size | none (KVarN is Huawei CSL's, Apache-2.0) | 0.31.0 | upstreamed |
 | kvarn/kvarn-v2-runner-0.31.0 | own | KVarN with the V2 runner and DFlash2 (SW groups, Mamba block index, selector guards) | none | 0.31.0: attention.py keeps upstream's kv_cache_spec beside our divisor_of; the has_prefill decode-graph guard kept beside #58400 (docs/vllm-0.31.md) | rides with KVarN |
 | kvarn/kvarn-recycled-pages-0.31.0 | own | both runners hand KVarN each step's block ids, so it drops (never flushes) what it still holds for a page another KV-cache group has taken: a late flush of a finished request's last block, or of an evicted retired sink, into another request's mamba state was the "!!!!" output (#208); the KVarN half is in `kvarn/files` | none | 0.31.0 | rides with KVarN |
 | kvarn/kvarn-fp16-dequant-0.31.0 | own | registers `KVARN_FP16_DEQUANT` (#240's fp16 dequant in the fused KVarN decode kernels, default off) in `envs.py`, so `kvarn/files` reads it through `vllm.envs` and it is in the torch.compile cache key | none | 0.31.0: adjacency with upstream's VLLM_SKIP_VERSION_SUFFIX in envs.py | rides with KVarN |
 <!-- table:end -->
+
+`pthfa/` is not in the table because it is not a patch: it is the source of a separate extension, the pth-flash-attn
+int8 per-token-head attention backend (`PTH_FA=1`, `docs/long-context.md`), which `pthfa/install.sh` builds and installs
+into the venv beside vLLM as a plugin. No vLLM file changes, so the series and `patches/check_vllm_series.sh` are the
+same with or without it. `pthfa/PIN` names the commit it is vendored from; `pthfa/check_vendor.sh` checks the files.
 
 Retired at 0.30.0 and removed from the tree: `offload-mtp-serve` (vllm #52771, #52807 and #54288, all in 0.30.0) and `mamba-align-retire-null-gaps` (vllm #55450, in 0.30.0).
 

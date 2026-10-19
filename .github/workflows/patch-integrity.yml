@@ -29,12 +29,30 @@ jobs:
         run: python bench/verbatim.py
       - name: Check the bench harness (resolve_api_key.sh's key, the URL, streams and /metrics) without a GPU
         run: python bench/test_harness.py
+      - name: Check conc_ladder --salt repeats its prompts and reports a prefix-cache hit without a GPU
+        run: python bench/test_conc_ladder_salt.py
       - name: Check a launcher with no API key binds 127.0.0.1
         run: bash bench/test_no_key_bind.sh
+      - name: Check PREFIX_CACHE sets the engine's prefix caching (unset/1 on, 0 off) and its safeguards follow
+        run: bash bench/test_prefix_cache_knob.sh
       - name: Check KV_OFFLOAD_GB becomes one --kv-offloading-size in every launcher
         run: bash bench/test_kv_offload_knob.sh
+      - name: Check DYNAMIC_K reaches --speculative-config in single-user/start_qwen.sh, and its refusals
+        run: bash bench/test_dynamic_k_knob.sh
+      - name: Check the launchers read -tp=N, any whitespace and _ in --flag names the way vLLM does
+        run: bash bench/test_tp_size.sh
       - name: Check each launcher refuses a boolean knob that is neither 0 nor 1 (#310)
         run: bash bench/test_bool_knobs.sh
+      - name: Check the dflash2 seat note against the measured pools and resident counts
+        run: bash bench/test_resident_print.sh
+      - name: Check FA2_FP8KV selects fp8 on FLASH_ATTN only on SPEC=dflash2 CTX=long and refuses the rest
+        run: bash bench/test_fa2_fp8kv_knob.sh
+      - name: Check the T4 battery's plan, restart gate and verdict without a GPU
+        run: python bench/test_t4_battery.py
+      - name: Check PTH_FA in the launchers (argv, refusals, unset = unchanged) without a GPU
+        run: bash bench/test_pthfa_knob.sh
+      - name: Check pthfa/install.sh builds with an nvcc of torch's CUDA major and checks with a cuobjdump not older
+        run: bash bench/test_pthfa_install_toolchain.sh
 
   kvarn-torch-gate:
     runs-on: ubuntu-latest
@@ -65,6 +83,39 @@ jobs:
           git diff --exit-code PATCHES.md || { echo "::error::PATCHES.md is not current: run python3 scripts/patches_md.py and commit the result"; exit 1; }
       - name: Check that a re-export keeps the file's preamble
         run: bash scripts/test_export_patch.sh
+      - name: Check the vendored pth-flash-attn sources in pthfa/ against pthfa/SHA256SUMS
+        run: bash pthfa/check_vendor.sh
+
+  fa2-upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check docker/requirements.txt pins the vLLM version fa2/PIN names
+        run: |
+          . fa2/PIN
+          pinned=$(grep -E '^vllm==' docker/requirements.txt | cut -d= -f3)
+          [ "$pinned" = "$VLLM_VERSION" ] || { echo "::error::docker/requirements.txt pins vllm==$pinned but fa2/PIN says VLLM_VERSION=$VLLM_VERSION: re-run fa2/check_upstream.py against the new vLLM's flash-attention commit and update fa2/PIN"; exit 1; }
+      # fa2/ is checked against the flash-attention commit vLLM builds with, so a vLLM bump that moves
+      # that pin fails here instead of leaving the kernel sources checked against a stale commit.
+      - name: Check the pinned vLLM tag builds flash-attention at fa2/PIN's FA_COMMIT
+        run: |
+          . fa2/PIN
+          curl -fsSL "https://raw.githubusercontent.com/vllm-project/vllm/v$VLLM_VERSION/cmake/external_projects/vllm_flash_attn.cmake" -o "$RUNNER_TEMP/vllm_flash_attn.cmake"
+          tags=$(sed -n 's/^ *GIT_TAG  *\([0-9a-f]\{40\}\) *$/\1/p' "$RUNNER_TEMP/vllm_flash_attn.cmake")
+          [ "$(echo "$tags" | wc -l)" = 1 ] && [ -n "$tags" ] || { echo "::error::vllm v$VLLM_VERSION's vllm_flash_attn.cmake no longer has exactly one 40-hex GIT_TAG line: read the pin by hand and update this step"; exit 1; }
+          [ "$tags" = "$FA_COMMIT" ] || { echo "::error::vllm v$VLLM_VERSION pins flash-attention $tags but fa2/PIN has FA_COMMIT=$FA_COMMIT: re-run fa2/check_upstream.py against $tags and update fa2/PIN"; exit 1; }
+      - name: Fetch flash-attention at FA_COMMIT
+        run: |
+          . fa2/PIN
+          git init -q "$RUNNER_TEMP/fa"
+          git -C "$RUNNER_TEMP/fa" remote add origin "$FA_REPO"
+          git -C "$RUNNER_TEMP/fa" fetch -q --depth=1 origin "$FA_COMMIT"
+          git -C "$RUNNER_TEMP/fa" checkout -q --detach FETCH_HEAD
+      - name: Check fa2/ against flash-attention at FA_COMMIT (patch applies, 18 files byte for byte)
+        run: python fa2/check_upstream.py --fa-dir "$RUNNER_TEMP/fa"
 
   git-apply:
     runs-on: ubuntu-latest
