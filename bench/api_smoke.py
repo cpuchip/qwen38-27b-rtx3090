@@ -71,9 +71,9 @@ def t_completions_echo_logprobs():
     return len(lp["tokens"]) > 4 and lp["token_logprobs"][0] is None, lp["tokens"][:6]
 def t_long_ctx_greedy():
     doc = ("Danmark er et land i Nordeuropa. " * 40 + "\n") * 60   # ~20k tokens
-    t0 = time.time()
+    t0 = time.perf_counter()
     r = chat(doc + "\nHvor mange gange står ordet Nordeuropa i teksten ovenfor, cirka? Svar kort.", temperature=0, max_tokens=32)
-    return r["usage"]["prompt_tokens"] > 12000, f"prompt={r['usage']['prompt_tokens']} tok, {time.time()-t0:.1f}s, {r['choices'][0]['message']['content'][:50]!r}"
+    return r["usage"]["prompt_tokens"] > 12000, f"prompt={r['usage']['prompt_tokens']} tok, {time.perf_counter()-t0:.1f}s, {r['choices'][0]['message']['content'][:50]!r}"
 def t_thinking_budget():
     # vLLM 0.30's model runner enforces thinking_token_budget (v1/worker/gpu/sample/thinking_budget.py),
     # so the old expectation of a 400 is gone. A control without the budget shows the cap binds.

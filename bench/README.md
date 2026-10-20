@@ -5,6 +5,10 @@ says how to run it. This page says which scripts are tests, what each one needs,
 its exit code means. CI runs the ones that `.github/workflows/patch-integrity.yml` and the
 `Dockerfile` name.
 
+Under Docker Desktop (WSL2) the VM's clock can run fast against the host's, by 8.3% on one
+RTX 3090, and can change rate partway through a run. Durations timed there read long by up to
+that much, so compare A/B arms that ran interleaved in one sitting rather than absolute numbers.
+
 ## Exit codes
 
 | exit | meaning |
@@ -67,6 +71,7 @@ none, and the `.sh` scripts ask `/v1/models`. The `.sh` measurements take `PORT`
 | `test_harness.py` | test | CPU, bash | 0 or 1 | `harness.py` against a stub server. Its key chain is checked against `resolve_api_key.sh`. |
 | `test_kv_cache_seat_budget.py` | test | image | 0 or 1 | The KV cache seat budget line (`kv-cache-seat-budget.patch`) against five measured boots, with vLLM's own spec classes. |
 | `test_kvarn_recycled_pages.py` | test | image | 0 or 1 | KVarN's recycled-page drop (#208). |
+| `test_labd_bench_clock.py` | test | CPU | 0 or 1 | `labd_bench.py` against a stub server, with the wall clock stepped back: TTFT and decode rate as the stub served them. |
 | `test_lookup_kernels.py` | kernel test | GPU | 0 or 1 | The LABD kernels against a Python reference. |
 | `test_marlin_int8_asym.py` | kernel test | GPU | 0 or 1 | Marlin W4A8-INT8 with zero points against W4A16. |
 | `test_model_verification.py` | test | CPU | 0 or 1 | Model verification and selection. Cuts a heredoc out of `verify.sh`. |

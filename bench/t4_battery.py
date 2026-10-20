@@ -461,14 +461,14 @@ def run_boot(a, boot, res, out):
                 proc = subprocess.Popen(["bash", "single-user/start_qwen.sh"], cwd=REPO, env=penv, start_new_session=True,
                                         stdout=open(log, "w"), stderr=subprocess.STDOUT)
                 target = Target(proc.pid, None, log)
-                t0 = time.time()
+                t0 = time.perf_counter()
                 while not healthy():
-                    if proc.poll() is not None or time.time() - t0 > a.boot_timeout:
+                    if proc.poll() is not None or time.perf_counter() - t0 > a.boot_timeout:
                         skip = ["boot failed: " + ("server exited %s" % proc.poll() if proc.poll() is not None
                                                    else "no /health in %ds" % a.boot_timeout)]
                         break
                     time.sleep(2)
-                info["boot_s"] = round(time.time() - t0)
+                info["boot_s"] = round(time.perf_counter() - t0)
                 info["log"] = log
     try:
         if not skip:
@@ -485,11 +485,11 @@ def run_boot(a, boot, res, out):
                 continue
             print(f"[{arm}/{name}] {c['name']}: {' '.join(c['argv'])}", flush=True)
             before, x0, mark = target.snapshot(), kernel_xids(), len(target.log_text())
-            t0 = time.time()
+            t0 = time.perf_counter()
             rc, text = run_cmd(c["argv"], os.environ, f"{d}/{c['name']}.log", c["timeout"])
             after, x1 = target.snapshot(), kernel_xids()
             m = PARSERS[c["name"]](text)
-            r.update(rc=rc, secs=round(time.time() - t0), metrics=m, before=before, after=after,
+            r.update(rc=rc, secs=round(time.perf_counter() - t0), metrics=m, before=before, after=after,
                      xid_new=None if x0 is None or x1 is None else [ln for ln in x1 if ln not in x0])
             r["status"], r["reasons"] = judge(c["name"], rc, m)
             r["gate_reasons"] = restart_gate(base, after, target.log_text()[mark:])

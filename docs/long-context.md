@@ -228,7 +228,8 @@ flashinfer-free escape from #34 is `int8_per_token_head` on `TRITON_ATTN`, which
 `PTH_FA=1` keeps the int8 cache and reads it with [pth-flash-attn](../pthfa/README.md) instead: a CUDA
 kernel that consumes the int8 bytes and their inline scales directly, registered through vLLM's plugin
 slot as the backend `CUSTOM`. It is built into the image (`pthfa/install.sh`, SASS for sm80/86/89) and
-selected only by this knob; no vLLM file changes, so `patches/` is the same with or without it.
+selected only by this knob (set, or its default on an 8.6 GPU below); no vLLM file changes, so `patches/`
+is the same with or without it.
 
 ```bash
 SPEC=mtp CTX=long PTH_FA=1 bash single-user/start_qwen.sh
@@ -251,6 +252,17 @@ the `FLASH_ATTN` and `TRITON_ATTN` impls read it (`patches/spec-decode-attn.patc
 `SPEC`/`CTX`, `--attention-backend`, `--kv-cache-dtype` or `--speculative-config` in `EXTRA_ARGS`, a KV
 offload tier (untested on this backend), a venv without the package, `FA2_FP8KV=1` alongside it. Limits
 are gotcha 63.
+
+**Default on an 8.6 GPU.** An unset or empty `PTH_FA` resolves to 1 on this arm, as on
+`SPEC=dflash2 CTX=long`, when `nvidia-smi` reports compute capability 8.6, the package is installed, and
+the launch is the measured one: no explicit `FA2_FP8KV`, no KV offload tier or connector, none of the three
+flags above in `EXTRA_ARGS`, no `DYNAMIC_K`, no `VISION=1` and `DRAFT_TOKENS` unset or 3. Then the argv is
+that of `PTH_FA=1` and the effective-config line says `PTH_FA=1 (default; ...)`; otherwise fp8 on
+FlashInfer runs as before, with one line if the package is missing. `PTH_FA=0` opts out. On a native
+RTX 3090 (TP=1, 250 W, vLLM 0.31.0, one boot per arm), against fp8 on FlashInfer: decode at ~66k 84.5
+against 77.5 tok/s (+9%), cold TTFT at ~66k 75.4 against 75.1 s, GSM8K n=200 0.955 against 0.960, KV pool
+198,241 against 202,040 tokens, `bench/test_pthfa_attn.py` 37/37 on the card. The other rows here are from
+two RTX 3080 at TP=2.
 
 **Measured on two RTX 3080 20 GB (sm86) at TP=2, the PR author's box, not on the reference 3090.**
 Linux in a Proxmox LXC container, driver 615.71.09, PCIe without P2P (`NCCL_P2P_DISABLE=1`,
@@ -309,9 +321,10 @@ with prefix caching, needles at 128k and 250k are retrieved 9/9, a 3 h soak pass
 teacher-forced logprobs at 32k and 128k sit closer to a bf16-KV reference than the `TRITON_ATTN` arm's
 on all four measures (32k all: mean |delta| 0.0223 against 0.0232 nats).
 
-**Not measured, so not claimed:** any card but the RTX 3080, so sm86 only here. A 3090 should behave
-like the 3080 (same sm86, more bandwidth) [inference, not measured]; sm80 and sm89 have cubins and no
-datapoint, and the `SKIP(by design)` guard on a non-sm8x card has not run on one. TP=1 is not measured.
+**Not measured, so not claimed:** any card but the RTX 3080 and, on this arm, the maintainer's RTX 3090
+run above, so sm86 only. sm80 and sm89 have cubins and no
+datapoint, and the `SKIP(by design)` guard on a non-sm8x card has not run on one. TP=1 is measured only
+in that 3090 run.
 The GPU checks are `bench/test_pthfa_attn.py` (kernel against an fp64 reference, a pool past block id
 2,383, CUDA-graph replay) and the README's field-test protocol with `PTH_FA=1`.
 

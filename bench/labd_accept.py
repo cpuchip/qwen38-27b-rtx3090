@@ -158,7 +158,7 @@ def generate(prompt_ids, max_tokens):
                "temperature": 0, "logprobs": 0, "return_tokens_as_token_ids": True,
                "stream": True, "stream_options": {"include_usage": True}}
     toks, usage, t_first = [], {}, None
-    t0 = time.time()
+    t0 = time.perf_counter()
     for ev in harness.stream("/v1/completions", payload):
         if ev.get("usage"):
             usage = ev["usage"]
@@ -166,9 +166,9 @@ def generate(prompt_ids, max_tokens):
             lp = ch.get("logprobs") or {}
             if lp.get("tokens"):
                 if t_first is None:
-                    t_first = time.time()
+                    t_first = time.perf_counter()
                 toks.extend(lp["tokens"])
-    t_end = time.time()
+    t_end = time.perf_counter()
     ids = ids_from_logprobs(toks)
     if ids is None:
         raise SystemExit("server did not honour return_tokens_as_token_ids -- "

@@ -1509,11 +1509,14 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     (`pthfa/tests/gate_test.py` checks each reason); nothing in vLLM selects `CUSTOM` on its own, so
     an arm that does not ask for it cannot reach it. That is why the knob is gated to
     `SPEC=mtp CTX=long` and `SPEC=dflash2 CTX=long`, and why its default is narrower still: an unset
-    `PTH_FA` resolves to 1 only on `SPEC=dflash2 CTX=long`, on a compute capability 8.6 GPU (the only
-    one measured), with the package installed and the measured setup (no explicit `FA2_FP8KV`, KV offload
-    tier or connector, backend flags in `EXTRA_ARGS`, `DRAFT`, `DRAFT_METHOD`, `DFLASH_TOKENS`, `LOOKUP=0`,
-    `DYNAMIC_K` or `VISION=1`); anything else keeps the arm's own default without a word, a missing install
-    says so once, and `PTH_FA=0` opts out. The effective-config line says `PTH_FA=1 (default; ...)` or
+    `PTH_FA` resolves to 1 only on those two arms, on a compute capability 8.6 GPU (the only one
+    measured), with the package installed and the arm's measured setup (on dflash2 no explicit
+    `FA2_FP8KV`, KV offload tier or connector, backend flags in `EXTRA_ARGS`, `DRAFT`, `DRAFT_METHOD`,
+    `DFLASH_TOKENS`, `LOOKUP=0`, `DYNAMIC_K` or `VISION=1`; on mtp no explicit `FA2_FP8KV`, KV offload tier
+    or connector, backend flags in `EXTRA_ARGS`, `DYNAMIC_K`, `VISION=1` or `DRAFT_TOKENS` other than 3);
+    anything else keeps the arm's own default without a word (the FA2 arm on dflash2, fp8 on FlashInfer on
+    mtp), a missing install says so once, and `PTH_FA=0` opts out. The effective-config line says
+    `PTH_FA=1 (default; ...)` or
     `(explicit; ...)`. On both arms the target and the drafter run
     `CUSTOM`: a drafter takes its backend from the speculative config, so the knob writes
     `"attention_backend":"CUSTOM"` there as well as `--attention-backend CUSTOM`. It writes no

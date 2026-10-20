@@ -103,10 +103,10 @@ def run_gsm():
     acc = sum(1 for ok,_ in res if ok)/len(res); toks = sum(n for _,n in res)/len(res)
     return acc, toks
 
-t0=time.time(); result={"tag":tag}
+t0=time.perf_counter(); result={"tag":tag}
 if not gsm_only:
-    result["ppl"] = run_ppl(); print(tag, "PPL", {k:(round(v[0],4),v[1]) for k,v in result["ppl"].items()}, f"{time.time()-t0:.0f}s", flush=True)
+    result["ppl"] = run_ppl(); print(tag, "PPL", {k:(round(v[0],4),v[1]) for k,v in result["ppl"].items()}, f"{time.perf_counter()-t0:.0f}s", flush=True)
 if not ppl_only:
-    t1=time.time(); acc, toks = run_gsm(); result["gsm8k"]={"n":gsm_n,"acc":acc,"mean_tokens":toks}
-    print(tag, f"GSM8K n={gsm_n} acc={acc:.3f} mean_tokens={toks:.0f} {time.time()-t1:.0f}s", flush=True)
+    t1=time.perf_counter(); acc, toks = run_gsm(); result["gsm8k"]={"n":gsm_n,"acc":acc,"mean_tokens":toks}
+    print(tag, f"GSM8K n={gsm_n} acc={acc:.3f} mean_tokens={toks:.0f} {time.perf_counter()-t1:.0f}s", flush=True)
 with open(os.path.join(Q, f"result_{tag}.json"),"w") as f: json.dump(result,f)

@@ -83,9 +83,9 @@ def call(messages, max_tokens=24):
         "temperature": 0,
         "chat_template_kwargs": {"enable_thinking": False},
     }
-    t0 = time.time()
+    t0 = time.perf_counter()
     d = harness.post("/v1/chat/completions", payload, timeout=1800)
-    el = time.time() - t0
+    el = time.perf_counter() - t0
     u = d["usage"]
     det = u.get("prompt_tokens_details") or {}
     return {"prompt": u["prompt_tokens"], "cached": det.get("cached_tokens", 0),
@@ -200,7 +200,7 @@ def main():
     retention, maxlen = engine_env()
     block = args.block or engine_block()
     tag = f"RET{retention}_ML{maxlen}"
-    t_start = time.time()
+    t_start = time.perf_counter()
     deadline = t_start + args.budget_min * 60
     out = args.out or os.path.join(
         HERE, f"prefix-alternation-{tag}-{dt.datetime.now():%Y%m%d-%H%M%S}.json")
@@ -228,7 +228,7 @@ def main():
 
     for rnd in range(1, args.rounds + 1):
         for side in ("A", "B"):
-            if time.time() > deadline:
+            if time.perf_counter() > deadline:
                 print(f"\nbudget exhausted before round {rnd} {side}")
                 rnd = args.rounds + 1
                 break
@@ -261,7 +261,7 @@ def main():
             prev_prompt[side] = res["prompt"]
 
             for k in range(args.noise):
-                if time.time() > deadline:
+                if time.perf_counter() > deadline:
                     break
                 nd = f"NOISE-{side}-{rnd}-{k}-{time.time():.6f}\n" + make_doc(
                     "N", int(args.noise_tokens / ratio))
@@ -269,10 +269,10 @@ def main():
                 log({"event": "noise", "round": rnd, "side": side, "k": k,
                      "prompt": nr["prompt"], "cached": nr["cached"],
                      "secs": round(nr["secs"], 2)})
-        if time.time() > deadline:
+        if time.perf_counter() > deadline:
             break
 
-    el = time.time() - t_start
+    el = time.perf_counter() - t_start
     print("\n" + "=" * 84)
     print(f"arm={tag}  {el:.0f}s  conversation requests {stats['reqs']} "
           f"(cold {stats['cold']} / healthy {stats['healthy']} / **lost {stats['lost']}**)")

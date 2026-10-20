@@ -4,8 +4,8 @@
 pass) on sm_80/86/89, and a `vllm.general_plugins` entry point that registers it as the backend `CUSTOM`.
 `PTH_FA=1` (single-user, `SPEC=mtp CTX=long` or `SPEC=dflash2 CTX=long`) selects it for the target and
 the drafter (the MTP layer, or the DFlash2 drafter's sliding-window, non-causal layers), and so does the
-launcher's default on `SPEC=dflash2 CTX=long` on a compute capability 8.6 GPU when this package is
-installed (`PTH_FA=0` opts out; `docs/gotchas.md`, item 63); nothing else
+launcher's default on `SPEC=dflash2 CTX=long` and `SPEC=mtp CTX=long` on a compute capability 8.6 GPU when
+this package is installed (`PTH_FA=0` opts out; `docs/gotchas.md`, item 63); nothing else
 does. It is a separate extension, not a patch to vLLM, which is why it lives here and not in `patches/`:
 no vLLM file changes, and `patches/check_vllm_series.sh` is untouched by it.
 

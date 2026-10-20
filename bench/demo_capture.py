@@ -58,7 +58,7 @@ def run(key, label, content, max_tokens=None):
                "chat_template_kwargs": {"enable_thinking": False}}
     if max_tokens:
         payload["max_tokens"] = max_tokens
-    t0 = time.time()
+    t0 = time.perf_counter()
     first = None
     toks = []          # (ms since first token, text)
     usage = {}
@@ -68,11 +68,11 @@ def run(key, label, content, max_tokens=None):
         for ch in ev.get("choices", []):
             piece = ch.get("delta", {}).get("content")
             if piece:
-                now = time.time()
+                now = time.perf_counter()
                 if first is None:
                     first = now
                 toks.append([round((now - first) * 1000, 1), piece])
-    end = time.time()
+    end = time.perf_counter()
     ttft = (first or end) - t0
     decode_s = end - (first or end)
     n = usage.get("completion_tokens", len(toks))

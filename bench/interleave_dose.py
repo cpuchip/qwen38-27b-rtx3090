@@ -56,9 +56,9 @@ def ask(messages, max_tokens=24):
         "temperature": 0,
         "chat_template_kwargs": {"enable_thinking": False},
     }
-    t0 = time.time()
+    t0 = time.perf_counter()
     d = harness.post("/v1/chat/completions", payload, timeout=1800)
-    el = time.time() - t0
+    el = time.perf_counter() - t0
     u = d["usage"]
     det = u.get("prompt_tokens_details") or {}
     return {"prompt": u["prompt_tokens"], "cached": det.get("cached_tokens", 0),

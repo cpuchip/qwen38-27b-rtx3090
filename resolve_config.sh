@@ -84,13 +84,14 @@ resolve_effective_config() {
     _ask_cap() { [ -n "$_cap_asked" ] && return 0; _cap_asked=1
       _cap=$(nvidia-smi ${CUDA_VISIBLE_DEVICES:+-i "${CUDA_VISIBLE_DEVICES%%,*}"} \
         --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | tr -d ' \r' | sort -u); }
-    # PTH_FA (the int8 kernel, pthfa/) unset or empty means 1 on SPEC=dflash2 CTX=long when the launch is
-    # the measured one: a compute capability 8.6 GPU (the only one measured), the package installed, no
-    # backend the user picked (FA2_FP8KV set to 0 or 1), no KV offload tier or connector, no
-    # --attention-backend, --kv-cache-dtype or --speculative-config in EXTRA_ARGS, the default DFlash2
-    # drafter at DFLASH_TOKENS=7 with lookup on, no DYNAMIC_K and no VISION. Anything else keeps the arm's
-    # own default (FA2_FP8KV on 8.6) without a word: a default must not turn a launch that works into a
-    # refusal of PTH_FA=1. A missing install says so once. PTH_FA=0 opts out.
+    # PTH_FA (the int8 kernel, pthfa/) unset or empty means 1 on SPEC=dflash2 CTX=long and SPEC=mtp CTX=long
+    # when the launch is the measured one: a compute capability 8.6 GPU (the only one measured), the package
+    # installed, no backend the user picked (FA2_FP8KV set to 0 or 1), no KV offload tier or connector, no
+    # --attention-backend, --kv-cache-dtype or --speculative-config in EXTRA_ARGS, no DYNAMIC_K and no VISION;
+    # on dflash2 the default DFlash2 drafter at DFLASH_TOKENS=7 with lookup on, on mtp DRAFT_TOKENS unset or 3.
+    # Anything else keeps the arm's own default (FA2_FP8KV on dflash2 on 8.6, fp8 on FlashInfer on mtp) without
+    # a word: a default must not turn a launch that works into a refusal of PTH_FA=1. A missing install says so
+    # once. PTH_FA=0 opts out.
     PTH_FA_SRC=explicit
     if [ -z "${PTH_FA:-}" ]; then
       PTH_FA_SRC=default
@@ -101,6 +102,9 @@ resolve_effective_config() {
             && [ "${LOOKUP:-1}" = 1 ] && [ "${VISION:-0}" != 1 ] && [ -z "${DRAFT:-}" ] \
             && [ -f "$REPO/models/Qwen3.8-27B-DFlash2-W4A16/model.safetensors" ] \
             && _pth_arm="SPEC=dflash2 CTX=long" ;;
+        mtp/long)
+          [ -z "${FA2_FP8KV:-}" ] && [ "${DRAFT_TOKENS:-3}" = 3 ] && [ "${VISION:-0}" != 1 ] \
+            && _pth_arm="SPEC=mtp CTX=long" ;;
       esac
       { [ -z "${DYNAMIC_K:-}" ] && [ -z "$_fa2_tier" ]; } || _pth_arm=
       case " ${EXTRA_ARGS:-} " in

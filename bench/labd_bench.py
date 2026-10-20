@@ -82,7 +82,7 @@ for name, q in TASKS:
                "stream_options": {"include_usage": True},
                "chat_template_kwargs": {"enable_thinking": False}}
     d0, a0 = harness.spec()
-    t0 = time.time()
+    t0 = time.perf_counter()
     t_first = None
     n_chunks = 0
     usage = {}
@@ -92,9 +92,9 @@ for name, q in TASKS:
         for ch in ev.get("choices", []):
             if ch.get("delta", {}).get("content"):
                 if t_first is None:
-                    t_first = time.time()
+                    t_first = time.perf_counter()
                 n_chunks += 1
-    t_end = time.time()
+    t_end = time.perf_counter()
     d1, a1 = harness.spec()
     steps = d1 - d0
     tps = 1 + (a1 - a0) / max(steps, 1)

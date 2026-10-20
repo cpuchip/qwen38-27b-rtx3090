@@ -25,6 +25,8 @@
 # CTX=long: fp8 KV via FlashInfer, 150k context, 3 drafts (k=4 crashes on
 #   FlashInfer as soon as one request finishes while another is mid-generation,
 #   vLLM 0.28.0); the split-KV attention patch is bf16-KV only, so ~90/98 tok/s.
+#   On a compute capability 8.6 GPU with pthfa/ installed, PTH_FA (below) makes int8 KV on the
+#   pth-flash-attn kernel the default here instead; PTH_FA=0 keeps fp8 on FlashInfer.
 #   KNOW THE EXPOSURE: fp8 KV has exactly ONE backend on sm86 -- FLASH_ATTN
 #   refuses it (needs FA3/SM90+) and TRITON_ATTN refuses it (needs SM89+),
 #   both measured -- so this tier runs FlashInfer with no A/B possible, and
@@ -46,8 +48,8 @@
 # PTH_FA (SPEC=mtp CTX=long and SPEC=dflash2 CTX=long only): int8 per-token-head KV read by the
 #   pth-flash-attn kernel (pthfa/), on the target and the MTP drafter instead of fp8 on FlashInfer,
 #   or on the DFlash2 target and drafter instead of TRITON_ATTN — see below. Default 0, except 1 on
-#   SPEC=dflash2 CTX=long on a compute capability 8.6 GPU with the package installed and the measured
-#   setup (resolve_config.sh); PTH_FA=0 opts out.
+#   SPEC=dflash2 CTX=long and SPEC=mtp CTX=long on a compute capability 8.6 GPU with the package
+#   installed and the measured setup (resolve_config.sh); PTH_FA=0 opts out.
 #
 # Fast variant: MODEL defaults to models/Qwen3.8-27B-W4A16-AutoRound-fast when it
 # exists (int4-GPTQ lm_head + MTP, own-output draft vocab; drafter/README.md), else
@@ -276,7 +278,9 @@ fi
 # mode stays vLLM's default). On 2x RTX 3080 20 GB at TP=2, vLLM 0.30.0, against TRITON_ATTN on the same
 # cache: 128k TTFT 129 s against 250 s, N=1 decode at 128k 85-92 against 46 tok/s, MTP tokens per step
 # and GSM8K unchanged (docs/long-context.md has the table, the hardware and the launch line; gotcha 63 the
-# limits). Default 0: unset, the argv and the environment are those of the arm without it.
+# limits). Unset, it defaults to 1 on a compute capability 8.6 GPU with the package installed and this arm's
+# measured setup (DRAFT_TOKENS unset or 3, no DYNAMIC_K, no VISION=1; resolve_config.sh), else the argv and the
+# environment are those of the arm without it; PTH_FA=0 opts out.
 # SPEC=dflash2 CTX=long: the arm's own int8_per_token_head cache, read by the kernel on the target AND the
 # DFlash2 drafter. The drafter's five layers are sliding-window (2048) and non-causal at head size 128,
 # which the kernel serves (its windowed kernels exist at head size 128 only; gotcha 63), so its speculative
