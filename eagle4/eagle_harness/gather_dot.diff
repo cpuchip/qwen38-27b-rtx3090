@@ -1,0 +1,95 @@
+Modified file: eagle_harness/kernels/gather_dot.py (eagle-harness 0.1.0, eagle-hq/EAGLE-4 commit 7b7b5a52)
+Modified by: Michael Stufflebeam, 2026-10-21. See CHANGELOG.md in this directory.
+
+Copyright © 2026 Eagle AI Corp. This file is part of Eagle 4 and remains licensed under the
+Eagle 4 Source-Available License, which incorporates the Eagle Trademark Policy and is not an
+OSI-approved open-source license. Commercial Use may require a separate written commercial
+license from Eagle AI Corp. By downloading, cloning, forking, copying, accessing, modifying,
+using, hosting, distributing, or otherwise exercising any licensed right in this file, you accept
+and agree to the Eagle 4 Source-Available License and Eagle Trademark Policy. The Eagle
+LICENSE and NOTICE files and all applicable source-file and modification notices must
+accompany this file.
+
+MODIFICATION NOTICE. This file or component has been materially modified from Eagle 4.
+The accompanying change log identifies the modifying person or entity, the date of each material
+modification, the affected files or components, and a summary of the material changes. This
+modified version is not an official Eagle 4 release and is provided subject to the Eagle 4 Source-
+Available License.
+
+--- a/eagle_harness/kernels/gather_dot.py
++++ b/eagle_harness/kernels/gather_dot.py
+@@ -1,7 +1,9 @@
+ # Copyright 2026 Eagle AI Corp.
+ # SPDX-License-Identifier: LicenseRef-Eagle-4-Source-Available
+ 
+-"""Score gathered LM-head rows: ``out[b, k] = weight[indices[b, k]] . hidden[b]``, products and sum in fp32.
++"""[local mod: int8 rows with a per-row fp32 scale, see row_scale]
++
++Score gathered LM-head rows: ``out[b, k] = weight[indices[b, k]] . hidden[b]``, products and sum in fp32.
+ 
+ Products and tile sums are fp32: bf16 ones give a logit error of 2.7% on average (20x a bf16 GEMM's), fp32 products are
+ exact. The per-row-count tile table is tuned on B300 (static, so CUDA-graph safe). :func:`gather_dot` stores the hidden
+@@ -44,6 +46,7 @@
+     indices_ptr,  # [B, K] candidate vocab ids
+     hidden_ptr,  # [B, H]
+     output_ptr,  # [B, K] hidden dtype, or [B, 2K] int32 when PACKED
++    scale_ptr,  # [V] fp32 row scales when HAS_SCALE
+     stride_w_v,
+     stride_w_h,
+     stride_i_b,
+@@ -58,6 +61,7 @@
+     BLOCK_K: tl.constexpr,
+     BLOCK_H: tl.constexpr,
+     PACKED: tl.constexpr,
++    HAS_SCALE: tl.constexpr,
+ ):
+     # Each program handles BLOCK_K candidates of one row, so hidden[b, :] is loaded once per tile instead of once per
+     # candidate (the K-per-program variant spent half its bandwidth re-reading hidden).
+@@ -78,7 +82,7 @@
+             w_val = tl.load(
+                 weight_ptr + vocab_ids[:, None] * stride_w_v + cols[None, :] * stride_w_h,
+                 mask=k_mask[:, None],
+-                other=0.0,
++                other=0,
+             )
+         else:
+             h_mask = cols < H
+@@ -86,9 +90,11 @@
+             w_val = tl.load(
+                 weight_ptr + vocab_ids[:, None] * stride_w_v + cols[None, :] * stride_w_h,
+                 mask=k_mask[:, None] & h_mask[None, :],
+-                other=0.0,
++                other=0,
+             )
+         acc += tl.sum(w_val.to(tl.float32) * h_val.to(tl.float32)[None, :], axis=1)
++    if HAS_SCALE:
++        acc *= tl.load(scale_ptr + vocab_ids, mask=k_mask, other=0.0)
+ 
+     out_row = output_ptr + pid_b * stride_o_b
+     if PACKED:
+@@ -102,6 +108,9 @@
+ def gather_dot_reference(weight: torch.Tensor, indices: torch.Tensor, hidden: torch.Tensor) -> torch.Tensor:
+     """The same product in torch (fp32 accumulate); for CPU and tests."""
+     rows = weight[indices.long()].float()  # [B, K, H]
++    scale = getattr(weight, "row_scale", None)
++    if scale is not None:
++        rows = rows * scale[indices.long()].float()[..., None]
+     return torch.einsum("bkh,bh->bk", rows, hidden.float()).to(hidden.dtype)
+ 
+ 
+@@ -121,12 +130,13 @@
+     rows, k = indices.shape
+     h = weight.shape[1]
+     tiles = _tiles(rows)
++    scale = getattr(weight, "row_scale", None)
+     _gather_dot_kernel[(rows, triton.cdiv(k, tiles.block_k))](
+-        weight, indices, hidden, output,
++        weight, indices, hidden, output, scale if scale is not None else output,
+         weight.stride(0), weight.stride(1), indices.stride(0), indices.stride(1),
+         hidden.stride(0), hidden.stride(1), output.stride(0), output.stride(1),
+         vocab_start, k,
+-        H=h, BLOCK_K=tiles.block_k, BLOCK_H=min(tiles.block_h, triton.next_power_of_2(h)), PACKED=packed,
++        H=h, BLOCK_K=tiles.block_k, BLOCK_H=min(tiles.block_h, triton.next_power_of_2(h)), PACKED=packed, HAS_SCALE=scale is not None,
+         num_warps=tiles.num_warps, num_stages=tiles.num_stages,
+     )  # fmt: skip
+ 

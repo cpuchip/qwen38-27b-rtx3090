@@ -1,0 +1,62 @@
+Modified file: eagle_harness/vllm/models.py (eagle-harness 0.1.0, eagle-hq/EAGLE-4 commit 7b7b5a52)
+Modified by: Michael Stufflebeam, 2026-10-21. See CHANGELOG.md in this directory.
+
+Copyright © 2026 Eagle AI Corp. This file is part of Eagle 4 and remains licensed under the
+Eagle 4 Source-Available License, which incorporates the Eagle Trademark Policy and is not an
+OSI-approved open-source license. Commercial Use may require a separate written commercial
+license from Eagle AI Corp. By downloading, cloning, forking, copying, accessing, modifying,
+using, hosting, distributing, or otherwise exercising any licensed right in this file, you accept
+and agree to the Eagle 4 Source-Available License and Eagle Trademark Policy. The Eagle
+LICENSE and NOTICE files and all applicable source-file and modification notices must
+accompany this file.
+
+MODIFICATION NOTICE. This file or component has been materially modified from Eagle 4.
+The accompanying change log identifies the modifying person or entity, the date of each material
+modification, the affected files or components, and a summary of the material changes. This
+modified version is not an official Eagle 4 release and is provided subject to the Eagle 4 Source-
+Available License.
+
+--- a/eagle_harness/vllm/models.py
++++ b/eagle_harness/vllm/models.py
+@@ -28,6 +28,8 @@
+ import logging
+ from typing import Any
+ 
++import os
++
+ import torch
+ from torch import nn
+ from vllm.config import VllmConfig
+@@ -153,6 +155,8 @@
+             super().__init__(vllm_config=vllm_config, prefix=prefix)
+         self.vllm_config = vllm_config
+         self._build_structures(vllm_config)
++        if os.environ.get("EAGLE4_LM_HEAD_INT8") == "1":
++            self._int8_lm_head()
+         head = self.config.efficient_lm_head_config
+         self.num_candidates = int(head["num_candidates"])
+         rank, hidden, vocab = int(head["rank"]), self.config.hidden_size, self.config.vocab_size
+@@ -164,6 +168,23 @@
+         self.candidate_gather = CandidateGather(get_tp_group(), max_rows) if self.tp_size > 1 else None
+         self._init_row_forward(max_rows)
+ 
++    def _int8_lm_head(self) -> None:
++        """[local mod] lm_head.weight as int8 [V, H] with lm_head.weight_scale fp32 [V] (per-row symmetric);
++        gather_dot reads the scale from ``weight.row_scale``."""
++        head = self.lm_head
++        w = head.weight
++        q = nn.Parameter(torch.empty(w.shape, dtype=torch.int8, device=w.device), requires_grad=False)
++        q.__dict__.update(w.__dict__)
++        s = nn.Parameter(torch.empty(w.shape[0], dtype=torch.float32, device=w.device), requires_grad=False)
++        s.output_dim = 0
++        s.weight_loader = head.weight_loader
++        del head.weight
++        head.register_parameter("weight", q)
++        head.register_parameter("weight_scale", s)
++        q.row_scale = s
++        del w
++        torch.cuda.empty_cache()
++
+     def _build_structures(self, vllm_config: VllmConfig) -> None:
+         """Turn vLLM's EAGLE-3 layer 0 into the draft's: NoPE, attn_norm and the latent MoE where the config says so."""
+         config, layer = self.config, self.model.layers[0]

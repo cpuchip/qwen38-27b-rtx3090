@@ -1,0 +1,30 @@
+Modified file: eagle_harness/vllm/model_rows.py (eagle-harness 0.1.0, eagle-hq/EAGLE-4 commit 7b7b5a52)
+Modified by: Michael Stufflebeam, 2026-10-21. See CHANGELOG.md in this directory.
+
+Copyright © 2026 Eagle AI Corp. This file is part of Eagle 4 and remains licensed under the
+Eagle 4 Source-Available License, which incorporates the Eagle Trademark Policy and is not an
+OSI-approved open-source license. Commercial Use may require a separate written commercial
+license from Eagle AI Corp. By downloading, cloning, forking, copying, accessing, modifying,
+using, hosting, distributing, or otherwise exercising any licensed right in this file, you accept
+and agree to the Eagle 4 Source-Available License and Eagle Trademark Policy. The Eagle
+LICENSE and NOTICE files and all applicable source-file and modification notices must
+accompany this file.
+
+MODIFICATION NOTICE. This file or component has been materially modified from Eagle 4.
+The accompanying change log identifies the modifying person or entity, the date of each material
+modification, the affected files or components, and a summary of the material changes. This
+modified version is not an official Eagle 4 release and is provided subject to the Eagle 4 Source-
+Available License.
+
+--- a/eagle_harness/vllm/model_rows.py
++++ b/eagle_harness/vllm/model_rows.py
+@@ -95,6 +95,9 @@
+         ):
+             return False
+         embed = self.model.embed_tokens
++        # [local mod] a quantized shared embedding has no plain weight: take the unfused path.
++        if not isinstance(getattr(embed, "weight", None), torch.Tensor):
++            return False
+         shard = embed.shard_indices
+         per_rank = embed.weight.shape[0]
+         if (
