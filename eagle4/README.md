@@ -66,8 +66,9 @@ fails that check (error 1.7e+3).
 Two other patches:
 
 - `patches/vllm/eagle-share-quantized-head.diff`: vLLM's Model Runner V2 compares the draft's and the target's lm_head
-  by reading `.weight`, which a quantized lm_head does not have, and the draft fails to load. Proposed upstream as
-  [cpuchip/vllm `up/eagle-share-quantized-head`](https://github.com/cpuchip/vllm/tree/up/eagle-share-quantized-head).
+  by reading `.weight`, which a quantized lm_head does not have, and the draft fails to load. The same guard is open
+  upstream as [vllm-project/vllm#53104](https://github.com/vllm-project/vllm/pull/53104); that PR's version also
+  loads and serves here.
 - `eagle_harness/model_rows.diff`: the draft's fused input path reads `embed_tokens.weight` directly; with a shared
   int8 embedding it takes the plugin's existing unfused path instead.
 
