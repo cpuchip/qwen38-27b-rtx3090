@@ -89,7 +89,19 @@
 #                       after a space or =. The launchers act on it at TP>1 (the KV_MEM pin,
 #                       #40; the allocator default, #163).
 #
-#   qwen_exec           the launcher's last call, in place of exec. With PRINT_ARGV=1 it
+#   qwen_gpu_name       prints the name nvidia-smi gives the GPU the server gets: the first
+#                       of CUDA_VISIBLE_DEVICES, or with none selected every GPU, which must
+#                       then share one name. Empty when they differ or nvidia-smi does not
+#                       answer. The launchers use it for the RTX 4090's memory defaults.
+#
+#   qwen_lm_head_extra_bytes <model dir>
+#                       prints the bytes the model's lm_head holds beyond an int4 one: vocab x
+#                       hidden / 2 when its config.json quantizes the lm_head to int8 (the
+#                       base model dir; the fast variant's is int4), else 0 (int4, any other
+#                       width, or a config it cannot read). The single-user launcher takes it
+#                       off the two KV_MEM pins sized on the fast variant.
+#
+#   qwen_exec          the launcher's last call, in place of exec. With PRINT_ARGV=1 it
 #                       prints the argv, one argument per line, and exits 0 instead
 #                       of starting vLLM. Every check, default and warning before it
 #                       has already run, so this is a dry run of the launcher that
@@ -235,6 +247,25 @@ qwen_normalize_extra_args() {
     out+=("$w")
   done
   EXTRA_ARGS="${out[*]}"
+}
+
+qwen_gpu_name() {
+  nvidia-smi ${CUDA_VISIBLE_DEVICES:+-i "${CUDA_VISIBLE_DEVICES%%,*}"} --query-gpu=name --format=csv,noheader 2>/dev/null \
+    | tr -d '\r' | sort -u | sed -n '1{$p;}'
+}
+
+qwen_lm_head_extra_bytes() {
+  local n
+  n=$("$REPO/venv/bin/python" - "$1" 2>/dev/null <<'EOF'
+import json, os, sys
+c = json.load(open(os.path.join(sys.argv[1], "config.json")))
+t = c.get("text_config", c)
+g = [g for g in (c.get("quantization_config") or {}).get("config_groups", {}).values()
+     if g.get("targets") == ["re:.*lm_head$"]]
+print(t["vocab_size"] * t["hidden_size"] // 2 if len(g) == 1 and g[0]["weights"]["num_bits"] == 8 else 0)
+EOF
+  )
+  case "$n" in ''|*[!0-9]*) echo 0 ;; *) echo "$n" ;; esac
 }
 
 qwen_tp_size() {
