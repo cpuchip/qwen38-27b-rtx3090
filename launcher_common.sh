@@ -89,6 +89,11 @@
 #                       after a space or =. The launchers act on it at TP>1 (the KV_MEM pin,
 #                       #40; the allocator default, #163).
 #
+#   qwen_gpu_name       prints the name nvidia-smi gives the GPU the server gets: the first
+#                       of CUDA_VISIBLE_DEVICES, or with none selected every GPU, which must
+#                       then share one name. Empty when they differ or nvidia-smi does not
+#                       answer. The launchers use it for the RTX 4090's memory defaults.
+#
 #   qwen_exec           the launcher's last call, in place of exec. With PRINT_ARGV=1 it
 #                       prints the argv, one argument per line, and exits 0 instead
 #                       of starting vLLM. Every check, default and warning before it
@@ -235,6 +240,11 @@ qwen_normalize_extra_args() {
     out+=("$w")
   done
   EXTRA_ARGS="${out[*]}"
+}
+
+qwen_gpu_name() {
+  nvidia-smi ${CUDA_VISIBLE_DEVICES:+-i "${CUDA_VISIBLE_DEVICES%%,*}"} --query-gpu=name --format=csv,noheader 2>/dev/null \
+    | tr -d '\r' | sort -u | sed -n '1{$p;}'
 }
 
 qwen_tp_size() {

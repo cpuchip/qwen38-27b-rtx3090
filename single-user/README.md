@@ -135,7 +135,9 @@ happens when the streams are big. Where it is *not* the better choice:
   utilization-based setting non-deterministic. `CTX=huge` combines with this drafter —
   268k tokens of pool at 245760 max-model-len over the KVarN cache
   ([docs/long-context.md](../docs/long-context.md#dflash2-at-240k-ctxhuge-kvarn-also-combines-with-specdflash2));
-  any other `CTX` falls back to MTP with a message. `CTX=long` doubles the context — 138,696 tokens at `DFLASH_TOKENS=7`,
+  any other `CTX` falls back to MTP with a message. On a single RTX 4090 with `KV_MEM` unset, `CTX=huge` and
+  `DFLASH_TOKENS=15` get smaller pins and windows (193,792 and 43,008 tokens), because the 3090's run out of memory there
+  ([docs/wsl2-4090.md](../docs/wsl2-4090.md#the-kv_mem-pin-leave-it-alone-measured-both-ways)). `CTX=long` doubles the context — 138,696 tokens at `DFLASH_TOKENS=7`,
   114,224 at 15 — by moving to an `int8_per_token_head` cache on the Triton backend
   (`FA2_FP8KV=0`; on a compute capability 8.6 GPU the default is now the same cache read by the pth-flash-attn kernel (`PTH_FA`), or else fp8 KV on the `fa2/` FlashAttention-2 plugin, see the knob table); it is
   worth it only for context reproduction, and `SPEC=mtp CTX=long` beats it about 2:1 on
