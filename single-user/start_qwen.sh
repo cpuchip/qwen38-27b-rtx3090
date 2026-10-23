@@ -479,6 +479,18 @@ if [ "$SPEC" = "dflash2" ]; then
   # state page per speculative block. That second term is what scales -- NOT the slot
   # count: 1 slot and 8 slots differ by about 8 MiB in total, so cutting MAX_SEQS buys no
   # context. Single-user mode keeps 4 slots when the block is long for the graphs.
+  #
+  # The pins below are sized on a 3090. On an RTX 4090 (native Linux, 24,080 MiB usable against the 3090's 24,125)
+  # CTX=huge and DFLASH_TOKENS>7 ran out of memory with them on vLLM 0.31 and 0.32 alike: in warm-up or graph capture,
+  # or on the first long request. So with KV_MEM unset, a single 4090 gets its own pin and a MAX_LEN that pin holds.
+  # Each pin leaves 256 MiB under the card's highest memory after the weight load (warm-up, graph capture, and on
+  # CTX=huge a 160k prompt and two ~59k conversations), measured at the 3090 pin minus 1 GiB on both vLLM versions;
+  # MAX_LEN is 97.4% of the pool that pin gives. An exported KV_MEM, DFLASH_MAX_LEN or MAX_LEN wins.
+  ON_4090=0; PIN_4090=0; KV_STOCK=
+  # nvidia-smi is asked only on the two profiles that have a 4090 value
+  if [ "$TP_SIZE" = 1 ] && [ -z "${KV_MEM+x}" ] && { [ "$CTX" = huge ] || { [ "$CTX" != long ] && [ "$DRAFT_TOKENS" -gt 7 ]; }; }; then
+    case "$(qwen_gpu_name)" in *"RTX 4090"*) ON_4090=1 ;; esac
+  fi
   if [ "$CTX" = "huge" ]; then
     # KVarN pool: ~20 KB/token effective. 4.90 GiB pinned -> 268,169 tokens of
     # KV at 245760 max-model-len with 2 slots (single-user long-context; the
@@ -491,12 +503,16 @@ if [ "$SPEC" = "dflash2" ]; then
     # independent 3090 Ti reported (PR #13). Raising the cudagraph reservation does NOT
     # fix this and I checked: KV_MEM is pinned, so the pool does not grow when graph
     # memory is accounted differently. 221184 = 1728 x 128 leaves ~2.6% margin (229376 was still 1% short).
-    if [ "$DRAFT_TOKENS" -gt 7 ]; then
-      MAX_LEN=${DFLASH_MAX_LEN:-${USER_MAX_LEN:-221184}}
-    else
-      MAX_LEN=${DFLASH_MAX_LEN:-${USER_MAX_LEN:-245760}}
+    if [ "$DRAFT_TOKENS" -gt 7 ]; then HUGE_LEN=221184; else HUGE_LEN=245760; fi
+    KV_STOCK=5261334938
+    # 4090: 4,147 MiB (191,613 tokens at the minus-1 GiB pin peaked at 23,668 MiB of 24,078 on 0.31, 23,488 on 0.32).
+    # Above 7 drafts the length keeps the 3090's 221184/245760 ratio, unmeasured on this card.
+    if [ "$ON_4090" = 1 ]; then
+      PIN_4090=1; KV_STOCK=4348444672
+      if [ "$DRAFT_TOKENS" -gt 7 ]; then HUGE_LEN=174336; else HUGE_LEN=193792; fi
     fi
-    KV_MEM=${KV_MEM-5261334938}
+    MAX_LEN=${DFLASH_MAX_LEN:-${USER_MAX_LEN:-$HUGE_LEN}}
+    KV_MEM=${KV_MEM-$KV_STOCK}
     # Above 7 drafts the decode graphs are captured for BOTH block lengths (~1.8 GiB rather
     # than ~1.45); on 0.28 this branch exported VLLM_V2_CUDAGRAPH_MEM_MIB to tell the runner
     # so. vLLM 0.29 profiles its graph memory itself and nothing reads that knob any more
@@ -513,14 +529,22 @@ if [ "$SPEC" = "dflash2" ]; then
     # graphs are what the long block costs, and this is where they still fit next to the
     # 5.2 GiB pool (57,669 tokens). DFLASH_TOKENS=7 gets 8 slots and 64k back.
     MAX_SEQS=${MAX_SEQS:-4}
-    MAX_LEN=${DFLASH_MAX_LEN:-${USER_MAX_LEN:-57344}}
-    KV_MEM=${KV_MEM-5583457484}
+    K15_LEN=57344; KV_STOCK=5583457484
+    # 4090: 4,610 MiB and 43,008 tokens (41,248 tokens at the minus-1 GiB pin peaked at 23,512 MiB of 24,078 on 0.31,
+    # 23,350 on 0.32). At this pin a 38.5k prompt and the copy probe left 168 MiB on 0.31 and 330 on 0.32.
+    if [ "$ON_4090" = 1 ]; then PIN_4090=1; K15_LEN=43008; KV_STOCK=4833935360; fi
+    MAX_LEN=${DFLASH_MAX_LEN:-${USER_MAX_LEN:-$K15_LEN}}
+    KV_MEM=${KV_MEM-$KV_STOCK}
     # Decode graphs are captured for both block lengths (the drafter's and the full verify
     # block), or the short step -- the common one -- runs piecewise and costs 8%. That is
     # 1.8 GiB of graphs instead of 1.45; 0.29 accounts for it in its own profiling.
   else
     MAX_LEN=${DFLASH_MAX_LEN:-${USER_MAX_LEN:-65536}}
     KV_MEM=${KV_MEM-5583457484}
+  fi
+  if [ "$PIN_4090" = 1 ]; then
+    echo "[start_qwen] RTX 4090: KV_MEM=$KV_MEM MAX_LEN=$MAX_LEN, this card's pin for this profile (the 24 GiB" \
+         "defaults are sized on a 3090 and do not fit this card); an exported KV_MEM, DFLASH_MAX_LEN or MAX_LEN wins." >&2
   fi
   # The two memory budgets above (the pinned KV_MEM and GPU_UTIL; on 0.29 the runner's
   # CUDA-graph memory is profiled, not reserved by a knob) are sized for the shipped 1.2 GiB W4A16 head with about a
@@ -652,7 +676,7 @@ if [ "$SPEC" = "dflash2" ]; then
   # spends the same headroom. On Linux the shortfall is a loud OutOfMemoryError on the
   # first real batch; on WSL2 it is SILENT -- WDDM backs the failed mapping with host
   # memory and prefill quietly runs 5-10x slower with nothing in the logs (issue #25).
-  KV_STOCK=5583457484; [ "$CTX" = "huge" ] && KV_STOCK=5261334938
+  KV_STOCK=${KV_STOCK:-5583457484}
   if [ -n "$KV_MEM" ] && [ "$KV_MEM" -gt "$KV_STOCK" ]; then
     echo "[start_qwen] WARNING: KV_MEM=$KV_MEM is above the profile default $KV_STOCK." \
          "The extra pool is taken from the headroom prefill and the first concurrent" \

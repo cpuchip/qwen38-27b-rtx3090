@@ -146,6 +146,12 @@ else
   # boot and serve with VISION=0 and 1, 0.972 does not. 0.95 keeps one 0.01 step
   # below the highest value that passed, boots cold to the same pool as warm
   # (219,587 tokens with the tower), and holds at least the pool 0.28 had at 0.972.
+  # A native RTX 4090 at 0.94 serves the step with 26 MiB left (vLLM 0.31 and 0.32, 24,078 MiB usable), so a single
+  # 4090 defaults to 0.93: 286 MiB left after the same step and the burst, for a pool of 211,082 tokens (-3.5%).
+  if [ -z "${GPU_UTIL:-}" ] && [ "$WSL" = 0 ] && [ "$(qwen_tp_size)" = 1 ]; then
+    case "$(qwen_gpu_name)" in *"RTX 4090"*)
+      GPU_UTIL=0.93; echo "[start_qwen] RTX 4090: GPU_UTIL=0.93 (0.94 leaves 26 MiB after the forced 64-prompt step here)" >&2 ;; esac
+  fi
   GPU_UTIL=${GPU_UTIL:-0.94}
   KV_ARGS="--kv-cache-dtype fp8"
 fi
