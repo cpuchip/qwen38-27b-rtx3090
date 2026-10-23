@@ -5,19 +5,17 @@
 // pipeline stages, the XOR swizzles, the K permutation pi, and the
 // shared-memory byte offset every lane gives each fragment load.
 //
-// Decision: ADR-0007 (layout, swizzles), ADR-0008 (pi). Proofs:
-// docs/walkthrough/05 (banks, swizzles) and 06 section 3 (pi). Reference
-// implementation: tests/sim/ptxsim/layouts.py and paths.py; every function
-// here is compared with it for every input, for D = 64, 128, 256, by
+// Reference implementation: tests/sim/ptxsim/layouts.py and paths.py; every
+// function here is compared with it for every input, for D = 64, 128, 256, by
 // tests/cpp/test_primitives.cu.
 //
 // Ownership: the tile size N, the number of stages and the warp layout belong
-// to tile_traits.cuh (T1/T4), which instantiates SmemLayout with them; this
+// to tile_traits.cuh, which instantiates SmemLayout with them; this
 // header only turns those numbers into byte offsets and enforces the per-block
 // shared-memory limit.
 //
-// Offsets are 32-bit: shared memory is < 2^17 bytes. (Binding rule 5's int64
-// rule is about global-memory offsets, cache_geometry.cuh.)
+// Offsets are 32-bit: shared memory is < 2^17 bytes. (Global-memory offsets
+// are int64, see cache_geometry.cuh.)
 
 #pragma once
 
@@ -27,7 +25,7 @@
 
 namespace pth_attn {
 
-// sm_86 per-block shared-memory opt-in maximum (plan section 3.3; also the
+// sm_86 per-block shared-memory opt-in maximum (also the
 // ptxas gate's limit). sm_80 allows more; the same layout is used there.
 constexpr int kSmemPerBlockLimit = 101376;
 
@@ -37,7 +35,7 @@ constexpr uint32_t kSmemLineBytes = 128;
 constexpr uint32_t kSmemChunkBytes = 16;
 constexpr uint32_t kSmemChunksPerLine = kSmemLineBytes / kSmemChunkBytes;  // 8
 
-// Swizzle keys (ADR-0007): K and Q `t & 7` (the 8 rows of one ldmatrix 8x8
+// Swizzle keys: K and Q `t & 7` (the 8 rows of one ldmatrix 8x8
 // matrix hit 8 bank groups); V `2 * ((t >> 1) & 3)` (the 4 token pairs of one
 // LDS.32 hit 4 even chunk offsets; even because chunk bit 0 already separates
 // g = 0..3 from g = 4..7).
@@ -61,14 +59,14 @@ constexpr int kPiChunk = 16;    // pi permutes inside each k16 MMA step
 // by XOR with `key` (< 8): bits 0-3 (byte in chunk) and 7+ (line) are kept,
 // bits 4-6 (chunk in line) are XOR-ed. Defined on lines, not on the chunks of
 // a token row, so it is a permutation even when a row is 64 B (D = 64);
-// for rows of >= 128 B it is identical to the plan's `c ^ key`
-// (test_plan_literal_swizzle_equals_line_form_for_d_ge_128).
+// for rows of >= 128 B it is identical to the plain `c ^ key`
+// on the chunk index (checked by tests/sim/test_sim_swizzle.py).
 //
 // Written as one XOR: key * 16 < 128 only has bits 4-6, so `dense ^ (key *
 // 16)` flips exactly the chunk-in-line bits. The equivalent arithmetic form
 // `dense - chunk*16 + (chunk ^ key)*16` cost 488 more SASS instructions in
-// T1's D=256 register probe (research/probe/probe_tile.cu, 3384 -> 3872)
-// because ptxas does not reduce it to an XOR.
+// the D=256 register probe (3384 -> 3872) because ptxas does not reduce it to
+// an XOR.
 PTH_HD constexpr uint32_t line_swizzle(uint32_t dense, uint32_t key) {
   return dense ^ (key * kSmemChunkBytes);
 }
@@ -91,11 +89,11 @@ PTH_HD constexpr uint32_t q_swz(uint32_t row, uint32_t k, uint32_t D) {
 }
 
 // ---------------------------------------------------------------------------
-// The K permutation pi (ADR-0008)
+// The K permutation pi
 // ---------------------------------------------------------------------------
 
 // MMA index k (0..15) of a k16 step reads K at in-chunk offset d = pi(k).
-// Derivation (walkthrough 06 section 3): lane q's ldmatrix register holds K
+// Derivation: lane q's ldmatrix register holds K
 // bytes 4q..4q+3; cvt4 makes (b0,b1) = bytes (4q, 4q+1) and (b2,b3) = bytes
 // (4q+2, 4q+3); the MMA uses b0..b3 at k = 2q, 2q+1, 2q+8, 2q+9. Writing
 // k = 8h + 2q + j (h = k >> 3 selects b0b1 / b2b3, j = k & 1):
@@ -148,7 +146,7 @@ PTH_HD constexpr uint32_t v_lds32_offset(uint32_t lane, uint32_t t16,
 // Stage and buffer layout
 // ---------------------------------------------------------------------------
 
-// One pipeline stage of N tokens of one KV head (plan 3.4.2):
+// One pipeline stage of N tokens of one KV head:
 //   K [N][D] int8 swizzled | V [N][D] int8 swizzled | ks [N] f32 | vs [N] f32
 template <int D, int N>
 struct StageLayout {
@@ -166,10 +164,10 @@ struct StageLayout {
                 "scale regions must be 16-B aligned");
 };
 
-// Whole-cell stage (plan C1, ADR-0006; shipped at D = 256): token t's whole
+// Whole-cell stage (shipped at D = 256): token t's whole
 // vLLM cell [K D | ks f32 | V D | vs f32] (2D + 8 B) copied verbatim to
 // t * kPitch. kPitch = 2D + 16 is an odd multiple of 16 B, so consecutive
-// cells start in different 16-B bank groups (plan V4: 1-way for K ldmatrix
+// cells start in different 16-B bank groups (1-way for K ldmatrix
 // and V LDS.32 without a swizzle). The last 8 B of each row are padding the
 // loader never writes. The kernels read it through tiling.cuh
 // CellStageReader (K at kCellK, ks at kCellKs, and so on).

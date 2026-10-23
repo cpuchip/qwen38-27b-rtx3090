@@ -8,7 +8,7 @@
 # Checks, in order: effective config (resolve_config.sh), GPU, port occupant,
 # /health, last server error in logs. Exit 0 = server healthy, 1 = not (or
 # no server), 2 = script environment problem.
-set -u
+set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(dirname "$HERE")"
 RC=0
@@ -30,7 +30,7 @@ if grep -q '^VLLM_API_KEY=.\+' "$REPO/.env" 2>/dev/null; then
   LEN=$(grep '^VLLM_API_KEY=' "$REPO/.env" | tail -1 | cut -d= -f2 | wc -c)
   say "  VLLM_API_KEY: set (~$((LEN - 1)) chars, value not shown)"
 else
-  warn "VLLM_API_KEY unset: server binds 0.0.0.0 with NO auth (make keygen before exposing)"
+  warn "no VLLM_API_KEY entry in .env (the exported environment or api_key.txt may still supply one)"
 fi
 
 say "== gpu"
@@ -43,7 +43,8 @@ fi
 PORT=${PORT:-18020}
 say "== port $PORT"
 if command -v ss >/dev/null 2>&1; then
-  if ss -ltn 2>/dev/null | grep -q ":$PORT "; then
+  # Read the whole listing: grep -q can SIGPIPE the producer under pipefail.
+  if ss -ltn 2>/dev/null | grep ":$PORT " >/dev/null; then
     ss -ltnp 2>/dev/null | grep ":$PORT " | sed 's/^/  occupant: /' || true
   else
     say "  free (nothing listening)"
@@ -53,7 +54,8 @@ else
 fi
 
 say "== health"
-CODE=$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/health" 2>/dev/null || echo 000)
+CRC=0
+CODE=$(curl -s --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' "http://127.0.0.1:$PORT/health" 2>/dev/null) || { CRC=$?; CODE=000; }
 say "  GET /health -> HTTP $CODE"
 if [ "$CODE" = 200 ]; then
   say "  healthy (note: /health 200 can precede first-prompt readiness by ~1 min on a cold boot)"
@@ -63,7 +65,7 @@ fi
 say "== last error (docker logs, if any)"
 if command -v docker >/dev/null 2>&1; then
   for c in hyperqwen-single-1 hyperqwen-batch-1; do
-    if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx "$c"; then
+    if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -x "$c" >/dev/null; then
       say "  -- $c --"
       docker logs --tail 25 "$c" 2>&1 | grep -iE 'error|fail|refus|traceback|killed|terminated|uv[as]|out of memory|no such|not found' | tail -8 | sed 's/^/  /' || true
     fi
@@ -72,7 +74,9 @@ else
   warn "docker not on PATH"
 fi
 RC=1
-if [ "$CODE" = 000 ]; then
+if [ "$CODE" = 000 ] && [ "$CRC" = 28 ]; then
+  say "doctor: /health check on :$PORT timed out (busy, unreachable or stuck; watch make logs, do NOT restart mid-compile)"
+elif [ "$CODE" = 000 ]; then
   say "doctor: no server on :$PORT (start: make up-single; follow: make logs)"
 else
   say "doctor: server on :$PORT answers HTTP $CODE (not ready; watch make logs, do NOT restart mid-compile)"

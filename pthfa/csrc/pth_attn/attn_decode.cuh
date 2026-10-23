@@ -3,17 +3,15 @@
 //
 // attn_decode.cuh: the decode kernel, a swap-AB, d-split variant of the
 // attention kernel for row tiles of at most 32 rows (q * G <= 32: decode and
-// short verify). ADR 0012 Amendment 2 has the measurements behind it; this
-// comment has the design.
+// short verify). This comment has the design.
 //
 // Why a second kernel. attn_kernel.cuh puts the 16 query rows on the MMA's M
 // dimension (m16n8k16: M = 16 rows, N = 8 tokens). A decode row tile has
 // q * G rows (6 at q = 1, 24 at q = 4 with G = 6), so 62% (q = 1) and 25%
 // (q = 4) of the tensor-core work is padding, and at WM = 2 two warps
-// dequantise the same K and V bytes. ncu on the shipped kernel (docs/adr
-// 0012 Amendment 2): the HMMA pipe is the busiest unit, and under the 220 W
-// cap the SM clock drops to ~1.1 GHz, so the MMA count, not the memory system,
-// sets the time at q = 4.
+// dequantise the same K and V bytes. ncu on the shipped kernel: the HMMA pipe
+// is the busiest unit, and under the 220 W cap the SM clock drops to
+// ~1.1 GHz, so the MMA count, not the memory system, sets the time at q = 4.
 //
 // Swap-AB. Here the MMA computes S^T = K . Q^T and O^T = V^T . P'':
 //   * M = 16 tokens (QK) or 16 d values (PV): always full;
@@ -24,13 +22,13 @@
 //   * A fragment of K (rows g, g + 8 = tokens, k = d pairs) holds the same
 //     bytes as the old B fragment (col g = token, k = d pairs): the same
 //     ldmatrix.x4 on the int8 stage, the same cvt4 and the same K
-//     permutation pi (ADR 0008);
+//     permutation pi;
 //   * B fragment of Q^T (k = d pairs, col g = row of the tile) holds the same
 //     elements as the old A fragment (row g, k = d pairs): one ldmatrix of
 //     8 rows per matrix;
 //   * A fragment of V^T (rows g, g + 8 = d, k = token pairs) is the old
 //     B fragment of two adjacent n-tiles: the same LDS.32 + PRMT pairing +
-//     cvt4 of ADR 0009, two d-permuted columns per register pair;
+//     cvt4, two d-permuted columns per register pair;
 //   * B fragment of P'' (k = token pairs, col g = row) is read back from a
 //     small shared buffer P[row][token] with ldmatrix; the buffer is how the
 //     four warps share P'' (below).
@@ -124,7 +122,7 @@ PTH_DEVICE uint32_t movmatrix_trans(uint32_t a) {
 
 // S^T[n] (n = 0..NT-1) = K[tokens tok0 .. tok0 + 15] . Q~^T[rows 8n .. 8n + 7]
 // as fp32 accumulators in the C layout of m16n8k16: c0, c1 = (token g, rows
-// 8n + 2q, +1), c2, c3 = (token g + 8, same rows). k = d under pi (ADR 0008).
+// 8n + 2q, +1), c2, c3 = (token g + 8, same rows). k = d under pi.
 template <int D, int NT, class R>
 __device__ __forceinline__ void dec_qk(float (&s)[NT][4], uint32_t q_smem,
                                        uint32_t stage_smem, int tok0,
@@ -164,8 +162,8 @@ __device__ __forceinline__ void dec_qk(float (&s)[NT][4], uint32_t q_smem,
 
 // O^T[mt][n] += V^T[d of m-tile mt] . P''^T for the 64 tokens of a tile.
 // Warp `warp` owns the d groups D / 32 / 4 * warp ..: m-tile mt = 2 a + h of
-// its group a has rows g <-> d = 32 ga + 4 g + 2 h and g + 8 <-> + 1 (ADR
-// 0009's d-permutation: B column g of n-tile n_sub is d = 32 ga + 4 g + n_sub,
+// its group a has rows g <-> d = 32 ga + 4 g + 2 h and g + 8 <-> + 1 (the V
+// path's d-permutation: B column g of n-tile n_sub is d = 32 ga + 4 g + n_sub,
 // so an m-tile is the pair of n-tiles (2h, 2h + 1)). The accumulator is in the
 // C layout: c0, c1 = (d row g, rows 8 n + 2q, +1), c2, c3 = (d row g + 8,
 // same). p_smem is P'' as [row][token] fp16 with pitch kDecPPitch.

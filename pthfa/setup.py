@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright (c) 2026 noon-at-cgn
-"""Builds ``pth_flash_attn._C``, the stable-ABI CUDA op library (ADR 0003).
+"""Builds ``pth_flash_attn._C``, the stable-ABI CUDA op library.
 
 Build in the dev image with ``tools/build_in_image.sh``; it runs
 ``python setup.py build_ext --inplace`` and the library lands at

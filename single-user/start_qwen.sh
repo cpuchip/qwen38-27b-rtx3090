@@ -924,40 +924,9 @@ if [ "${REQ_METRICS:-0}" = 1 ]; then
                 --per-request-spec-decode-metrics "$SPEC_METRICS")
 fi
 
-# Vision. --language-model-only drops the vision tower cleanly -- no weights loaded,
-# 0.858 GiB on this checkpoint (gotcha 9) -- and stays the default. VISION=1 keeps
-# the tower, for a client that sends images: screenshots into a coding assistant,
-# captioning, document photos.
-#
-# Only --language-model-only needs a knob. It is hardcoded in the exec line below, so
-# the alternative is countering it with --no-language-model-only from EXTRA_ARGS and
-# depending on which flag argparse saw last -- which regresses silently: images are
-# still accepted and still counted as prompt tokens, and the model answers from
-# placeholder embeddings. The two flags VISION=1 adds have no such conflict and can
-# be overridden from EXTRA_ARGS, which is expanded after them. The pixel cap is
-# shipped rather than left to the processor default because vLLM profiles the encoder
-# at the largest image it will accept, and that peak comes out of the KV pool:
-# 2097152 px = 2048 image tokens.
-if [ "${VISION:-0}" = 1 ]; then
-  VISION_ARGS='--limit-mm-per-prompt {"image":{"count":1}} --mm-processor-kwargs {"size":{"shortest_edge":65536,"longest_edge":2097152}}'
-  # VISION_OFFLOAD keeps the tower's weights in pinned host RAM and copies each module to
-  # the GPU for the duration of its own forward (patches/vision-tower-cpu-offload.patch).
-  # It defaults ON, because on 24 GB SPEC=dflash2 + VISION=1 does not boot without it:
-  # the tower is 0.85 GiB of the ~1.1 GiB transient margin the KV_MEM comment sizes, and
-  # graph capture then dies allocating the split-KV verify buffer --
-  #   torch.OutOfMemoryError: Tried to allocate 960.00 MiB ... 787.50 MiB is free
-  #     (spec_decode_attn.py:184, self.part_o)
-  # measured here, VISION=1 VISION_OFFLOAD=0 SPEC=dflash2, RTX 3090 at 250 W. With the
-  # offload the same config comes up with the full 69,758-token pool and reads images.
-  #
-  # It is close to free: isolated-tower measurement at PCIe 4.0 x16, one 8192-patch image,
-  # median of 10 forwards, 891.3 -> 9.0 MiB of resident weights and 1160.5 -> 308.2 MiB of
-  # peak allocation for 296 -> 333 ms of encode, output bit-exact either way. Set
-  # VISION_OFFLOAD=0 only on a card with room to spare, where 36 ms per image buys nothing.
-  [ "${VISION_OFFLOAD:-1}" = 1 ] && export VLLM_VISION_CPU_OFFLOAD_GB=${VLLM_VISION_CPU_OFFLOAD_GB:-1}
-else
-  VISION_ARGS="--language-model-only"
-fi
+# Shared image limits and tower placement, including the 24 GB offload default.
+# launcher_common.sh: qwen_vision_args; measurements in docs/gotchas.md 8.
+qwen_vision_args
 # EMBED_UVA=1 keeps the quantized token embedding in pinned host RAM, read through a CUDA UVA view
 # (patches/qwen3_5-embed-uva.patch, VLLM_EMBED_UVA). The freed VRAM goes to the KV pool: +15.7% tokens
 # (204,336 to 236,479) at SPEC=mtp CTX=long on a 3090 at PCIe 4.0 x16, decode and prefill unchanged, for
@@ -1059,7 +1028,7 @@ qwen_exec venv/bin/vllm serve "$MODEL" \
   --max-model-len $MAX_LEN \
   --max-num-seqs $MAX_SEQS \
   --api-server-count $API_SERVERS \
-  ${VISION_ARGS} \
+  "${VISION_ARGS[@]}" \
   $ATTN_ARGS \
   --mamba-ssm-cache-dtype float16 \
   "${ASYNC_ARGS[@]}" \

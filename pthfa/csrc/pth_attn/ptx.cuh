@@ -7,8 +7,7 @@
 // Source for every wrapper: PTX ISA 9.4,
 // https://docs.nvidia.com/cuda/parallel-thread-execution/ (section numbers
 // below; they drift between ISA versions, the anchors do not). The numpy
-// simulator (tests/sim/ptxsim/isa.py) models the same instructions per lane
-// and proves the kernel's use of them (docs/walkthrough/05, 06).
+// simulator (tests/sim/ptxsim/isa.py) models the same instructions per lane.
 //
 // Two kinds of wrapper:
 //
@@ -16,7 +15,7 @@
 //    memory operations with no meaningful single-thread host behaviour. They
 //    exist only under nvcc (__CUDACC__). Their CPU evidence is the simulator
 //    plus the SASS gate (tests/cpu/test_primitives_golden.py); their hardware
-//    evidence is the G1 one-warp test (build ladder step 12).
+//    evidence is the one-warp test of the GPU grid.
 //
 // 2. Host-emulated (prmt, sub.f16x2, cvt.rn.f16x2.f32 and the f32 bit
 //    casts): pure functions of their inputs. On the device they are the
@@ -34,7 +33,7 @@
 #include <cstdint>
 #include <cstring>
 
-// Shared with cache_geometry.cuh (T2): the identical text, guarded, so the
+// Shared with cache_geometry.cuh: the identical text, guarded, so the
 // headers can be included together. `inline` keeps non-template functions
 // ODR-safe when several g++ translation units include them; __forceinline__
 // keeps device code free of calls.
@@ -314,7 +313,7 @@ PTH_DEVICE void cp_async_wait() {
 // 16-bit columns 2(l%4), 2(l%4)+1 (Figure 107); with .trans the transposed
 // element pair. Warp-collective: all 32 lanes must execute it, convergent.
 // The data type is "16 bits": on int8 data each element is a byte pair, which
-// is how int8 K is loaded (walkthrough 06 section 3).
+// is how int8 K is loaded.
 template <bool Trans = false>
 PTH_DEVICE void ldmatrix_x4(uint32_t (&r)[4], uint32_t smem_addr) {
   if constexpr (Trans) {

@@ -30,12 +30,11 @@ thread_local std::string g_last_error;
 
 // fp32(log2 e): scores in log2 units (as reference_kernel.cu kRefLog2e).
 constexpr float kLog2e = 1.44269504088896340736f;
-// q, out and the workspace move in 16-B vectors (OP_VECTOR_ALIGN_BYTES).
+// q, out and the workspace move in 16-B vectors.
 constexpr int64_t kVecAlign = 16;
 // Logical dims of a cache stream view with free strides: [NB, BS, Hkv].
 constexpr int32_t kStreamDims = 3;
-// The default loader takes the whole cell wherever it applies (ADR 0012
-// Amendment 1).
+// The default loader takes the whole cell wherever it applies.
 constexpr bool kDefaultCell = true;
 
 // Fills a stream's geometry and its cp.async width (the largest of 16/8/4

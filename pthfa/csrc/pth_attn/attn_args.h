@@ -7,7 +7,7 @@
 // (python/pth_testing/ref_capi.py) pass the very structs the op fills.
 //
 // Conventions:
-// - Every stride is in BYTES, taken from the tensor view (binding rule 5),
+// - Every stride is in BYTES, taken from the tensor view,
 //   except block_table_row_stride, which is in int32 ELEMENTS (as
 //   block_table.stride(0)).
 // - Pointers are device pointers (host pointers for the reference library's
@@ -17,7 +17,7 @@
 //   ctypes mirror fails loudly); a change of a struct bumps
 //   PTH_ATTN_ABI_VERSION.
 //
-// Semantics of an attention launch (plan §3.4-§3.7, ADR 0005):
+// Semantics of an attention launch:
 // - Bottom-right aligned GQA attention over the int8_per_token_head cache:
 //   query token i of request r (q_len = qsl[r+1] - qsl[r], L = seq_lens[r],
 //   both read on the device) sits at KV position p = L - q_len + i. Causal
@@ -44,7 +44,7 @@
 // - Rows that belong to no request (tokens >= qsl[num_reqs]) are never
 //   written, in out or in the workspace.
 //
-// Semantics of the combine (plan §3.7, ADR 0016):
+// Semantics of the combine:
 //   M = max_s lse_s over splits with lse_s > -inf (fixed order s = 0..S-1);
 //   w_s = exp2(lse_s - M), skipping -inf splits BEFORE touching ws_o;
 //   out = (sum_s w_s * o_s) / (sum_s w_s), summed in order s = 0..S-1.

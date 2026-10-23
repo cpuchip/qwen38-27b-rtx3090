@@ -204,8 +204,8 @@ reserved 5.2 GiB memory for KV Cache as specified by kv_cache_memory_bytes confi
 torch.OutOfMemoryError: Tried to allocate 960.00 MiB ... 926.44 MiB is free
 ```
 
-Hand that gigabyte back and it comes up. `CTX=long` with int8 KV (`FA2_FP8KV=0`; the default is now fp8 on the fa2/ plugin, which
-this run did not measure) is the one to spend it
+Hand that gigabyte back and it comes up. `CTX=long` with int8 KV (`FA2_FP8KV=0`; the default on an 8.6 GPU is now the pth-flash-attn kernel on the same cache, or fp8 on the fa2/ plugin, neither of which
+this run measured) is the one to spend it
 on, because it buys roughly twice the context per byte of pool that `CTX=fast` does:
 
 ```bash

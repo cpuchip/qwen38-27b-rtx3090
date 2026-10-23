@@ -10,9 +10,9 @@ vLLM's Triton modules are imported only when the backend is actually selected
 (``--attention-backend CUSTOM``), so a server that does not select it pays
 nothing and cannot be broken by this package.
 
-Why ``CUSTOM`` and not a name of our own: the attention layer resolves the
-selected class back to the enum with ``AttentionBackendEnum[get_name()]``
-(plan V10), and ``CUSTOM`` is the only member reserved for plugins. If another
+Why ``CUSTOM`` and not a name of its own: the attention layer resolves the
+selected class back to the enum with ``AttentionBackendEnum[get_name()]``, and
+``CUSTOM`` is the only member reserved for plugins. If another
 plugin already registered a different class there, this one stays out of the
 way and says so: silently replacing it would change what ``--attention-backend
 CUSTOM`` means for that user.

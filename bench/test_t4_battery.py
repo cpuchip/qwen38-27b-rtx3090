@@ -66,6 +66,19 @@ check(plan_of(attach="fp8fa2", arms=["fp8fa2"])[0]["name"] == "attached", "--att
 os.environ["T4_149K_KV_MEM"] = "7000000000"
 check([b for b in plan_of(cells=["d149"]) if b["arm"] == "int8"][0]["env"]["KV_MEM"] == "7000000000", "T4_149K_KV_MEM overrides")
 del os.environ["T4_149K_KV_MEM"]
+check(all(b["env"].get("PTH_FA") == "1" and b["env"]["FA2_FP8KV"] == "0" for b in plan_of(arms=["pth"])), "pth boots set PTH_FA=1 and FA2_FP8KV=0")
+check(not any("PTH_FA" in b["env"] for b in p), "int8 and fp8fa2 boots carry no PTH_FA")
+pp = {(b["arm"], b["name"]): b for b in plan_of(arms=["pth"])}
+check([k[1] for k in pp] == ["residue", "quality", "speed"] and [c["name"] for c in pp[("pth", "speed")]["cells"]] == ["d60", "d90", "soak"],
+      "pth boots: residue, quality, speed; soak on pth")
+check(all(b["env"]["SPEC"] == "dflash2" and b["env"]["CTX"] == "long" and b["env"]["PREFIX_CACHE"] == "1" for b in pp.values()),
+      "every pth boot is SPEC=dflash2 CTX=long PREFIX_CACHE=1")
+ps = plan_of(arms=["int8", "pth", "fp8fa2"], soak_arm={"fp8fa2": 60}, soak_minutes=240)
+soaks = {b["arm"]: c for b in ps for c in b["cells"] if c["name"] == "soak"}
+check(sorted(soaks) == ["fp8fa2", "pth"] and soaks["pth"]["argv"][-2:] == ["--minutes", "240"] and soaks["fp8fa2"]["argv"][-2:] == ["--minutes", "60"],
+      "--soak-minutes-arm: pth 240, fp8fa2 60, no soak on int8")
+check(soaks["fp8fa2"]["timeout"] == 60 * 60 + 3600 and soaks["pth"]["timeout"] == 240 * 60 + 3600, "the soak timeout follows the arm's minutes")
+check([b["arm"] for b in ps if b["name"] == "residue"] == ["int8", "pth", "fp8fa2"], "arms boot in the order given")
 
 print("== --dry-run starts nothing")
 T = tempfile.mkdtemp()
@@ -74,6 +87,10 @@ r = subprocess.run([sys.executable, f"{HERE}/t4_battery.py", "--dry-run", "--out
 check(r.returncode == 0 and "FA2_FP8KV=0" in r.stdout and "FA2_FP8KV=1" in r.stdout and "labd_soak.py --minutes 240" in r.stdout,
       "prints both arms' env and commands, exit 0")
 check(not os.path.exists(f"{T}/o"), "creates no output directory")
+r = subprocess.run([sys.executable, f"{HERE}/t4_battery.py", "--dry-run", "--out", f"{T}/o", "--arms", "int8,pth,fp8fa2",
+                    "--soak-minutes-arm", "fp8fa2=60"], capture_output=True, text=True)
+check(r.returncode == 0 and "PTH_FA=1" in r.stdout and "labd_soak.py --minutes 240" in r.stdout and "labd_soak.py --minutes 60" in r.stdout
+      and r.stdout.count("== pth / boot") == 3, "--arms int8,pth,fp8fa2 --dry-run: the pth arm's three boots, soaks 240 and 60")
 shutil.rmtree(T)
 
 print("== parsers")
@@ -96,6 +113,19 @@ F8 = ["--attention-backend", "FLASH_ATTN", "--kv-cache-dtype", "fp8", "--specula
 check(t4.check_argv("int8", I8) == [] and t4.check_argv("fp8fa2", F8) == [], "each arm's argv passes its own check")
 check(len(t4.check_argv("fp8fa2", I8)) == 3, "a launcher that ignored FA2_FP8KV=1 is refused")
 check(len(t4.check_argv("int8", F8)) == 2, "int8 arm on the fp8 argv is refused")
+P8 = ["--attention-backend", "CUSTOM", "--kv-cache-dtype", "int8_per_token_head", "--speculative-config",
+      '{"method":"dflash","attention_backend":"CUSTOM"}']
+T8 = ["--attention-backend", "CUSTOM", "--kv-cache-dtype", "int8_per_token_head", "--speculative-config", '{"method":"dflash"}']
+check(t4.check_argv("pth", P8) == [], "the pth arm's argv (target and drafter on CUSTOM) passes its check")
+check(len(t4.check_argv("pth", I8)) == 2 and "CUSTOM" in t4.check_argv("pth", I8)[0], "a launcher that ignored PTH_FA=1 (the int8 argv) is refused as pth")
+check(len(t4.check_argv("pth", F8)) == 3, "the fp8 argv is refused as pth")
+check(len(t4.check_argv("pth", T8)) == 1 and "CUSTOM" in t4.check_argv("pth", T8)[0], "target-only CUSTOM (no drafter backend) is refused as pth")
+check(len(t4.check_argv("int8", P8)) == 1 and len(t4.check_argv("fp8fa2", P8)) == 3, "the pth argv is refused as int8 and as fp8fa2")
+EFX = "[effective-config] MODE=single\n[effective-config] PTH_FA=1 (explicit; int8_per_token_head KV on the CUSTOM backend, pthfa/: target and DFlash2 drafter)\n"
+check(t4.check_effective("pth", EFX) == [] and t4.check_effective("pth", EFX.replace("(explicit;", "(default;")) == [], "pth: the launcher's PTH_FA=1 line is accepted (explicit or default)")
+check(len(t4.check_effective("pth", "[effective-config] MODE=single\n")) == 1 and len(t4.check_effective("pth", "")) == 1, "pth: no PTH_FA=1 line is refused")
+check(len(t4.check_effective("pth", "[effective-config] PTH_FA=0 (explicit)\n")) == 1, "pth: a PTH_FA=0 line is refused")
+check(t4.check_effective("int8", "") == [] and t4.check_effective("fp8fa2", "") == [], "int8 and fp8fa2 have no effective-config check (their behaviour is unchanged)")
 
 print("== the restart gate")
 
@@ -175,6 +205,43 @@ md = t4.render_md({"verdict": v, "meta": {"git_sha": "abc", "git_dirty": False, 
                                          "vllm_pin": "0.31.0", "fa2_pin": {}, "arms": ARMS2}, "gates": g, "arms": clean()})
 check("+21.0%" in md and "| pool (tokens) | 136429 | 140902 | +3.3% |" in md and "PASS" in md.splitlines()[0], "markdown: decode delta and pool")
 
+
+def with_pth(res, d90=41.5, gsm=0.960, ppl=8.4085, **over):
+    res["pth"] = {"boots": {"speed": {"pool_tokens": 150000}}, "cells": {
+        "residue": cell("residue", metrics={"broken": 0, "of": 128}),
+        "quality": cell("quality", metrics={"gsm8k": gsm, "ppl_all": ppl}),
+        "d60": cell("d60", "info", {"decode": 44.0, "prompt_tokens": 60275, "tok_step": 1.96, "ttft_cold": 70.0}),
+        "d90": cell("d90", "info", {"decode": d90, "prompt_tokens": 90009, "tok_step": 1.96, "ttft_cold": 70.0}),
+        "soak": cell("soak", metrics={"rounds": 90, "tok_step": 2.9, "ok": True})}}
+    res["pth"]["cells"].update(over)
+    return res
+
+
+print("== the verdict with the pth arm (same bars against int8, soak on pth)")
+ARMS3 = ["int8", "pth", "fp8fa2"]
+g3, v3 = t4.evaluate(with_pth(clean()), ARMS3, CELLS)
+check(v3 == "PASS" and all(x["status"] == "pass" for x in g3), "a clean three-arm fixture passes every bar")
+check({"pth: restart gate", "pth: quality", "pth: residue", "pth: soak", "pth vs int8: quality", "pth vs int8: decode at ~90k",
+       "fp8fa2 vs int8: quality", "fp8fa2 vs int8: decode at ~90k"} <= {x["name"] for x in g3}, "every arm gets its rows; the bars name pth vs int8")
+check(t4.evaluate(with_pth(clean(), d90=33.7), ARMS3, CELLS)[1] == "FAIL", "pth slower than int8 at 90k fails")
+check(t4.evaluate(with_pth(clean(), d90=33.8), ARMS3, CELLS)[1] == "PASS", "pth equal to int8 at 90k passes")
+check(t4.evaluate(with_pth(clean(), gsm=0.944), ARMS3, CELLS)[1] == "FAIL", "pth GSM8K more than 1.0 pt below int8 fails")
+check(t4.evaluate(with_pth(clean(), ppl=8.4078 * 1.021), ARMS3, CELLS)[1] == "FAIL", "pth PPL more than 2% above int8 fails")
+check(t4.evaluate(with_pth(clean(), residue=cell("residue", "fail", {"broken": 1, "of": 128})), ARMS3, CELLS)[1] == "FAIL", "a broken residue on pth fails")
+check(t4.evaluate(with_pth(clean(), soak=cell("soak", "fail", {"rounds": 3, "tok_step": 2.0, "ok": False})), ARMS3, CELLS)[1] == "FAIL", "a soak with problems on pth fails")
+check(t4.evaluate(with_pth(clean(), d60=cell("d60", "fail", {}, ["server process changed: [1, 2] -> None"])), ARMS3, CELLS)[1] == "FAIL",
+      "a restart in a pth cell fails the arm")
+r = with_pth(clean())
+del r["pth"]["cells"]["soak"]
+check(t4.evaluate(r, ARMS3, CELLS)[1] == "INCOMPLETE", "pth without its soak is INCOMPLETE")
+gf, vf = t4.evaluate(with_pth(clean(), d90=33.7), ARMS3, CELLS)
+check(all(x["status"] == "pass" for x in gf if x["name"].startswith("fp8fa2")), "a pth failure leaves the fp8fa2 rows as they were")
+check(t4.evaluate({"pth": with_pth({})["pth"]}, ["pth"], CELLS)[1] == "PARTIAL", "pth alone: cross-arm bars n/a, PARTIAL")
+md3 = t4.render_md({"verdict": v3, "meta": {"git_sha": "abc", "git_dirty": False, "host": "native", "gpu": "RTX 3080",
+                                           "vllm_pin": "0.31.0", "fa2_pin": {}, "arms": ARMS3}, "gates": g3, "arms": with_pth(clean())})
+check("int8 + pth (CUSTOM)" in md3 and "pth / int8" in md3 and "pth / fp8fa2" in md3 and "| pool (tokens) | 136429 | 140902 | 150000 |" in md3
+      and "+22.8%" in md3 and "+1.5%" in md3, "markdown: three columns and the pth ratios (decode vs int8 +22.8%, vs fp8fa2 +1.5%)")
+
 print("== end to end against stubs")
 T = tempfile.mkdtemp()
 for d in ("bench", "single-user", "docker"):
@@ -192,7 +259,8 @@ PORT = str(sock.getsockname()[1])
 sock.close()
 open(f"{T}/single-user/start_qwen.sh", "w").write(f"""#!/bin/bash
 # stub launcher: PRINT_ARGV=1 prints the arm's argv, else serves /health on $PORT as this very process
-if [ "$FA2_FP8KV" = 1 ]; then A="--attention-backend FLASH_ATTN --kv-cache-dtype fp8 --speculative-config"; C='{{"attention_backend":"FLASH_ATTN"}}'
+if [ "$PTH_FA" = 1 ]; then echo "[effective-config] PTH_FA=1 (explicit; stub)" >&2; A="--attention-backend CUSTOM --kv-cache-dtype int8_per_token_head --speculative-config"; C='{{"attention_backend":"CUSTOM"}}'
+elif [ "$FA2_FP8KV" = 1 ]; then A="--attention-backend FLASH_ATTN --kv-cache-dtype fp8 --speculative-config"; C='{{"attention_backend":"FLASH_ATTN"}}'
 else A="--attention-backend TRITON_ATTN --kv-cache-dtype int8_per_token_head --speculative-config"; C='{{}}'; fi
 if [ "${{PRINT_ARGV:-0}}" = 1 ]; then printf '%s\\n' $A "$C"; exit 0; fi
 echo "INFO Using FLASH_ATTN attention backend"; echo "INFO GPU KV cache size: 140,902 tokens"
@@ -242,6 +310,29 @@ open(f"{T}/single-user/start_qwen.sh", "w").write(s0.replace('if [ "$FA2_FP8KV" 
 r, s = e2e("knob", "--cells", "residue", "--arms", "fp8fa2")
 check(r.returncode == 1 and "--attention-backend" in s["arms"]["fp8fa2"]["cells"]["residue"]["reasons"][0]
       and not os.path.exists(f"{T}/knob/fp8fa2/residue.server.log"), "a launcher without the knob: fp8fa2 refused, nothing booted")
+
+# the pth arm: PTH_FA=1 reaches the launcher, the arm boots and soaks; a launcher without PTH_FA is refused
+open(f"{T}/single-user/start_qwen.sh", "w").write(s0)
+r, s = e2e("pth", "--cells", "residue,d90,soak", "--arms", "pth", "--soak-minutes-arm", "pth=1")
+check(r.returncode == 0 and s["verdict"] == "PARTIAL" and "soak" in s["arms"]["pth"]["cells"]
+      and s["arms"]["pth"]["cells"]["soak"]["status"] == "pass" and "--attention-backend\nCUSTOM" in open(f"{T}/pth/pth/residue.argv.txt").read(),
+      "stub run of the pth arm: PTH_FA=1 reaches the launcher (argv CUSTOM), soak runs, one arm is PARTIAL, exit 0")
+open(f"{T}/single-user/start_qwen.sh", "w").write(s0.replace('if [ "$PTH_FA" = 1 ]', 'if false'))
+r, s = e2e("pthknob", "--cells", "residue", "--arms", "pth")
+check(r.returncode == 1 and "--attention-backend" in s["arms"]["pth"]["cells"]["residue"]["reasons"][0]
+      and not os.path.exists(f"{T}/pthknob/pth/residue.server.log"), "a launcher without PTH_FA: pth refused, nothing booted")
+open(f"{T}/single-user/start_qwen.sh", "w").write(s0)
+
+# int8 and pth together on one tree: one verdict, the pth bars are the author's bars against int8
+r, s = e2e("both", "--cells", "residue,d90,soak", "--arms", "int8,pth", "--soak-minutes", "1")
+check(r.returncode == 0 and s["verdict"] == "PASS" and list(s["arms"]) == ["int8", "pth"] and "pth vs int8: decode at ~90k" in {x["name"] for x in s["gates"]}
+      and "soak" in s["arms"]["pth"]["cells"] and "soak" not in s["arms"]["int8"]["cells"], "--arms int8,pth: one PASS verdict with the pth vs int8 bars, soak on pth only")
+# a launcher that takes PTH_FA=1 in its argv but prints no effective-config line is refused
+open(f"{T}/single-user/start_qwen.sh", "w").write(s0.replace('echo "[effective-config] PTH_FA=1 (explicit; stub)" >&2;', ''))
+r, s = e2e("noeff", "--cells", "residue", "--arms", "pth")
+check(r.returncode == 1 and "effective-config" in s["arms"]["pth"]["cells"]["residue"]["reasons"][0] and not os.path.exists(f"{T}/noeff/pth/residue.server.log"),
+      "a launcher that prints no PTH_FA=1 effective-config line: pth refused, nothing booted")
+open(f"{T}/single-user/start_qwen.sh", "w").write(s0)
 shutil.rmtree(T)
 
 print()

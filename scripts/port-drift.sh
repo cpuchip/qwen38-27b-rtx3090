@@ -16,18 +16,18 @@
 # showed the knob sweep, the KVARN_* registration and the #86 cast missing, all landed on 0.29 after main-track was cut.
 set -uo pipefail
 FORK=$1; NEWTAG=$2; NEWBR=$3; OLDTAG=$4; OLDBR=$5; SHOW=${6:-}
-G="git -C $FORK"
-topic_of(){ $G log -1 --format=%s "$1" | sed -nE 's/^\[qwen38\] ([A-Za-z0-9._-]+).*/\1/p'; }
+G=(git -C "$FORK")
+topic_of(){ "${G[@]}" log -1 --format=%s "$1" | sed -nE 's/^\[qwen38\] ([A-Za-z0-9._-]+).*/\1/p'; }
 # exact topic-name match (a --grep with "\[" was unreliable here, and an unanchored one matched other topics' bodies)
-find_old(){ $G log --format='%H %s' "$OLDTAG..$OLDBR" | awk -v want="$1" '{h=$1; s=$0; sub(/^[^ ]+ /,"",s); if (s ~ /^\[qwen38\] /) { t=s; sub(/^\[qwen38\] /,"",t); sub(/[^A-Za-z0-9._-].*$/,"",t); if (t==want) {print h; exit} }}'; }
-added(){ $G diff "$1^" "$1" -- "$2" | grep -E '^\+[^+]' | sed 's/[[:space:]]*$//'; }
+find_old(){ "${G[@]}" log --format='%H %s' "$OLDTAG..$OLDBR" | awk -v want="$1" '{h=$1; s=$0; sub(/^[^ ]+ /,"",s); if (s ~ /^\[qwen38\] /) { t=s; sub(/^\[qwen38\] /,"",t); sub(/[^A-Za-z0-9._-].*$/,"",t); if (t==want) {print h; exit} }}'; }
+added(){ "${G[@]}" diff "$1^" "$1" -- "$2" | grep -E '^\+[^+]' | sed 's/[[:space:]]*$//'; }
 clean=0; drift=0
-for c in $($G rev-list --reverse "$NEWTAG..$NEWBR"); do
+for c in $("${G[@]}" rev-list --reverse "$NEWTAG..$NEWBR"); do
   t=$(topic_of "$c"); [ -n "$t" ] || continue
   old_t=$(echo "$t" | sed -E "s/${NEWTAG#v}/${OLDTAG#v}/")        # kvarn-0.30.0 <-> kvarn-0.29.0
   o=$(find_old "$old_t"); [ -n "$o" ] || { echo "NEW   $t (no counterpart on $OLDBR)"; continue; }
   line=""; body=""
-  for f in $( ($G diff --name-only "$c^" "$c"; $G diff --name-only "$o^" "$o") | sort -u); do
+  for f in $( ("${G[@]}" diff --name-only "$c^" "$c"; "${G[@]}" diff --name-only "$o^" "$o") | sort -u); do
     d=$(diff <(added "$o" "$f") <(added "$c" "$f") | grep -E '^[<>]')
     n=$(printf '%s' "$d" | grep -cE '^[<>]')
     [ "$n" -gt 0 ] || continue

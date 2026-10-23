@@ -1,13 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright (c) 2026 noon-at-cgn
-"""Single source of truth for how the CUDA sources are compiled (ADR 0003).
+"""Single source of truth for how the CUDA sources are compiled.
 
 ``setup.py`` builds the extension with these flags, and the measurement tools
 (``ptxas_gate.py``, ``sass_check.py``, ``compile_cost.py``) compile single
 translation units with the very same flags, so a register count or compile time
 they report is the one the shipped ``.so`` gets.
-
-Every value here has a row in ``docs/constants.d/T1.md``.
 """
 
 from __future__ import annotations
@@ -16,17 +14,17 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# Compute capabilities with a cubin in the library (plan sections 4.7, 6.1).
+# Compute capabilities with a cubin in the library.
 # sm_80 (A100), sm_86 (GA10x, the RTX 3080 target), sm_89 (Ada). No PTX is
-# embedded: sm_90+ must be rejected, not JIT-compiled (ADR 0003).
+# embedded: sm_90+ must be rejected, not JIT-compiled.
 ARCHS: tuple[str, ...] = ("80", "86", "89")
 
 # torch's own spelling of ARCHS for TORCH_CUDA_ARCH_LIST ("8.0;8.6;8.9").
 TORCH_ARCH_LIST = ";".join(f"{a[0]}.{a[1]}" for a in ARCHS)
 
 # Stable-ABI floor: the .so only uses C-shim APIs present in torch 2.11, the
-# same floor vLLM's _C_stable_libtorch uses (vLLM CMakeLists.txt v0.30.0), so
-# the op can later move in-tree unchanged. Encoding: major << 56 | minor << 48.
+# same floor vLLM's _C_stable_libtorch uses (vLLM CMakeLists.txt v0.30.0).
+# Encoding: major << 56 | minor << 48.
 TORCH_TARGET_VERSION = "0x020B000000000000ULL"
 
 CXX_STD = "-std=c++17"
@@ -39,7 +37,7 @@ DEFINES: tuple[tuple[str, str], ...] = (("TORCH_TARGET_VERSION", TORCH_TARGET_VE
 CXX_FLAGS: tuple[str, ...] = (OPT_LEVEL, CXX_STD)
 
 # Flags for nvcc, excluding -gencode (that comes from ARCHS). No fast-math:
-# the error bound (plan section 3.8) assumes IEEE fp32 except where a kernel
+# the error bound assumes IEEE fp32 except where a kernel
 # opts in explicitly (ex2.approx is written as inline PTX, not via a flag).
 NVCC_FLAGS: tuple[str, ...] = (OPT_LEVEL, CXX_STD)
 
@@ -48,8 +46,8 @@ CSRC_DIR = REPO_ROOT / "csrc" / "pth_attn"
 # Translation units of the extension, in link order. launch.cu is the op; the
 # other five are the kernel library it launches through attn_launch.h, the
 # very sources tools/build_attn_lib.sh builds (with the test-only C ABI on
-# top) for the kernel test ladder, so the production op runs the code the
-# kernel tests proved (ADR 0021).
+# top) for the kernel test suite, so the shipped op runs the code the
+# kernel tests proved.
 EXTENSION_SOURCES: tuple[str, ...] = (
     "csrc/pth_attn/torch_bindings.cpp",
     "csrc/pth_attn/launch.cu",

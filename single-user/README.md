@@ -139,7 +139,7 @@ happens when the streams are big. Where it is *not* the better choice:
   `DFLASH_TOKENS=15` get smaller pins and windows (193,792 and 43,008 tokens), because the 3090's run out of memory there
   ([docs/wsl2-4090.md](../docs/wsl2-4090.md#the-kv_mem-pin-leave-it-alone-measured-both-ways)). `CTX=long` doubles the context — 138,696 tokens at `DFLASH_TOKENS=7`,
   114,224 at 15 — by moving to an `int8_per_token_head` cache on the Triton backend
-  (`FA2_FP8KV=0`; the default is now fp8 KV on the `fa2/` FlashAttention-2 plugin, see the knob table); it is
+  (`FA2_FP8KV=0`; on a compute capability 8.6 GPU the default is now the same cache read by the pth-flash-attn kernel (`PTH_FA`), or else fp8 KV on the `fa2/` FlashAttention-2 plugin, see the knob table); it is
   worth it only for context reproduction, and `SPEC=mtp CTX=long` beats it about 2:1 on
   everything else. See [docs/long-context.md](../docs/long-context.md#dflash2-past-64k-specdflash2-ctxlong).
 - The V2 runner rejected the `thinking_token_budget` request parameter (HTTP
@@ -330,7 +330,8 @@ bug is in the FlashInfer spec-decode path. Hence two configs:
 - `CTX=fast` (default): FlashAttention, bf16 KV, **~64k context**, k=4, split-KV
   verify attention → ~114 / ~124 tok/s with the fast variant
 - `CTX=long`: FlashInfer, fp8 KV, **150k context**, k=3 → 95 / 100 tok/s with
-  the fast variant (84 / 89 with the base requantization)
+  the fast variant (84 / 89 with the base requantization); these are the fp8 + FlashInfer arm's numbers. On a compute capability 8.6 GPU
+  with `pthfa/` installed the default is int8 KV on the pth-flash-attn kernel instead (`PTH_FA`; `PTH_FA=0` restores this arm).
 
 k=3 passed every concurrency soak we ran (C2/C4/C8 with staggered finishes,
 100k-token prompt, 4×6k-token generations); if you see the crash anyway,
@@ -421,7 +422,17 @@ Point your chat client at `http://<host>:18020/v1` with the key from
 `api_key.txt`. Works with anything that speaks the OpenAI API, tool calling
 included (`tools` + `tool_choice: "auto"` come back as `tool_calls`).
 
+Run `VISION=1 bash verify.sh` to check that two different images produce the color
+orders shown in their pixels. Export `VISION=1` in the verifier's shell even if the
+server gets that setting from `.env`, Compose or systemd. Run `python bench/vision_smoke.py` separately
+against a remote server using `VLLM_API` and the usual client key. This is an image
+round-trip check, not a Vision quality benchmark.
+
 ## Knobs
+
+Launcher controls `VISION`, `VISION_OFFLOAD`, `LOOKUP`, `INT4_MQ_3D`, `TOOLS` and
+`EMBED_UVA` accept only `0` or `1` (empty uses the default); invalid values are
+refused before launching vLLM.
 
 | var | default | notes |
 |---|---|---|
@@ -440,8 +451,8 @@ included (`tools` + `tool_choice: "auto"` come back as `tool_calls`).
 | `MTP_DRAFT_VOCAB` | 1 | set 0 to draft with the full lm_head (more acceptance, slower per draft); set 0 for Chinese or other traffic outside the list's English/Danish/code corpus (docs/gotchas.md 61) |
 | `TOOLS` | 1 | tool/function calling (`--enable-auto-tool-choice --tool-call-parser`). `TOOL_PARSER` (`qwen3_coder`) must match the XML call format this model's chat template emits — `hermes` parses the JSON a Qwen model does *not* produce here, and fails silently. 0 = off, and `tool_choice: "auto"` then 400s |
 | `TOOL_STRICT` | parameter | vLLM 0.31's `--tool-strict-level`. `parameter` holds every tool call to the tool's argument schema, as 0.30 did; upstream's default `auto` does so only for tools that send `strict: true`, so a forced call to a tool with no parameters invented arguments (20 of 20 seeds) where 0.30 sent `{}`. `auto` restores upstream's default |
-| `VISION` | 0 | 1 keeps the vision tower instead of `--language-model-only` (0.858 GiB of BF16 weights on this checkpoint), for a client that sends images: one image per prompt and a 2048-image-token pixel cap, both overridable from `EXTRA_ARGS` |
-| `VISION_OFFLOAD` | 1 | with `VISION=1`, keeps the tower's weights in pinned host RAM and copies each module to the GPU for its own forward (`patches/vision-tower-cpu-offload.patch`). **On 24 GB, `SPEC=dflash2` + `VISION=1` does not boot with this off** — the tower is 0.85 GiB of the ~1.1 GiB transient margin, and graph capture OOMs allocating the 960 MiB split-KV verify buffer with 787 MiB free. With it on, the same config comes up at the full 69,758-token pool and reads images. Costs 296 → 333 ms of encode per 8192-patch image, output bit-exact. 0 only on a card with headroom to spare. `VLLM_VISION_CPU_OFFLOAD_GB` (default 1) is the budget in GiB |
+| `VISION` | 0 | 1 keeps the vision tower instead of `--language-model-only` (0.858 GiB of BF16 weights on this checkpoint), for a client that sends images: one image per prompt and a 2048-image-token pixel cap, both overridable from `EXTRA_ARGS`  All three launchers cap images at one per prompt with `VISION=1`, including `alternative.sh`. |
+| `VISION_OFFLOAD` | 1 | with `VISION=1`, keeps the tower's weights in pinned host RAM and copies each module to the GPU for its own forward (`patches/vision-tower-cpu-offload.patch`). **On 24 GB, `SPEC=dflash2` + `VISION=1` does not boot with this off** — the tower is 0.85 GiB of the ~1.1 GiB transient margin, and graph capture OOMs allocating the 960 MiB split-KV verify buffer with 787 MiB free. With it on, the same config comes up at the full 69,758-token pool and reads images. Costs 296 → 333 ms of encode per 8192-patch image, output bit-exact. 0 only on a card with headroom to spare. `VLLM_VISION_CPU_OFFLOAD_GB` (default 1) is the budget in GiB  `VISION_OFFLOAD=0` forces the budget to zero even if a positive `VLLM_VISION_CPU_OFFLOAD_GB` was inherited. |
 | `EMBED_UVA` | 0 | `1` keeps the quantized token embedding in pinned host RAM, read through a CUDA UVA view (`patches/qwen3_5-embed-uva.patch`). The freed VRAM goes to the KV pool: 204,336 to 236,479 tokens (+15.7%) at `SPEC=mtp CTX=long` on a 3090 at PCIe 4.0 x16, with decode (110 tok/s) and a 30k prefill unchanged, for about 2.1 GiB of host RAM and 20 s of boot. Skipped for tied embeddings. Unmeasured on a narrow slot or with TP>1 (#281). |
 | `PTH_FA` | 1 on `SPEC=dflash2 CTX=long` and `SPEC=mtp CTX=long` on a compute capability 8.6 GPU with the package installed and the measured setup, 0 elsewhere | `1` with `SPEC=mtp CTX=long` or `SPEC=dflash2 CTX=long` only: `int8_per_token_head` KV read by the pth-flash-attn kernel (`pthfa/`, built into the image; `bash pthfa/install.sh` in a venv). With mtp it serves the target and the MTP drafter instead of fp8 on FlashInfer; with dflash2 it serves the target and the DFlash2 drafter instead of `TRITON_ATTN` (the drafter's sliding-window, non-causal layers run the kernel's head-size-128 windowed path; its speculative config gets `"attention_backend":"CUSTOM"` and keeps the target's cache dtype). On dflash2 it overrides the `FA2_FP8KV` default: an unset `FA2_FP8KV` stays 0 on an 8.6 GPU too. sm80/86/89 only; refused on any other `SPEC`/`CTX`, with a KV offload tier, with `--attention-backend`/`--kv-cache-dtype`/`--speculative-config` in `EXTRA_ARGS`, with an explicit `FA2_FP8KV=1`, and on dflash2 with `DRAFT_METHOD` other than `dflash`, `DFLASH_TOKENS` other than 7, `LOOKUP=0` or `DYNAMIC_K`. The default on `SPEC=dflash2 CTX=long` on 8.6 applies only with the package installed and none of `FA2_FP8KV` (either value), a KV offload tier or connector, those `EXTRA_ARGS`, `DRAFT`, another drafting setup, `DYNAMIC_K` or `VISION=1` set; otherwise the arm's own default runs without a refusal (a missing install prints one line), and `PTH_FA=0` opts out. On `SPEC=mtp CTX=long` the default needs the package installed and none of `FA2_FP8KV` (either value), a KV offload tier or connector, those `EXTRA_ARGS`, `DYNAMIC_K` or `VISION=1` set, and `DRAFT_TOKENS` unset or 3; otherwise fp8 on FlashInfer runs as before. mtp on a native RTX 3090 (TP=1, 250 W, one boot per arm): decode at ~66k 84.5 against 77.5 tok/s on fp8 FlashInfer, GSM8K n=200 0.955 against 0.960, KV pool 198,241 against 202,040 tokens. The other rows on 2x RTX 3080 at TP=2, on vLLM 0.31.0, capped: mtp against `TRITON_ATTN` on the same int8 cache, 128k TTFT 127.8 s against 261.8 s, decode at 128k 86.2 against 44.1 tok/s; dflash2 in one sitting, decode at 128k 115.1 tok/s against 81.5 on the FA2 fp8 default and 58.6 on `TRITON_ATTN` int8 (108.4 with the target only on the kernel), cold 128k TTFT 122.1 s against 114.1 and 249.6 s, and closer to a bf16 cache than fp8 (mean logprob error 0.019-0.021 against 0.034-0.036); both models on the kernel take 2.5-3.3% less time per decode pass than the target only at one stream, no established tok/s gain (docs/long-context.md, gotcha 63) |
 | `KV_OFFLOAD_GB` | unset | N = a CPU tier of N GiB of pinned RAM behind the GPU prefix cache (`--kv-offloading-size N`, vLLM's OffloadingConnector): a prefix the GPU pool evicted comes back by a PCIe load instead of a recomputed prefill, and a preempted request resumes from it. Pinned in full at boot, in a file in `/dev/shm` that must fit there (gotcha 62). Size it in tokens, not GiB: a tier token costs ~2.3x a pool token under MTP because each block carries a recurrent-state snapshot (gotcha 38). Check it works on `/metrics`: `vllm:kv_offload_*_bytes_total` grow both ways. Measured with `PREFIX_CACHE=1` (align mode). On 0.31 size it above what it holds: a tier that fills while a request is still running loses chunks the next lookup needs (`docs/vllm-0.31.md`). An explicit flag in `EXTRA_ARGS` wins |

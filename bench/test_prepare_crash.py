@@ -456,8 +456,8 @@ def main():
 
     fails = cases = 0
     with tempfile.TemporaryDirectory(prefix="prepare-crash-") as work:
-        # A private copy of prepare/: harden_chat_template.py also rewrites the templates
-        # under models/ next to the scripts, which must never reach a real checkout.
+        # A private copy of prepare/ isolates script copies and model fixtures;
+        # the hardening step receives explicit model directories in this tree.
         ctx = SimpleNamespace(work=work, prep=f"{work}/repo/prepare", ids=f"{work}/ids.json",
                               log=f"{work}/step.log", pristine=f"{work}/pristine",
                               block=(REPO / "docker/prepare.sh").read_text(encoding="utf-8").split(

@@ -120,7 +120,7 @@ TRITON_ATTN --max-model-len 262144` (batch/start_qwen.sh: `KV=int4pth`).
 The block drafter was pinned to `CTX=fast` — bf16 KV on FlashAttention, 64k at
 `DFLASH_TOKENS=7` and 56k at 15 — because bf16 KV is 64 KB per token and the pinned
 5.2 GiB pool is exactly that much. `CTX=long` moves it to an `int8_per_token_head` cache
-on the Triton backend (`FA2_FP8KV=0`; the default is now fp8 KV on FlashAttention-2, below) and
+on the Triton backend (`FA2_FP8KV=0`; on an 8.6 GPU the default is now the same cache read by the pth-flash-attn kernel, `PTH_FA=1`, or else fp8 KV on FlashAttention-2, both below) and
 roughly doubles the context:
 
 | | bf16 (`CTX=fast`) | int8 (`CTX=long`) |
@@ -166,7 +166,11 @@ Two patches make that work, and neither changes anything at bf16:
   tracked separately): do not stack the two until the memory-pressure question behind it is
   understood.
 
-### fp8 KV on FlashAttention-2 (`FA2_FP8KV`, default on for the 3090)
+### fp8 KV on FlashAttention-2 (`FA2_FP8KV`, the 8.6 default when `PTH_FA` does not apply)
+
+On a compute capability 8.6 GPU with the pth-flash-attn package installed and the measured setup, `PTH_FA=1` is this arm's default instead
+([below](#int8-kv-on-the-pth-flash-attn-kernel-pth_fa1-specmtp-or-specdflash2-with-ctxlong): int8 KV read by that kernel, not fp8 on FA2);
+this section describes the arm that runs without it (`PTH_FA=0`, a missing install, or a setup the kernel was not measured with).
 
 `SPEC=dflash2 CTX=long` runs on fp8 KV on `FLASH_ATTN` by default, with the fp8 kernels from the
 `fa2/` plugin (`bash fa2/install.sh` builds and installs it once, the Docker image has it, and the
@@ -258,11 +262,19 @@ are gotcha 63.
 the launch is the measured one: no explicit `FA2_FP8KV`, no KV offload tier or connector, none of the three
 flags above in `EXTRA_ARGS`, no `DYNAMIC_K`, no `VISION=1` and `DRAFT_TOKENS` unset or 3. Then the argv is
 that of `PTH_FA=1` and the effective-config line says `PTH_FA=1 (default; ...)`; otherwise fp8 on
-FlashInfer runs as before, with one line if the package is missing. `PTH_FA=0` opts out. On a native
-RTX 3090 (TP=1, 250 W, vLLM 0.31.0, one boot per arm), against fp8 on FlashInfer: decode at ~66k 84.5
-against 77.5 tok/s (+9%), cold TTFT at ~66k 75.4 against 75.1 s, GSM8K n=200 0.955 against 0.960, KV pool
-198,241 against 202,040 tokens, `bench/test_pthfa_attn.py` 37/37 on the card. The other rows here are from
-two RTX 3080 at TP=2.
+FlashInfer runs as before, with one line if the package is missing. `PTH_FA=0` opts out. On the native
+RTX 3090 (TP=1, 250 W, vLLM 0.31.0, the launcher's own settings, four boots in the order fp8, default, default, fp8;
+the maintainer's A/B on [#345](https://github.com/syv-ai/HyperQwen/pull/345)), against fp8 on FlashInfer:
+decode (`bench/labd_bench.py` total) at ~66k 84.8 and 84.7 against 75.6 and 75.5 tok/s (+12.2%) and at ~100k 78.5 and 78.5
+against 68.9 and 68.8 tok/s (+14.0%), tokens per step equal within 2%, cold TTFT at ~66k 75.0 and 75.2 against 74.8 and 75.0 s,
+GSM8K n=200 0.965 against 0.960, KV pool 198,241 against 202,040 tokens (1.9% smaller), and on the default arm a residue sweep with
+0 of 128 broken and a 20-minute soak that exits 0. The step-time gain is the kernel and the CUDA-graph mode together: with speculative
+decoding vLLM falls back to piecewise graphs on FlashInfer and the kernel arm captured full graphs, and the kernel arm was not run forced to
+piecewise. An earlier single-boot run on the same card ([#325](https://github.com/syv-ai/HyperQwen/pull/325)) read 84.5 against 77.5 tok/s
+at ~66k (+9%), with `bench/test_pthfa_attn.py` 37/37 on the card. On two RTX 3080 20 GB (TP=2, 220 W, one sitting, N=1, #345) the default
+took 0.449 / 0.393 / 0.375 of fp8's time per decode pass at 128k / 32k / 8k (decode 110.4 against 46.5 tok/s at 128k) with a 1.6% smaller KV pool;
+its tables and caveats are on [pth-flash-attn's benchmarks page](https://github.com/noon-at-cgn/pth-flash-attn/blob/v0.1.0/docs/benchmarks.md).
+The tables below are from two RTX 3080 at TP=2.
 
 **Measured on two RTX 3080 20 GB (sm86) at TP=2, the PR author's box, not on the reference 3090.**
 Linux in a Proxmox LXC container, driver 615.71.09, PCIe without P2P (`NCCL_P2P_DISABLE=1`,
@@ -331,7 +343,7 @@ The GPU checks are `bench/test_pthfa_attn.py` (kernel against an fp64 reference,
 ### `SPEC=dflash2 CTX=long PTH_FA=1`: the target and the drafter on the kernel
 
 `SPEC=dflash2 CTX=long` with `FA2_FP8KV=0` runs `int8_per_token_head` on `TRITON_ATTN` (see "DFlash2 past
-64k" above; on an 8.6 GPU the default is fp8 KV on FlashAttention-2), and its decode decays with context.
+64k" above; on an 8.6 GPU the FA2 fp8 arm is the default only where the kernel's default below does not apply), and its decode decays with context.
 `PTH_FA=1` keeps the int8 cache and moves both models onto the kernel: the target's 16 full-attention
 layers and the DFlash2 drafter's five sliding-window layers.
 
@@ -506,9 +518,11 @@ daytime sitting above** (10:30-16:35, same box, capped state, launch shape and p
 (built from 95ee3b6, the control), this branch's image with `PTH_FA=1`, the target-only image at
 a61f0a6 with `PTH_FA=1`, each with the full gate set; then a second boot of each of the two
 `CUSTOM` images (ladders and TTFT only, 5 reps), and the control's ladders again last. The measured image
-vendors pth-flash-attn 07e5063; this branch pins a31d8ab, which differs from it in comments and
+vendors pth-flash-attn 07e5063; the branch then pinned a31d8ab, which differs from it in comments and
 docstrings only (the Python modules have equal syntax trees without docstrings, the C++/CUDA files are
-token for token the same without comments, and the exported sources compile to the same SASS), and its
+token for token the same without comments, and the exported sources compile to the same SASS), and `pthfa/` now pins the public
+release v0.1.0 (b0d4f7e), which differs from a31d8ab in comments, docstrings, packaging metadata, two error messages and one sentence of
+`NOTICE`, with the same SASS (123 of 123 kernels on sm80/86/89; pth-flash-attn's `tools/compare_vendor_trees.py` and `tools/prove_sass_equal.sh`), and its
 launcher gives the measured launch the same argv as this branch's (which adds the target-only
 configuration's `DYNAMIC_K` refusal and 8.6 override; `DYNAMIC_K` was unset, and with `PTH_FA=1` the
 override leaves the argv as measured on an 8.6 GPU). Medians of the first boot of each arm (3 reps, 8k: 5); the "both / target

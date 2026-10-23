@@ -32,7 +32,15 @@ OUT = os.path.expanduser(
 
 DOC_TOKENS = 25000
 _corpus = os.path.expanduser("~/bench/labd_corpus.txt")
-doc = open(_corpus).read()[: int(DOC_TOKENS * 2.9)] if os.path.exists(_corpus) else ""
+try:
+    with open(_corpus, encoding="utf-8") as f:
+        doc = f.read()[: int(DOC_TOKENS * 2.9)]
+except FileNotFoundError:
+    print(f"INVALID: {_corpus} is missing; run bench/labd_bench.py once to build the frozen LABD corpus before recording", file=sys.stderr)
+    sys.exit(2)
+if not doc.strip() or len(doc) < int(DOC_TOKENS * 2.9):
+    print(f"INVALID: {_corpus} is blank or too short for the document demo", file=sys.stderr)
+    sys.exit(2)
 
 # English throughout: the demo is the repo's front page, and the frame should be
 # readable by anyone landing on it. No max_tokens -- each answer runs to its own

@@ -2,8 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 noon-at-cgn
 //
 // softmax.cuh: the online softmax of one warp over its sub-tiles, in the
-// exp2 domain, with the per-sub-tile power-of-two V-scale normalisation P''
-// (plan 3.4 items 6-7; ADR 0011 is the plan's record of the P'' choice).
+// exp2 domain, with the per-sub-tile power-of-two V-scale normalisation P''.
 //
 // State per warp (its 16 rows; each thread holds rows g and g + 8):
 //   m[h]  running max of the scores s (log2 units), -inf before any token;

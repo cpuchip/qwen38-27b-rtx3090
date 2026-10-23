@@ -7,7 +7,7 @@ Each file in patches/ and kvarn/ ends its preamble with one paragraph of headers
     What: the text of the table's "what" cell; a long value continues on lines
       that start with whitespace
     Upstream: vllm #59892
-    Cut-against: 0.30.0
+    Cut-against: <version pinned in docker/requirements.txt>
     Retires-when: upstream PR
 
 The headers live in the file's preamble: edit them there and run this script (a re-export

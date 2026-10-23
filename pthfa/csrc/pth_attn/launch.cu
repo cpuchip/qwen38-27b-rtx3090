@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright (c) 2026 noon-at-cgn
 //
-// The production op pth_flash_attn_fwd (plan section 4.1): validation, then
+// The shipped op pth_flash_attn_fwd (docs/api.md): validation, then
 // the two kernels of the library (attention, split combine) on the current
 // CUDA stream.
 //
 // Layering, and why: the kernels, their launch parameters and their per-launch
 // argument checks live in the launcher (attn_launch.h: attn_launch.cu,
-// attn_combine.cu), which the whole kernel test ladder (G1 grid, graph
+// attn_combine.cu), which the whole kernel test suite (GPU grid, graph
 // replay, stress, gates) drives through the test library's C ABI. This file
 // translates tensors into the launcher's structs and nothing else, so the op
 // runs the very code those tests proved; there is no second launcher that
@@ -19,7 +19,7 @@
 // What the op never does: allocate, read device data on the host, or
 // synchronise. Everything it needs per call is a host integer (the planner's
 // launch descriptor) or a device tensor. That is what makes a launch capturable
-// in a CUDA graph (plan 4.5).
+// in a CUDA graph.
 //
 // Every message starts with "pth_flash_attn_fwd: " so tests and users can
 // match it; STD_TORCH_CHECK prepends the C++ function, file and line.
@@ -41,7 +41,7 @@
 // stream. torch declares it under USE_CUDA; the signature is repeated here
 // (AOTITorchError is int32_t) instead of defining that macro for a whole
 // translation unit. torch's Stream::nativeHandle() would do too, but it needs
-// torch 2.13 and the extension targets the 2.11 floor (ADR 0003).
+// torch 2.13 and the extension targets the 2.11 floor.
 extern "C" int32_t aoti_torch_get_current_cuda_stream(int32_t device_index,
                                                       void** ret_stream);
 
@@ -51,7 +51,7 @@ namespace {
 using torch::headeronly::ScalarType;
 using torch::stable::Tensor;
 
-// Head sizes with a kernel instantiation (plan section 3.2, constants T1).
+// Head sizes with a kernel instantiation.
 constexpr int64_t kHeadSize64 = 64;
 constexpr int64_t kHeadSize128 = 128;
 constexpr int64_t kHeadSize256 = 256;
@@ -60,19 +60,19 @@ constexpr int64_t kHeadSize256 = 256;
 // with wm warps along M packs at most 16 * wm rows of one KV head (G <= 16*wm).
 constexpr int64_t kRowsPerWarp = 16;
 
-// GQA packing limit (plan C26): one CTA row tile holds 64 rows = 4 warps * 16.
+// GQA packing limit: one CTA row tile holds 64 rows = 4 warps * 16.
 constexpr int64_t kMaxGroupSize = 64;
 
 // Cache streams (K, V, k_scale, v_scale) are copied with cp.async of width
-// w in {16, 8, 4} bytes chosen on the host; 4 is the minimum (plan 3.4, and
+// w in {16, 8, 4} bytes chosen on the host; 4 is the minimum (and
 // the V half of a 520-byte cell starts at byte 260, which is only 4-aligned).
 constexpr int64_t kCacheStreamAlignBytes = 4;
 
-// q, out and the fp32 partials move in 16-byte vectors (plan 3.4 step 9:
-// "16-B stores"); their base and outer strides must allow that.
+// q, out and the fp32 partials move in 16-byte vectors; their base and outer
+// strides must allow that.
 constexpr int64_t kVectorAlignBytes = 16;
 
-// Compute capability major served by the sm_80/86/89 cubins (plan 4.7).
+// Compute capability major served by the sm_80/86/89 cubins.
 constexpr int kSupportedCcMajor = 8;
 
 bool is_supported_head_size(int64_t d) {
@@ -280,9 +280,9 @@ void check_metadata(const Tensor& out, const Tensor& q, const Tensor& k_cache,
   check_same_device(seq_lens, q, "seq_lens");
   check_same_device(query_start_loc, q, "query_start_loc");
 
-  // Workspace: read only when S > 1; may be empty when S == 1 (plan 4.1).
+  // Workspace: read only when S > 1; may be empty when S == 1 (docs/api.md).
   // Views of at least [S, T, Hq, D] / [S, T, Hq]: the reservation is made at
-  // maximum size at load and sliced per call (plan 4.4), so the leading two
+  // maximum size at load and sliced per call, so the leading two
   // sizes may exceed S and T while Hq and D must match exactly.
   if (num_splits > 1) {
     check_dim(ws_o, 4, "ws_o");
@@ -369,9 +369,9 @@ int64_t wm_for_rows(int64_t rows) {
 }
 
 // Query tokens per row tile. The op schema has no bq, so it is derived here
-// from wm, G and max_query_len, and it is the tile the gate sessions measured
-// (ADR 0028: balanced bq = min(planner bq, q), planner bq = floor(16 wm / G)):
-// a q = 1 decode (G = 6) is one 6-row n-tile, not the two of the capacity 2.
+// from wm, G and max_query_len: balanced bq = min(planner bq, q), planner
+// bq = floor(16 wm / G), so a q = 1 decode (G = 6) is one 6-row n-tile, not
+// the two of the capacity 2.
 // The shorter tile is taken only when it keeps the planned wm; a prefill launch
 // (wm = 4) whose longest request is short keeps the capacity, because its wm
 // was chosen for the capacity's rows. Needs G <= 16 wm (check_metadata).
@@ -402,7 +402,7 @@ int32_t dtype_code(ScalarType t) {
   return t == ScalarType::Half ? PTH_ATTN_F16 : PTH_ATTN_BF16;
 }
 
-// Strides arrive in elements; the launcher takes bytes (binding rule 5).
+// Strides arrive in elements; the launcher takes bytes.
 int64_t byte_stride(const Tensor& t, int64_t dim) {
   return t.stride(dim) * static_cast<int64_t>(t.element_size());
 }

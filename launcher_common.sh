@@ -34,11 +34,18 @@
 #                       off, and for a knob that defaults to on they turn it off (#310).
 #                       QWEN_BOOL_KNOBS lists them; bench/test_bool_knobs.sh checks that the
 #                       list matches what the patches register, plus FA2_FP8KV, which the
-#                       fa2/ plugin reads (not a patch).
+#                       fa2/ plugin reads (not a patch). The launcher controls VISION and
+#                       VISION_OFFLOAD, LOOKUP, INT4_MQ_3D, TOOLS and EMBED_UVA are validated alongside it.
 #
 #   qwen_fa2_fp8kv_single_only  <launcher>, for the launchers that have no FA2 arm (batch,
 #                       alternative.sh). Refuses FA2_FP8KV=1: the variable is also the plugin's
 #                       gate (fa2/), and it would reach the server's environment from a shared .env.
+#
+#   qwen_vision_args     sets VISION_ARGS for every launcher: language-model-only by default,
+#                       or one image and a 2048-image-token pixel cap with VISION=1. EXTRA_ARGS
+#                       can override the limits. The tower's weights are offloaded to host RAM
+#                       by default (gotcha 8); VISION_OFFLOAD=0 disables that even when a budget
+#                       was inherited through VLLM_VISION_CPU_OFFLOAD_GB.
 #
 #   qwen_kv_offload_args  KV_OFFLOAD_GB=N becomes --kv-offloading-size N at the front of
 #                       EXTRA_ARGS: a CPU tier of N GiB of pinned RAM behind the GPU
@@ -139,7 +146,7 @@ QWEN_BOOL_KNOBS="KVARN_DBG_LAYERS KVARN_FAST_FLUSH KVARN_FP16_DEQUANT KVARN_FUSE
 
 qwen_check_bool_knobs() {
   local k v bad=0
-  for k in $QWEN_BOOL_KNOBS; do
+  for k in $QWEN_BOOL_KNOBS VISION VISION_OFFLOAD LOOKUP INT4_MQ_3D TOOLS EMBED_UVA; do
     v=${!k-}
     case "$v" in
       ""|0|1) ;;
@@ -147,6 +154,24 @@ qwen_check_bool_knobs() {
     esac
   done
   [ "$bad" = 0 ] || { echo "refusing to boot with a boolean knob that is neither 0 nor 1" >&2; exit 1; }
+}
+
+qwen_vision_args() {
+  # Keep --language-model-only explicit. Enable Vision with VISION=1, not by
+  # countering it with --no-language-model-only in EXTRA_ARGS: that accepts images
+  # and counts their tokens but silently answers from placeholder embeddings.
+  # vLLM profiles the encoder at the largest accepted image; that peak is deducted
+  # from the KV pool. The 2,097,152-pixel cap limits it to 2048 image tokens.
+  VISION_ARGS=(--language-model-only)
+  if [ "${VISION:-0}" = 1 ]; then
+    VISION_ARGS=(--limit-mm-per-prompt '{"image":{"count":1}}'
+                 --mm-processor-kwargs '{"size":{"shortest_edge":65536,"longest_edge":2097152}}')
+    if [ "${VISION_OFFLOAD:-1}" = 1 ]; then
+      export VLLM_VISION_CPU_OFFLOAD_GB=${VLLM_VISION_CPU_OFFLOAD_GB:-1}
+    else
+      export VLLM_VISION_CPU_OFFLOAD_GB=0
+    fi
+  fi
 }
 
 # if, not &&: alternative.sh runs under set -e.

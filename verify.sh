@@ -425,6 +425,15 @@ if [ $NOSRV = 0 ]; then
     R=$(curl -s $SRV/v1/chat/completions -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
         -d '{"model":"qwen3.8-27b","messages":[{"role":"user","content":"Hvad er hovedstaden i Danmark? Svar med ét ord."}],"max_tokens":8,"temperature":0,"chat_template_kwargs":{"enable_thinking":false}}')
     echo "$R" | grep -qi "københavn\|copenhagen" && ok "chat completion answers ('$(echo "$R" | $PY -c 'import json,sys; print(json.load(sys.stdin)["choices"][0]["message"]["content"].strip())' 2>/dev/null)')" || fail "chat completion wrong/failed: $(echo "$R" | head -c 200)"
+    # A text answer can pass with a broken/disabled vision tower. Require two
+    # Image-dependent answers when Vision is requested; expected color order lives only in pixels.
+    if [ "${VISION:-0}" = 1 ]; then
+      if VLLM_API="$SRV" OPENAI_API_KEY="$KEY" "$PY" bench/vision_smoke.py; then
+        ok "Vision reads two different image color orders"
+      else
+        fail "Vision image round-trip failed (see above)"
+      fi
+    fi
     # /tokenize contract — the endpoint exists to prove the client's and the
     # server's tokenizers agree, and nothing asserted it. These rows catch
     # gotcha 32 (an empty-vocab dir encodes everything to []) and chat-template

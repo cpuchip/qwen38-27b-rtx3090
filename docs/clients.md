@@ -56,7 +56,7 @@ server and prints which attention backend and KV pool it came up with), then
 `bash bench/run_benchmarks.sh batch` or `... single` reproduces the tables
 above against the running server (`--prefill` and `--long` add the prefill
 matrix and the long-context rows), `bash bench/real_rep.sh <tag> 3 0` repeats
-the single-stream row, and `python bench/quality_battery.py <tag>` the
+the single-stream row, and `venv/bin/python bench/quality_battery.py <tag>` the
 perplexity / GSM8K rows. For the concurrency rows,
 `python bench/conc_ladder.py --n 1,2,4,8 --ctx-tokens 4096`; for the prompt-length
 bug, `python bench/residue_sweep.py <tag>` (all 128 residues) with

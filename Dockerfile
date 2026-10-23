@@ -1,8 +1,8 @@
 # Same stack as the README's venv install, frozen: Python 3.12 venv at /app/venv,
 # vLLM 0.31.0 (torch 2.13 / cu130 / Triton 3.7.1), every compatible patch in
 # patches/ applied,
-# the KVarN KV cache installed, the pth-flash-attn op library built (pthfa/, used only
-# with PTH_FA=1), verify.sh --install and the scratch-pool test run at build time.
+# the KVarN KV cache installed, the pth-flash-attn op library built (pthfa/, selected by
+# PTH_FA=1, the default on an 8.6 GPU for SPEC=mtp or dflash2 CTX=long), verify.sh --install and the scratch-pool test run at build time.
 #
 # The base image is CUDA "base" + nvcc, not "devel": vLLM's wheels bring their own
 # CUDA libraries, but FlashInfer JIT-compiles its fp8-KV attention kernel with nvcc
@@ -25,7 +25,7 @@ RUN python3.12 -m venv venv && venv/bin/pip install --upgrade pip
 COPY docker/requirements.txt docker/requirements.txt
 RUN venv/bin/pip install -r docker/requirements.txt
 
-# The pth-flash-attn op library (pthfa/, optional, PTH_FA=1) compiles here, ahead of `COPY . .`, so an
+# The pth-flash-attn op library (pthfa/, optional: PTH_FA=1, its default on an 8.6 GPU) compiles here, ahead of `COPY . .`, so an
 # edit elsewhere does not recompile it: SASS for sm_80/86/89 with the image's nvcc and the venv's torch,
 # installed into the venv with its vllm.general_plugins entry point. install.sh checks the cubins and runs
 # pthfa/tests/gate_test.py against the pristine wheel; the RUN below runs it again on the patched tree.

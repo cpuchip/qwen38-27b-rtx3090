@@ -1,24 +1,24 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright (c) 2026 noon-at-cgn
-"""vLLM attention backend ``CUSTOM`` that runs ``pth_flash_attn_fwd`` (ADR 0021).
+"""vLLM attention backend ``CUSTOM`` that runs ``pth_flash_attn_fwd``.
 
 Selected with ``--attention-backend CUSTOM`` once the ``vllm.general_plugins``
 entry point (``plugin.py``) has registered this class. It serves the paged
-``int8_per_token_head`` cache of vLLM 0.30.0 on sm_80/86/89 and is built from
+``int8_per_token_head`` cache of vLLM 0.30 and 0.31 on sm_80/86/89 and is built from
 three pieces:
 
 * **Cache spec, layout and writer are Triton's.** ``PthFlashAttnBackend``
   subclasses ``TritonAttentionBackend`` and ``PthFlashAttnImpl`` subclasses
   ``TritonAttentionImpl``, so ``customize_spec`` (inline fp32 scales), the
   page layout, the scale views and ``do_kv_cache_update`` (the Triton writer)
-  are the code the production stack already runs. Only the read side changes.
-* **Its own metadata builder** (plan C14). Triton's builder allocates scratch
-  in ``__init__`` and the HyperQwen image patches that allocation; inheriting
+  are the code vLLM itself runs for this cache. Only the read side changes.
+* **Its own metadata builder**. Triton's builder allocates scratch
+  in ``__init__``, and the HyperQwen image patches that allocation; inheriting
   it would inherit the patch. ``PthFlashAttnMetadataBuilder`` allocates one
   tiny persistent buffer and plans launches with ``planner.plan_launch``.
-* **Workspace reserved by the Impl at model load** (ADR 0017): the Impl is
+* **Workspace reserved by the Impl at model load**: the Impl is
   constructed inside the window whose memory the KV budget accounts for, the
-  builder is not (plan V5).
+  builder is not.
 
 Per forward there are at most two op calls: the decode-like slice (every request
 with ``q_len <= reorder_batch_threshold``, MTP verify included: spec-as-decode)
@@ -33,7 +33,7 @@ non-causal). The window is a layer constant: the Impl passes its own
 it from the group's spec (vLLM groups layers by window) to cap the split count.
 ``causal`` comes per group from ``CommonAttentionMetadata.causal``. A causal
 layer without a window calls the op with ``window=0, causal=True``: the causal
-kernel and the plan of before.
+kernel and the same launch plan as without these arguments.
 
 Nothing here reads device data on the host, allocates in ``forward`` or calls
 ``torch.cuda`` (device questions go through ``current_platform``): the decode
@@ -89,21 +89,21 @@ from pth_flash_attn.planner import (
 )
 
 # Under "vllm.": vLLM configures handlers and the INFO level only for that
-# namespace, so a logger named "pth_flash_attn..." drops the INFO lines (the
-# workspace-reservation line of the boot log was invisible in staging).
+# namespace, so a logger named "pth_flash_attn..." drops the INFO lines (such as
+# the workspace-reservation line of the boot log).
 logger = init_logger(f"vllm.{__name__}")
 
-# The one backend name vLLM accepts for an out-of-tree backend (plan V10):
+# The one backend name vLLM accepts for an out-of-tree backend:
 # AttentionBackendEnum[backend.get_name()] must resolve, and CUSTOM is the only
 # member reserved for plugins.
 BACKEND_NAME = "CUSTOM"
-# The only cache dtype served (ADR 0021; feature matrix plan 4.7).
+# The only cache dtype served.
 KV_CACHE_DTYPE = "int8_per_token_head"
 # Kernel block sizes are multiples of 16 (the cp.async widths and the 64-token
 # tile need no more); any larger multiple, such as the hybrid group's 816,
 # is used as is, so no block-table conversion is needed.
 KERNEL_BLOCK_MULTIPLE = 16
-# The kernels target compute capability 8.x (sm_80/86/89, ADR 0003).
+# The kernels target compute capability 8.x (sm_80/86/89).
 SUPPORTED_CC_MAJOR = 8
 # Verify length of a decode request without speculation.
 NO_SPEC_QUERY_LEN = 1
@@ -112,7 +112,7 @@ NO_SPEC_QUERY_LEN = 1
 def verify_query_len(vllm_config: VllmConfig) -> int:
     """Return q_dec_max, the verify length ``1 + k`` that sizes the workspace.
 
-    ADR 0017: the workspace is sized for the speculative verify length, not for
+    The workspace is sized for the speculative verify length, not for
     the reorder threshold. A decode slice with a longer ``q_len`` (a short
     prefill extension) still works: the planner clamps its split count.
     """
@@ -251,7 +251,7 @@ class PthFlashAttnMetadataBuilder(AttentionMetadataBuilder[PthAttnMetadata]):
         if get_num_ubatches(vllm_config.parallel_config) > 1:
             raise NotImplementedError(
                 "pth_flash_attn: dual-batch overlap (DBO) is not supported: the "
-                "workspace is one buffer per ubatch lane (ADR 0017)"
+                "workspace is one buffer per ubatch lane"
             )
         if model_config.rswa_window is not None:
             raise NotImplementedError("pth_flash_attn: R-SWA is not supported")
@@ -296,7 +296,9 @@ class PthFlashAttnMetadataBuilder(AttentionMetadataBuilder[PthAttnMetadata]):
 
     @classmethod
     def get_varlen_cudagraph_max_query_len(
-        cls, vllm_config: VllmConfig, kv_cache_spec: AttentionSpec
+        cls,
+        vllm_config: VllmConfig,
+        kv_cache_spec: AttentionSpec,  # type: ignore[override]
     ) -> int:
         """Return the longest decode ``q_len`` a FULL graph covers (vLLM 0.31+).
 
@@ -389,7 +391,7 @@ class PthFlashAttnMetadataBuilder(AttentionMetadataBuilder[PthAttnMetadata]):
         if cam.mm_req_doc_ranges and any(cam.mm_req_doc_ranges.values()):
             raise NotImplementedError(
                 "pth_flash_attn: bidirectional multimodal prefix ranges are not "
-                "supported (plan C15); Qwen does not use them"
+                "supported; Qwen does not use them"
             )
         num_decodes, num_prefills, num_decode_tokens, num_prefill_tokens = (
             split_decodes_and_prefills(
@@ -458,7 +460,7 @@ class PthFlashAttnMetadataBuilder(AttentionMetadataBuilder[PthAttnMetadata]):
 
 
 class PthFlashAttnBackend(TritonAttentionBackend):
-    """The ``CUSTOM`` backend: Triton's cache and writer, our kernel and builder."""
+    """``CUSTOM``: Triton's cache and writer, this project's kernel and builder."""
 
     supported_dtypes: ClassVar[list[torch.dtype]] = [torch.float16, torch.bfloat16]
     supported_kv_cache_dtypes: ClassVar[list[CacheDType]] = [KV_CACHE_DTYPE]  # type: ignore[list-item]
@@ -474,13 +476,13 @@ class PthFlashAttnBackend(TritonAttentionBackend):
         return PthFlashAttnImpl
 
     @staticmethod
-    def get_builder_cls() -> type[PthFlashAttnMetadataBuilder]:
-        """Return our builder (not Triton's, plan C14)."""
+    def get_builder_cls() -> type[PthFlashAttnMetadataBuilder]:  # type: ignore[override]
+        """Return this backend's builder (not Triton's)."""
         return PthFlashAttnMetadataBuilder
 
     @staticmethod
     def get_supported_kernel_block_sizes(
-        kv_cache_spec: AttentionSpec | None = None,
+        kv_cache_spec: AttentionSpec | None = None,  # type: ignore[override]
     ) -> list[int | MultipleOf]:
         """Return the kernel block sizes; the argument exists on vLLM 0.31+ only."""
         return [MultipleOf(KERNEL_BLOCK_MULTIPLE)]
@@ -545,7 +547,7 @@ class PthFlashAttnBackend(TritonAttentionBackend):
 
     @classmethod
     def supports_mm_prefix(cls) -> bool:
-        """No bidirectional multimodal prefix (plan C15)."""
+        """No bidirectional multimodal prefix."""
         return False
 
     @classmethod
@@ -644,7 +646,7 @@ class PthFlashAttnImpl(TritonAttentionImpl):
         """Reserve W_ts token-splits of fp32 partials in the shared workspace.
 
         Done here, at Impl construction during model load, so the bytes are in
-        the memory profile that sizes the KV cache (ADR 0017, plan V5). With no
+        the memory profile that sizes the KV cache. With no
         config (unit tests) nothing is reserved and forward asks the manager
         for what it needs.
         """
@@ -696,7 +698,7 @@ class PthFlashAttnImpl(TritonAttentionImpl):
             self._k_scale_cache,
             self._v_scale_cache,
         )
-        self._cache_views = (ptr, views)
+        self._cache_views = (ptr, views)  # type: ignore[assignment]
         return views  # type: ignore[return-value]
 
     def _run_slice(
@@ -748,12 +750,12 @@ class PthFlashAttnImpl(TritonAttentionImpl):
 
     def forward(
         self,
-        layer: torch.nn.Module,
+        layer: torch.nn.Module,  # type: ignore[override]
         query: torch.Tensor,
         key: torch.Tensor,
         value: torch.Tensor,
         kv_cache: torch.Tensor,
-        attn_metadata: PthAttnMetadata,
+        attn_metadata: PthAttnMetadata,  # type: ignore[override]
         output: torch.Tensor,
         output_scale: torch.Tensor | None = None,
         output_block_scale: torch.Tensor | None = None,

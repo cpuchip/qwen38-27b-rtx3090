@@ -1,17 +1,20 @@
 #!/usr/bin/env python3
 """The T4 battery (#153): shipped int8 + Triton against fp8 KV on the FA2 source port, one command.
 
-Both arms are `SPEC=dflash2 CTX=long PREFIX_CACHE=1` through single-user/start_qwen.sh:
+Every arm is `SPEC=dflash2 CTX=long PREFIX_CACHE=1` through single-user/start_qwen.sh:
 
   int8    FA2_FP8KV=0  int8_per_token_head KV on TRITON_ATTN (what ships)
   fp8fa2  FA2_FP8KV=1  fp8 KV on the FA2 port (fa2/install.sh, launcher knob from the T4 launcher PR)
+  pth     PTH_FA=1 FA2_FP8KV=0  int8_per_token_head KV on the pth_flash_attn CUSTOM backend, target and DFlash2 drafter
+          (PTH_FA=1 is explicit here, as FA2_FP8KV is on the other arms; the launcher's default (PTH_FA unset on an 8.6 GPU) resolves to
+          the same argv, but any FA2_FP8KV value blocks it, and the battery sets FA2_FP8KV on every arm)
 
 Cells, per arm. Each group of cells gets its own boot, so the order below is the boot order:
   residue   cold boot, defaults       bench/residue_sweep.py t4-<arm>                      (128 residues)
   quality   roomy boot                bench/quality_battery.py t4-<arm> --gsm-n 200
   d149      MAX_LEN/KV_MEM boot       bench/labd_bench.py ... --ctx 153000  (opt-in: --cells ...,d149)
   d60 d90   cold boot, defaults       bench/labd_bench.py ... --ctx 53000 / 85000 --tasks qa,summary
-  soak      same boot as d60/d90      bench/labd_soak.py --minutes N                  (fp8fa2 only)
+  soak      same boot as d60/d90      bench/labd_soak.py --minutes N                  (fp8fa2 and pth, not int8)
 --ctx 53000 / 85000 / 153000 read about 60k / 90k / 149k tokens on this corpus (run 4). Read `prompt=` in the
 raw logs, and adjust with --ctx60 / --ctx90 / --ctx149.
 
@@ -21,10 +24,10 @@ Pass bars (everything else is reported, not gated):
                 the server log during the cell, fails that cell and its arm (club-3090 #1358). Xid lines from
                 dmesg/journalctl -k are recorded when readable and never fail a cell.
   quality       The battery has no verdict of its own. A battery that completes passes. Against int8,
-                fp8fa2's GSM8K is at most 1.0 point lower and its "PPL all" at most 2% higher (§0.3 run 1's bars).
+                the other arm's GSM8K is at most 1.0 point lower and its "PPL all" at most 2% higher (§0.3 run 1's bars).
   residue       0 broken of 128 residues (residue_sweep.py exits 0).
-  decode        fp8fa2 decode (labd_bench TOTAL) at ~90k >= int8's. ~60k and ~149k are reported.
-  soak          labd_soak.py exits 0 (fp8fa2 only).
+  decode        the other arm's decode (labd_bench TOTAL) at ~90k >= int8's. ~60k and ~149k are reported.
+  soak          labd_soak.py exits 0 (fp8fa2 and pth only).
 Exit 0: every bar passed. 1: a bar failed. 2: a bar had no data (a cell did not run). With a single arm
 (--attach) the cross-arm bars are n/a, and the verdict says PARTIAL.
 
@@ -34,8 +37,10 @@ T4_149K_KV_MEM / T4_149K_MAX_LEN (6100000000 / 150000, run 4's ~149k boot, no EM
 --env KEY=VAL (repeatable) is added to every boot (EMBED_UVA=1, MAX_SEQS=...).
 
   python3 bench/t4_battery.py --dry-run                      # the plan, no GPU, nothing started
-  python3 bench/t4_battery.py                                # both arms, 240-min soak (2-3 h per arm plus the soak, estimate)
+  python3 bench/t4_battery.py                                # int8 and fp8fa2, 240-min soak (2-3 h per arm plus the soak, estimate)
+  python3 bench/t4_battery.py --arms int8,pth,fp8fa2 --soak-minutes-arm fp8fa2=60   # three arms, fp8fa2 soak shortened
   python3 bench/t4_battery.py --arms fp8fa2 --cells d90 --soak-minutes 30
+  python3 bench/t4_battery.py --arms int8,pth --soak-minutes 60   # int8 against our kernel arm
   python3 bench/t4_battery.py --attach fp8fa2 --server-log qwen.log --cells d60,d90   # server already up
 
 Output: --out (default bench/results/t4-battery-<UTC>/): summary.json and summary.md, plus per arm the raw
@@ -59,18 +64,25 @@ REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import harness  # noqa: E402
 
-ARMS = {"int8": "0", "fp8fa2": "1"}
+ARMS = {"int8": "0", "fp8fa2": "1", "pth": "0"}  # arm -> its FA2_FP8KV (set on every arm, so the FA2 default stays off on 8.6 and the PTH_FA default cannot fire)
+ARM_ENV_EXTRA = {"pth": {"PTH_FA": "1"}}  # the knob that makes the pth arm
+SOAK_ARMS = ("fp8fa2", "pth")  # the arms the soak cell runs on
 CELLS = ["residue", "quality", "d149", "d60", "d90", "soak"]  # boot order, see the docstring
 DEFAULT_CELLS = [c for c in CELLS if c != "d149"]
 BARS = {"gsm_drop_pt": 1.0, "ppl_rise_pct": 2.0}
 CORPUS_LONG = "~/bench/labd_corpus_long.txt"
 KNOB = re.compile(r"^(SPEC|CTX|PREFIX_CACHE|PORT|HOST|PY|MODEL|EXTRA_ARGS|EMBED_UVA|KV_|MAX_|DRAFT_TOKENS|GPU_UTIL|"
-                  r"ASYNC_SCHED|INT8_|CHUNK|VLLM_|KVARN_|FA2_)")
+                  r"ASYNC_SCHED|INT8_|CHUNK|VLLM_|KVARN_|FA2_|PTH_)")
 SECRET = re.compile(r"KEY|TOKEN|SECRET|PASSWORD")
 DEATH = re.compile(r"EngineDeadError|Engine core proc \S+ died|EngineCore.*(died|encountered an issue|fatal)", re.I)
 
 
 # ---- the plan: shared by --dry-run and the real run ---------------------------------------------------------
+
+def soak_minutes(a, arm):
+    """--soak-minutes, or the arm's own --soak-minutes-arm ARM=N."""
+    return getattr(a, "soak_arm", {}).get(arm, a.soak_minutes)
+
 
 def plan(a):
     """[{arm, name, env, cells: [{name, argv, timeout}]}]. env is what the script adds to the launcher."""
@@ -84,7 +96,7 @@ def plan(a):
         if cell == "residue":
             return [py, "bench/residue_sweep.py", f"t4-{arm}"]
         if cell == "soak":
-            return [py, "bench/labd_soak.py", "--minutes", str(a.soak_minutes)]
+            return [py, "bench/labd_soak.py", "--minutes", str(soak_minutes(a, arm))]
         return [py, "bench/labd_bench.py", f"t4-{arm}-{cell[1:]}k", "--ctx", str(ctx[cell]), "--tasks", "qa,summary",
                 "--corpus", CORPUS_LONG]
 
@@ -98,13 +110,13 @@ def plan(a):
               ("speed", {}, ["d60", "d90", "soak"])]
     boots = []
     for arm in a.arms:
-        want = [c for c in a.cells if c != "soak" or arm == "fp8fa2"]
+        want = [c for c in a.cells if c != "soak" or arm in SOAK_ARMS]
         groups_arm = [("attached", {}, [c for c in CELLS if c in want])] if a.attach else groups
         for name, extra, cells in groups_arm:
             cells = [c for c in cells if c in want]
             if cells:
-                timeout = [a.cell_timeout if c != "soak" else a.soak_minutes * 60 + 3600 for c in cells]
-                boots.append({"arm": arm, "name": name, "env": {**base, **extra, "FA2_FP8KV": ARMS[arm]},
+                timeout = [a.cell_timeout if c != "soak" else soak_minutes(a, arm) * 60 + 3600 for c in cells]
+                boots.append({"arm": arm, "name": name, "env": {**base, **extra, "FA2_FP8KV": ARMS[arm], **ARM_ENV_EXTRA.get(arm, {})},
                               "cells": [{"name": c, "argv": argv(arm, c), "timeout": t}
                                         for c, t in zip(cells, timeout)]})
     return boots
@@ -159,22 +171,31 @@ PARSERS = {"quality": parse_quality, "residue": parse_residue, "soak": parse_soa
 # ---- arm identity: does PRINT_ARGV show the arm we think we are booting ----------------------------------
 
 def check_argv(arm, lines):
-    """Reasons the launcher's argv is not this arm's. A launcher without the FA2_FP8KV knob ignores it, and the
-    fp8fa2 arm would silently measure int8 twice."""
+    """Reasons the launcher's argv is not this arm's. A launcher without the FA2_FP8KV (or PTH_FA) knob ignores it,
+    and the fp8fa2 (or pth) arm would silently measure int8 twice."""
     def val(flag):
         return lines[lines.index(flag) + 1] if flag in lines and lines.index(flag) + 1 < len(lines) else None
     backend, dtype = val("--attention-backend"), val("--kv-cache-dtype")
-    want = ("TRITON_ATTN", "int8_per_token_head") if arm == "int8" else ("FLASH_ATTN", "fp8")
+    want = {"int8": ("TRITON_ATTN", "int8_per_token_head"), "fp8fa2": ("FLASH_ATTN", "fp8"),
+            "pth": ("CUSTOM", "int8_per_token_head")}[arm]
     out = [f"{f} is {g!r}, the {arm} arm needs {w!r}" for f, g, w in
            (("--attention-backend", backend, want[0]), ("--kv-cache-dtype", dtype, want[1])) if g != w]
-    if arm == "fp8fa2":
+    if arm in ("fp8fa2", "pth"):  # the drafter selects the arm's backend too (target and drafter on the same kernel)
         try:
             spec = json.loads(val("--speculative-config") or "")
         except ValueError:
             spec = {}
-        if spec.get("attention_backend") != "FLASH_ATTN":
-            out.append('--speculative-config lacks "attention_backend":"FLASH_ATTN"')
+        if spec.get("attention_backend") != want[0]:
+            out.append(f'--speculative-config lacks "attention_backend":"{want[0]}"')
     return out
+
+
+def check_effective(arm, stderr):
+    """Reasons the launcher's own `[effective-config]` line (its stderr under PRINT_ARGV=1) is not this arm's. The pth arm sets PTH_FA=1, so the launcher
+    must say so: a launcher that refused it or never read it prints no such line. The other arms are checked on their argv only."""
+    if arm == "pth" and not re.search(r"^\[effective-config\] PTH_FA=1 ", stderr, re.M):
+        return ["no '[effective-config] PTH_FA=1 ' line: the launcher did not take PTH_FA=1, so the pth arm would not be the kernel arm"]
+    return []
 
 
 # ---- the restart gate ------------------------------------------------------------------------------------
@@ -290,38 +311,39 @@ def evaluate(res, arms, cells):
         g.append({"name": f"{arm}: restart gate", "status": "fail" if bad else "pass" if ran else "not-evaluated",
                   "detail": "; ".join(bad) or ("" if ran else "no cell ran")})
         for c in ("quality", "residue", "soak"):
-            if c in cells and (c != "soak" or arm == "fp8fa2"):
+            if c in cells and (c != "soak" or arm in SOAK_ARMS):
                 r = cell(arm, c)
                 g.append({"name": f"{arm}: {c}", "status": r["status"] if r and r["status"] in ("pass", "fail")
                           else "not-evaluated", "detail": "; ".join(r["reasons"]) if r else "cell did not run"})
-    cross = len(arms) == 2
-    a, b = cell("int8", "quality"), cell("fp8fa2", "quality")
-    if "quality" in cells:
-        if not cross:
-            g.append({"name": "fp8fa2 vs int8: quality", "status": "n/a", "detail": "one arm"})
-        elif a and b and not (a.get("metrics") and b.get("metrics")):
-            g.append({"name": "fp8fa2 vs int8: quality", "status": "fail", "detail": "a battery did not complete"})
-        elif a and b:
-            drop = (a["metrics"]["gsm8k"] - b["metrics"]["gsm8k"]) * 100
-            rise = pct(a["metrics"]["ppl_all"], b["metrics"]["ppl_all"])
-            ok = drop <= BARS["gsm_drop_pt"] and rise <= BARS["ppl_rise_pct"]
-            g.append({"name": "fp8fa2 vs int8: quality", "status": "pass" if ok else "fail",
-                      "detail": f"GSM8K {-drop:+.1f} pt (bar -{BARS['gsm_drop_pt']}), PPL all {rise:+.3f}% "
-                                f"(bar +{BARS['ppl_rise_pct']}%)"})
-        else:
-            g.append({"name": "fp8fa2 vs int8: quality", "status": "not-evaluated", "detail": "no battery numbers"})
-    if "d90" in cells:
-        a, b = cell("int8", "d90"), cell("fp8fa2", "d90")
-        if not cross:
-            g.append({"name": "fp8fa2 vs int8: decode at ~90k", "status": "n/a", "detail": "one arm"})
-        elif a and b and not (a.get("metrics") and b.get("metrics")):
-            g.append({"name": "fp8fa2 vs int8: decode at ~90k", "status": "fail", "detail": "a d90 cell did not complete"})
-        elif a and b:
-            x, y = a["metrics"]["decode"], b["metrics"]["decode"]
-            g.append({"name": "fp8fa2 vs int8: decode at ~90k", "status": "pass" if y >= x else "fail",
-                      "detail": f"{y} vs {x} tok/s ({pct(x, y):+.1f}%)"})
-        else:
-            g.append({"name": "fp8fa2 vs int8: decode at ~90k", "status": "not-evaluated", "detail": "no decode numbers"})
+    for rv in [x for x in arms if x != "int8"] or ["fp8fa2"]:  # each other arm against int8, with the same bars
+        cross = "int8" in arms and rv in arms
+        a, b = cell("int8", "quality"), cell(rv, "quality")
+        if "quality" in cells:
+            if not cross:
+                g.append({"name": f"{rv} vs int8: quality", "status": "n/a", "detail": "one arm"})
+            elif a and b and not (a.get("metrics") and b.get("metrics")):
+                g.append({"name": f"{rv} vs int8: quality", "status": "fail", "detail": "a battery did not complete"})
+            elif a and b:
+                drop = (a["metrics"]["gsm8k"] - b["metrics"]["gsm8k"]) * 100
+                rise = pct(a["metrics"]["ppl_all"], b["metrics"]["ppl_all"])
+                ok = drop <= BARS["gsm_drop_pt"] and rise <= BARS["ppl_rise_pct"]
+                g.append({"name": f"{rv} vs int8: quality", "status": "pass" if ok else "fail",
+                          "detail": f"GSM8K {-drop:+.1f} pt (bar -{BARS['gsm_drop_pt']}), PPL all {rise:+.3f}% "
+                                    f"(bar +{BARS['ppl_rise_pct']}%)"})
+            else:
+                g.append({"name": f"{rv} vs int8: quality", "status": "not-evaluated", "detail": "no battery numbers"})
+        if "d90" in cells:
+            a, b = cell("int8", "d90"), cell(rv, "d90")
+            if not cross:
+                g.append({"name": f"{rv} vs int8: decode at ~90k", "status": "n/a", "detail": "one arm"})
+            elif a and b and not (a.get("metrics") and b.get("metrics")):
+                g.append({"name": f"{rv} vs int8: decode at ~90k", "status": "fail", "detail": "a d90 cell did not complete"})
+            elif a and b:
+                x, y = a["metrics"]["decode"], b["metrics"]["decode"]
+                g.append({"name": f"{rv} vs int8: decode at ~90k", "status": "pass" if y >= x else "fail",
+                          "detail": f"{y} vs {x} tok/s ({pct(x, y):+.1f}%)"})
+            else:
+                g.append({"name": f"{rv} vs int8: decode at ~90k", "status": "not-evaluated", "detail": "no decode numbers"})
     st = {x["status"] for x in g}
     return g, ("FAIL" if "fail" in st else "INCOMPLETE" if "not-evaluated" in st else
                "PARTIAL" if "n/a" in st else "PASS")
@@ -339,24 +361,30 @@ def render_md(s):
         r = res.get(arm, {}).get("cells", {}).get(c)
         return fmt((r or {}).get("metrics", {}).get(key) if r and r.get("metrics") else None, spec)
 
+    cols = ["int8", "fp8fa2"] + (["pth"] if "pth" in arms else [])  # columns; ratios are rival / base
+    ratios = [("fp8fa2", "int8")] + ([("pth", "int8"), ("pth", "fp8fa2")] if "pth" in arms else [])
+    names = {"int8": "int8 + Triton", "fp8fa2": "fp8 + FA2", "pth": "int8 + pth (CUSTOM)"}
+
     def row(label, c, key, spec="", delta=True):
-        v = [res.get(a, {}).get("cells", {}).get(c) for a in ("int8", "fp8fa2")]
-        x, y = [(r or {}).get("metrics", {}).get(key) if r else None for r in v]
-        d = f"{pct(x, y):+.1f}%" if delta and x and y is not None else ""
-        return f"| {label} | {fmt(x, spec)} | {fmt(y, spec)} | {d} |"
+        v = {a: (r or {}).get("metrics", {}).get(key) if r else None
+             for a in cols for r in [res.get(a, {}).get("cells", {}).get(c)]}
+        ds = [f"{pct(v[b], v[r]):+.1f}%" if delta and v[b] and v[r] is not None else "" for r, b in ratios]
+        return f"| {label} | " + " | ".join(fmt(v[a], spec) for a in cols) + " | " + " | ".join(ds) + " |"
 
     def pool(arm):
         bs = res.get(arm, {}).get("boots", {})
         return (bs.get("speed") or next(iter(bs.values()), {})).get("pool_tokens")
 
-    pi, pf = pool("int8"), pool("fp8fa2")
+    pl = {a: pool(a) for a in cols}
     out = [f"# T4 battery: {s['verdict']}", "",
            f"git {s['meta']['git_sha']}{' (dirty)' if s['meta']['git_dirty'] else ''}, host {s['meta']['host']}, "
            f"GPU {s['meta']['gpu']}, vLLM pin {s['meta']['vllm_pin']}, fa2 pin {s['meta']['fa2_pin'] or 'absent'}", "",
            "## Bars", "", "| bar | status | detail |", "|---|---|---|"]
     out += [f"| {x['name']} | {x['status']} | {x['detail']} |" for x in s["gates"]]
-    out += ["", "## Numbers", "", "| | int8 + Triton | fp8 + FA2 | fp8fa2 / int8 |", "|---|---|---|---|",
-            f"| pool (tokens) | {fmt(pi)} | {fmt(pf)} | {f'{pct(pi, pf):+.1f}%' if pi and pf else ''} |"]
+    out += ["", "## Numbers", "", "| | " + " | ".join(names[a] for a in cols) + " | " + " | ".join(f"{r} / {b}" for r, b in ratios) + " |",
+            "|---" * (1 + len(cols) + len(ratios)) + "|",
+            f"| pool (tokens) | " + " | ".join(fmt(pl[a]) for a in cols) + " | "
+            + " | ".join(f"{pct(pl[b], pl[r]):+.1f}%" if pl[b] and pl[r] else "" for r, b in ratios) + " |"]
     for c, n in (("d60", "~60k"), ("d90", "~90k"), ("d149", "~149k")):
         if any(c in res.get(a, {}).get("cells", {}) for a in arms):
             out += [row(f"{n} prompt tokens", c, "prompt_tokens", delta=False),
@@ -364,8 +392,9 @@ def render_md(s):
                     row(f"{n} cold TTFT s", c, "ttft_cold", ".1f")]
     if any("quality" in res.get(a, {}).get("cells", {}) for a in arms):
         out += [row("GSM8K n=200", "quality", "gsm8k", ".3f", False), row("PPL all", "quality", "ppl_all", ".4f")]
-    out += ["| residue broken / 128 | " + " | ".join(m(a, "residue", "broken") for a in ("int8", "fp8fa2")) + " | |"]
-    out += ["| soak | | " + (m("fp8fa2", "soak", "rounds") + " rounds, tok/step " + m("fp8fa2", "soak", "tok_step")) + " | |",
+    out += ["| residue broken / 128 | " + " | ".join(m(a, "residue", "broken") for a in cols) + " |" + " |" * len(ratios)]
+    out += ["| soak | " + " | ".join("" if a == "int8" else m(a, "soak", "rounds") + " rounds, tok/step " + m(a, "soak", "tok_step")
+                                      for a in cols) + " |" + " |" * len(ratios),
             "", "## Cells", "", "| arm | cell | status | rc | s | reasons | Xid new |", "|---|---|---|---|---|---|---|"]
     for a in arms:
         for c in res.get(a, {}).get("cells", {}).values():
@@ -452,7 +481,7 @@ def run_boot(a, boot, res, out):
         open(f"{d}/{name}.argv.stderr.txt", "w").write(r.stderr)
         info["argv"] = r.stdout.splitlines()
         skip = (["PRINT_ARGV: launcher exit %d: %s" % (r.returncode, r.stderr.strip()[-300:])] if r.returncode
-                else check_argv(arm, r.stdout.splitlines()))
+                else check_argv(arm, r.stdout.splitlines()) + check_effective(arm, r.stderr))
         if not skip:
             if healthy():
                 skip = ["a server already answers on this port; stop it, or use --attach"]
@@ -515,10 +544,12 @@ def write_summary(a, res, out):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--arms", default="int8,fp8fa2", help="comma list of int8, fp8fa2 (default both)")
+    ap.add_argument("--arms", default="int8,fp8fa2", help="comma list of int8, fp8fa2, pth (default int8,fp8fa2)")
     ap.add_argument("--cells", default=",".join(DEFAULT_CELLS), help=f"comma list of {', '.join(CELLS)} "
-                    f"(default {','.join(DEFAULT_CELLS)}; d149 is opt-in; soak runs on fp8fa2 only)")
+                    f"(default {','.join(DEFAULT_CELLS)}; d149 is opt-in; soak runs on fp8fa2 and pth only)")
     ap.add_argument("--soak-minutes", type=int, default=240)
+    ap.add_argument("--soak-minutes-arm", action="append", default=[], metavar="ARM=MIN",
+                    help="the soak minutes of one arm, instead of --soak-minutes (repeatable)")
     ap.add_argument("--gsm-n", type=int, default=200)
     ap.add_argument("--ctx60", type=int, default=53000)
     ap.add_argument("--ctx90", type=int, default=85000)
@@ -535,6 +566,12 @@ def main():
     ap.add_argument("--cell-timeout", type=int, default=4 * 3600, help="seconds per cell except soak (default 14400)")
     a = ap.parse_args()
     a.arms = a.arms.split(",")
+    a.soak_arm = {}
+    for kv in a.soak_minutes_arm:
+        k, _, v = kv.partition("=")
+        if k not in ARMS or not v.isdigit():
+            ap.error(f"--soak-minutes-arm wants ARM=MIN with ARM in {list(ARMS)}, got {kv!r}")
+        a.soak_arm[k] = int(v)
     a.cells = a.cells.split(",")
     if a.attach:
         if a.arms == ["int8", "fp8fa2"] and "--arms" not in sys.argv:

@@ -3,7 +3,7 @@
 //
 // Host-side interface of the pth_flash_attn op library.
 //
-// The op schema is frozen by plan section 4.1; the C++ signature below is its
+// The op schema is specified in docs/api.md; the C++ signature below is its
 // one-to-one translation under the libtorch stable ABI (Tensor! -> Tensor&,
 // int -> int64_t, float -> double). launch.cu validates every argument, then
 // launches the attention kernel and, for num_splits > 1, the combine kernel on
@@ -54,7 +54,7 @@ namespace detail {
 // for a view with every size_i >= 1, and 0 for an empty view.
 //
 // The kernel forms every address as base + sum(index_i * byte_stride_i) in
-// int64 (plan rule 5). If this extent fits in int64, no partial sum of that
+// int64. If this extent fits in int64, no partial sum of that
 // expression can overflow either, because every term is non-negative and at
 // most its counterpart here. That is what "int64-safe strides" means.
 //

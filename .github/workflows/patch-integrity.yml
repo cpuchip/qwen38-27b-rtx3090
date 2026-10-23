@@ -19,20 +19,34 @@ jobs:
           python-version: '3.12'
       - name: Check model verification and selection without a GPU
         run: python bench/test_model_verification.py
+      - name: Check doctor health and failed configuration diagnostics
+        run: python bench/test_doctor.py
       - name: Check state detection crash resilience without a GPU
         run: python bench/test_prepare_state.py
+      - name: Check explicit chat-template targets and side-effect-free help
+        run: python bench/test_chat_hardening.py
       - name: Check the MQ-3D split-KV capacity property holds without a GPU
         run: python bench/mq3d_capacity_property.py
       - name: Check the capacity property test still catches a broken derivation
         run: python bench/mq3d_capacity_property.py --mutate seq-rows
+      - name: Check the demo rejects missing or insufficient document data
+        run: python bench/test_demo_corpus.py
       - name: Check verbatim answer classification without a GPU
         run: python bench/verbatim.py
+      - name: Check long-corpus source discovery and frozen byte preservation
+        run: python bench/test_long_corpus.py
       - name: Check the bench harness (resolve_api_key.sh's key, the URL, streams and /metrics) without a GPU
         run: python bench/test_harness.py
+      - name: Check Vision smoke verification against HTTP stubs without a GPU
+        run: python bench/test_vision_smoke.py
       - name: Check conc_ladder --salt repeats its prompts and reports a prefix-cache hit without a GPU
         run: python bench/test_conc_ladder_salt.py
+      - name: Check offload replay requires a positive load-byte delta
+        run: python bench/test_replay_offload.py
       - name: Check labd_bench's TTFT and decode rate survive a wall clock that steps back, without a GPU
         run: python bench/test_labd_bench_clock.py
+      - name: Check the LABD corpus comes from this checkout and existing corpora stay frozen
+        run: python bench/test_labd_corpus.py
       - name: Check a launcher with no API key binds 127.0.0.1
         run: bash bench/test_no_key_bind.sh
       - name: Check PREFIX_CACHE sets the engine's prefix caching (unset/1 on, 0 off) and its safeguards follow
@@ -45,8 +59,12 @@ jobs:
         run: bash bench/test_tp_size.sh
       - name: Check each launcher refuses a boolean knob that is neither 0 nor 1 (#310)
         run: bash bench/test_bool_knobs.sh
+      - name: Check Vision limits, tower offload and boolean controls in every launcher without a GPU
+        run: python bench/test_vision_knobs.py
       - name: Check the dflash2 seat note against the measured pools and resident counts
         run: bash bench/test_resident_print.sh
+      - name: Check interrupted generation output resumes as valid JSONL
+        run: python bench/test_generation_state.py
       - name: Check FA2_FP8KV selects fp8 on FLASH_ATTN only on SPEC=dflash2 CTX=long and refuses the rest
         run: bash bench/test_fa2_fp8kv_knob.sh
       - name: Check the T4 battery's plan, restart gate and verdict without a GPU
@@ -94,8 +112,12 @@ jobs:
         run: |
           python scripts/patches_md.py
           git diff --exit-code PATCHES.md || { echo "::error::PATCHES.md is not current: run python3 scripts/patches_md.py and commit the result"; exit 1; }
+      - name: Check invalid pin bumps leave the checkout unchanged
+        run: python bench/test_pin_bump.py
       - name: Check that a re-export keeps the file's preamble
         run: bash scripts/test_export_patch.sh
+      - name: Check export and port tools with spaces in the vLLM checkout path
+        run: python bench/test_port_paths.py
       - name: Check the vendored pth-flash-attn sources in pthfa/ against pthfa/SHA256SUMS
         run: bash pthfa/check_vendor.sh
 

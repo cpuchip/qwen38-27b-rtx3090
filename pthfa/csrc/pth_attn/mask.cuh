@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 noon-at-cgn
 //
 // mask.cuh: bottom-right causal masking of one warp's score fragments
-// (plan 3.5; cache_geometry.cuh kv_limit).
+// (cache_geometry.cuh kv_limit).
 //
 // Row r of a CTA row tile is query token tok of its request; it may see KV
 // positions j <= limit(r) = seq_len - q_len + tok (inclusive). Padding rows

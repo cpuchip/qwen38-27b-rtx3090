@@ -5,7 +5,7 @@
 // and of the split combine (attn_combine.cu).
 //
 // The op (launch.cu) and the C ABI of the test library (attn_capi.cu, driven
-// by the kernel test ladder through ctypes) both launch through these
+// by the kernel test suite through ctypes) both launch through these
 // functions, so the op runs exactly the code the tests prove.
 //
 // A launcher checks its arguments (every check names the field), turns them
@@ -17,7 +17,7 @@
 //
 // Requirements beyond the semantics of attn_args.h:
 // - wm is derived: the smallest wm in {1, 2, 4} with bq * G <= 16 wm
-//   (= the planner's wm for the planner's bq, ADR 0013); bq * G > 64 is
+//   (= the planner's wm for the planner's bq); bq * G > 64 is
 //   EINVAL.
 // - Alignment: q, out and the workspace need 16-B aligned base pointers and
 //   outer byte strides (16-B vector loads/stores); the four cache streams
@@ -36,10 +36,9 @@
 
 namespace pth_attn {
 
-// KV loader of launch_attention: the shipped choice (ADR 0012 Amendment 1:
-// the whole-cell loader wherever it applies), or one forced by a test:
-// separate streams, or the whole cell (D = 256 with the inline cell layout
-// only; EINVAL otherwise).
+// KV loader of launch_attention: the shipped choice (the whole-cell loader
+// wherever it applies), or one forced by a test: separate streams, or the
+// whole cell (D = 256 with the inline cell layout only; EINVAL otherwise).
 constexpr int32_t kLoaderDefault = 0;
 constexpr int32_t kLoaderSeparate = 1;
 constexpr int32_t kLoaderCell = 2;

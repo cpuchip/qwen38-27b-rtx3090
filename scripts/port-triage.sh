@@ -12,14 +12,18 @@
 # once it is resolved: read the table top-down. rerere is on, so resolutions recorded in this repo are reused.
 set -uo pipefail
 FORK=$1; OLD=$2; NEW=$3; BR=$4; OUT=${5:-}
-G="git -C $FORK"
-$G rev-parse -q --verify "$NEW^{commit}" >/dev/null || { echo "no $NEW in $FORK (fetch upstream --tags?)"; exit 2; }
-$G config rerere.enabled true; $G config rerere.autoupdate true
-T=$(mktemp -d); W="$T/w"; $G worktree add -q --detach "$W" "$NEW" || exit 2
-trap '$G worktree remove --force "$W" >/dev/null 2>&1; rm -rf "$T"' EXIT
+G=(git -C "$FORK")
+"${G[@]}" rev-parse -q --verify "$NEW^{commit}" >/dev/null || { echo "no $NEW in $FORK (fetch upstream --tags?)"; exit 2; }
+"${G[@]}" config rerere.enabled true; "${G[@]}" config rerere.autoupdate true
+TMP_BASE=$(cd "${TMPDIR:-/tmp}" && pwd) || exit 2
+T=$(mktemp -d "$TMP_BASE/hq-port.XXXXXXXX") || exit 2
+case "$T" in "$TMP_BASE"/hq-port.*) ;; *) echo "unsafe triage temp path: $T" >&2; exit 2 ;; esac
+W="$T/w"
+trap '"${G[@]}" worktree remove --force "$W" >/dev/null 2>&1; rm -rf "$T"' EXIT
+"${G[@]}" worktree add -q --detach "$W" "$NEW" || exit 2
 clean=0; conf=0; empty=0; rows=()
-for c in $($G rev-list --reverse "$OLD..$BR"); do
-  subj=$($G log -1 --format=%s "$c"); topic=$(echo "$subj" | sed -nE 's/^\[qwen38\] ([A-Za-z0-9._-]+).*/\1/p'); topic=${topic:-$subj}
+for c in $("${G[@]}" rev-list --reverse "$OLD..$BR"); do
+  subj=$("${G[@]}" log -1 --format=%s "$c"); topic=$(echo "$subj" | sed -nE 's/^\[qwen38\] ([A-Za-z0-9._-]+).*/\1/p'); topic=${topic:-$subj}
   if git -C "$W" -c user.name=triage -c user.email=t@t cherry-pick --allow-empty -x "$c" >/dev/null 2>&1; then
     if [ -z "$(git -C "$W" diff --name-only HEAD^ HEAD)" ]; then empty=$((empty+1)); rows+=("| $topic | EMPTY (the new tag carries it) | |")
     else clean=$((clean+1)); rows+=("| $topic | clean | |"); fi
@@ -44,7 +48,7 @@ if [ -f "$PM" ] && command -v gh >/dev/null; then
     all=1; seen=""
     for pr in $prs; do
       oid=$(gh pr view "$pr" -R vllm-project/vllm --json mergeCommit --jq '.mergeCommit.oid // ""' 2>/dev/null)
-      if [ -n "$oid" ] && $G merge-base --is-ancestor "$oid" "$NEW" 2>/dev/null; then seen="$seen #$pr"; else all=0; fi
+      if [ -n "$oid" ] && "${G[@]}" merge-base --is-ancestor "$oid" "$NEW" 2>/dev/null; then seen="$seen #$pr"; else all=0; fi
     done
     [ "$all" = 1 ] && rows[$i]="${rows[$i]%|} RETIRE? every named PR is in $NEW:$seen |"
   done
@@ -53,10 +57,10 @@ fi
 # be cherry-picked onto a release branch and never reach main. 0.29.0 -> 0.30.0 dropped vllm #55760, #55861 and
 # #55863 that way (the dense prefix-retention default for hybrid + EAGLE), and 0.30 changed behaviour silently. Match
 # by PR number, because a cherry-pick has a different hash from the commit on main.
-SUBJ="$T/new-subjects"; $G log --format=%s "$NEW" > "$SUBJ"
+SUBJ="$T/new-subjects"; "${G[@]}" log --format=%s "$NEW" > "$SUBJ"
 dropped=()
-for c in $($G rev-list "$NEW..$OLD"); do
-  s=$($G log -1 --format=%s "$c"); pr=$(echo "$s" | grep -oE '\(#[0-9]{4,6}\)' | tail -1)
+for c in $("${G[@]}" rev-list "$NEW..$OLD"); do
+  s=$("${G[@]}" log -1 --format=%s "$c"); pr=$(echo "$s" | grep -oE '\(#[0-9]{4,6}\)' | tail -1)
   if [ -z "$pr" ]; then dropped+=("| (no PR number) | ${s:0:100} |")
   elif ! grep -qF "$pr" "$SUBJ"; then dropped+=("| ${pr//[()]/} | ${s:0:100} |"); fi
 done

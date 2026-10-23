@@ -22,7 +22,7 @@ stay in C++ only.
 
 Importing this module loads ``_C.abi3.so`` if it has been built (it is a pure
 op library without ``PyInit``, so it is loaded with ``torch.ops.load_library``,
-not imported). There is no torch.cuda call here (rule 6): device questions are
+not imported). There is no torch.cuda call here: device questions are
 answered by the C++ side or by vLLM's ``current_platform``.
 """
 
@@ -44,7 +44,7 @@ from pth_flash_attn.planner import (
 OP_NAMESPACE = "pth_flash_attn"
 OP_NAME = "pth_flash_attn_fwd"
 OP_QUALNAME = f"{OP_NAMESPACE}::{OP_NAME}"
-# Frozen interface, plan §4.1, identical to the m.def() text in
+# Frozen interface (docs/api.md), identical to the m.def() text in
 # csrc/pth_attn/torch_bindings.cpp (tests parse all three and compare).
 # `Tensor!` marks the three tensors the op writes in place (out-variant).
 OP_SCHEMA = (
@@ -56,7 +56,7 @@ OP_SCHEMA = (
 )
 LIBRARY_PATH = Path(__file__).with_name("_C.abi3.so")
 
-# Ranks of the op's tensors, from the layouts in plan §4.1:
+# Ranks of the op's tensors, from the layouts in docs/api.md:
 # q/out [T, Hq, D]; caches [NB, BS, Hkv, D]; scales [NB, BS, Hkv];
 # block_table [num_reqs, max_blocks]; seq_lens [num_reqs];
 # query_start_loc [num_reqs + 1]; ws_o [S, T, Hq, D]; ws_lse [S, T, Hq].
@@ -241,7 +241,7 @@ def _check_metadata(
     ):
         _check_same_device(t, q, name)
 
-    # Workspace is read only when S > 1 (plan §4.1). Its leading sizes may
+    # Workspace is read only when S > 1 (docs/api.md). Its leading sizes may
     # exceed S and T (a larger view still works); Hq and D must match.
     if num_splits > 1:
         _check_dim(ws_o, _RANK_WS_O, "ws_o")
@@ -366,9 +366,9 @@ def pth_flash_attn_fwd(
 ) -> None:
     """Run paged int8 attention for one launch, writing ``out`` in place.
 
-    Arguments follow the frozen schema (plan §4.1). ``wm`` and ``num_splits``
+    Arguments follow the frozen schema (docs/api.md). ``wm`` and ``num_splits``
     come from ``planner.plan_launch`` for this slice of the batch; ``ws_o`` and
-    ``ws_lse`` are views of the load-time workspace with the plan's
+    ``ws_lse`` are views of the load-time workspace with the launch plan's
     ``ws_o_shape``/``ws_lse_shape`` (may be empty when ``num_splits == 1``).
     ``window`` (0 = none) and ``causal`` are layer constants (vLLM's sliding
     window and non-causal flag): the query at position p sees keys ``[lo, hi]`` with

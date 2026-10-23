@@ -3,7 +3,7 @@
 //
 // combine_kernel.cuh: merging split-KV partials, and the 16-bit output stores.
 //
-// With S > 1 splits (plan §3.7) every split s of a query row writes its own
+// With S > 1 splits every split s of a query row writes its own
 // softmax-normalised output o_s (fp32, [S, T, Hq, D]) and the log2-sum-exp of
 // its scores lse_s = m_s + log2(l_s) (fp32, [S, T, Hq]); an empty split writes
 // lse_s = -inf. The exact output is
@@ -11,16 +11,15 @@
 //   o = sum_s 2^lse_s * o_s / sum_s 2^lse_s,
 //
 // because 2^lse_s = sum over the split's tokens of 2^(score) is exactly the
-// split's share of the softmax denominator (proof: walkthrough 08 §2). To
-// keep 2^x in range the kernel subtracts M = max_s lse_s first (a common
-// factor cancels). This is the rule tests/cpu/test_planner_combine.py fixes
-// and ADR 0016 decides:
+// split's share of the softmax denominator.
+// To keep 2^x in range the kernel subtracts M = max_s lse_s first (a common
+// factor cancels). This is the rule tests/cpu/test_planner_combine.py fixes:
 //   - M over the live splits only (lse > -inf);
 //   - an empty split is skipped BEFORE its o_s is read: the workspace is
 //     uninitialised memory, and 0 * NaN = NaN would poison the row;
 //   - sums in the fixed order s = 0, 1, ..., S-1, so the result is a
 //     deterministic function of the partials (not batch-invariant: S itself
-//     depends on the batch, ADR 0016).
+//     depends on the batch).
 //
 // The row function is lane-local (no shuffles): every lane of a warp computes
 // the same S weights with the same operations, then its own columns
@@ -58,7 +57,7 @@ constexpr int32_t kWarpLanes = 32;
 // ------------------------------------------------------------ bit casts
 // The fp32/fp16/bf16 bit-level helpers and their constants live in a nested
 // namespace: the same IEEE field names (kF32AbsMask, kF16Inf, ...) are also
-// defined by dequant.cuh and ptx.cuh (T3), and a kernel TU includes all of
+// defined by dequant.cuh and ptx.cuh, and a kernel TU includes all of
 // them. Only load_q16/store_out/load_f32/store_f32 below are the API.
 namespace ref_bits {
 

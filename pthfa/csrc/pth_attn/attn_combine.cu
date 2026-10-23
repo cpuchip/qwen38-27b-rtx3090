@@ -4,14 +4,14 @@
 // attn_combine.cu: launch_combine of attn_launch.h, the split combine.
 //
 // One warp per row (token, head), with the reference library's arithmetic
-// in the same order (combine_kernel.cuh combine_row, ADR 0016): M = max of
+// in the same order (combine_kernel.cuh combine_row): M = max of
 // the live lse_s, then for s = 0 .. S-1: w = exp2f(lse_s - M), den += w,
 // num_j = fmaf(w, o_s[j], num_j), skipping empty splits before reading o_s;
 // out = num / den. The results are bit-identical to pth_ref_combine's.
 //
 // The difference is speed: the reference walks the splits one at a time, so
 // each split costs a full global-load latency (14.6 us per launch at S = 34,
-// dev timing, ADR 0012 Amendment 1). Here the loads of kBatch splits are
+// dev timing). Here the loads of kBatch splits are
 // issued together before their FMAs consume them in order.
 //
 // A separate translation unit so that it compiles in parallel with the
@@ -86,7 +86,7 @@ __global__ void __launch_bounds__(kCombineWarps* pth_attn::kWarpLanes, 1)
             lane;
 #pragma unroll
         for (int32_t j = 0; j < kCols; ++j) {
-          // Empty splits are skipped BEFORE their o is read (ADR 0016).
+          // Empty splits are skipped BEFORE their o is read.
           o[b][j] = x[b] > -INFINITY ? ob[kLanes * j] : 0.0f;
         }
       }

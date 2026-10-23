@@ -4,11 +4,9 @@
 // dequant.cuh: int8 -> fp16 in registers, the V byte pairing and output
 // column map, and the per-row power-of-two Q prescale.
 //
-// Decisions: ADR-0008 (magic conversion), ADR-0009 (V path), ADR-0010 (fp16
-// MMA, Q prescale with the e >= -112 clamp). Proofs: docs/walkthrough/06
-// sections 2, 5 and 6. Reference implementation: tests/sim/ptxsim/dequant.py,
-// paths.py (v_words_to_b_fragments) and prescale.py; every function here is
-// compared bit for bit with it by tests/cpp/test_primitives.cu.
+// Reference implementation: tests/sim/ptxsim/dequant.py, paths.py
+// (v_words_to_b_fragments) and prescale.py; every function here is compared
+// bit for bit with it by tests/cpp/test_primitives.cu.
 //
 // Everything is PTH_HD (host + device): the instructions underneath come from
 // ptx.cuh, which emulates them on the host.
@@ -22,7 +20,7 @@
 namespace pth_attn {
 
 // ---------------------------------------------------------------------------
-// Magic-number conversion constants (docs/constants.d/T3.md)
+// Magic-number conversion constants
 // ---------------------------------------------------------------------------
 
 // XOR with 0x80 per byte maps two's-complement x to x + 128 (monotone).
@@ -61,7 +59,7 @@ struct F16x2Pair {
 // values, no I2F. Exact for all 256 inputs: after the PRMT each half is the
 // fp16 number 1152 + x exactly; 1152 is an fp16 number; the exact difference
 // x (|x| <= 128 < 2048) is representable, so the correctly rounded subtraction
-// returns it (walkthrough 06 section 2.3, test_magic_exact_all_256).
+// returns it (test_magic_exact_all_256).
 PTH_HD F16x2Pair cvt4_s8_f16x2(uint32_t w) {
   // Plain XOR: compiles to LOP3.LUT with immLut 0x3c (a ^ b); the SASS gate
   // checks the count. An asm lop3 would hide the operation from the compiler
@@ -72,7 +70,7 @@ PTH_HD F16x2Pair cvt4_s8_f16x2(uint32_t w) {
 }
 
 // ---------------------------------------------------------------------------
-// V path (ADR-0009)
+// V path
 // ---------------------------------------------------------------------------
 
 // Token offsets of the four LDS.32 words of lane (g, q), relative to
@@ -121,14 +119,14 @@ PTH_HD constexpr int pv_out_col(int lane, int j, int ci) {
 }
 
 // First of the 8 contiguous d a lane holds for group a: listing c0 of n-tiles
-// 4a..4a+3 then c1 of the same n-tiles gives d = 32a + 8q + 0..7, in order
-// (walkthrough 06 section 5.3), so the epilogue stores 16 bytes per row.
+// 4a..4a+3 then c1 of the same n-tiles gives d = 32a + 8q + 0..7, in order, so
+// the epilogue stores 16 bytes per row.
 PTH_HD constexpr int epilogue_d0(int lane, int a) {
   return 32 * a + 8 * (lane & 3);
 }
 
 // ---------------------------------------------------------------------------
-// Q prescale (ADR-0010)
+// Q prescale
 // ---------------------------------------------------------------------------
 
 constexpr int kQPrescaleWindowLog2 = 14;  // absmax * 2^-e in [2^14, 2^15)

@@ -2,9 +2,10 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 noon-at-cgn
 
 [build-system]
-# torch is pinned to the dev image's version (pth-dev:phase0) because the
-# CUDA headers and nvcc compatibility come from it; the built .so itself only
-# needs torch >= 2.11 at run time (stable ABI floor, ADR 0003).
+# torch is pinned to the version of the development image
+# (docker/dev.Dockerfile) because the CUDA headers and nvcc compatibility come
+# from it; the built .so itself only needs torch >= 2.11 at run time (stable
+# ABI floor).
 requires = [
     "setuptools>=77.0.3,<81.0.0",
     "ninja",
@@ -14,25 +15,60 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pth-flash-attn"
-version = "0.0.0"
-description = "Paged int8_per_token_head flash attention for vLLM on sm_80/86/89"
+version = "0.1.0"
+description = "Paged int8 KV-cache flash-attention op for NVIDIA sm_80/86/89 (PyTorch stable ABI), with an optional vLLM plugin"
 authors = [{name = "noon-at-cgn"}]
 license = "Apache-2.0"
 license-files = ["LICENSE", "NOTICE"]
 readme = "README.md"
+keywords = [
+    "attention",
+    "flash-attention",
+    "paged-attention",
+    "kv-cache",
+    "int8",
+    "cuda",
+    "pytorch",
+    "vllm",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: GPU :: NVIDIA CUDA",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: C++",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 # Same range as vLLM 0.30.0, the integration target.
 requires-python = ">=3.10,<3.15"
 dependencies = ["torch>=2.11"]
+
+[project.urls]
+Homepage = "https://github.com/noon-at-cgn/pth-flash-attn"
+Source = "https://github.com/noon-at-cgn/pth-flash-attn"
+Issues = "https://github.com/noon-at-cgn/pth-flash-attn/issues"
+Documentation = "https://github.com/noon-at-cgn/pth-flash-attn/blob/main/docs/README.md"
 
 [project.entry-points."vllm.general_plugins"]
 # vLLM calls every `vllm.general_plugins` entry point in every process it
 # starts (engine core and each worker) before selecting an attention backend;
 # `register` only records the backend's class path under
-# AttentionBackendEnum.CUSTOM (ADR 0021), it imports no CUDA code.
+# AttentionBackendEnum.CUSTOM, it imports no CUDA code.
 pth_flash_attn = "pth_flash_attn.plugin:register"
 
 [project.optional-dependencies]
-# Exact versions installed in pth-dev:phase0 (docker/dev.Dockerfile).
+# `vllm` is the version the optional backend is tested against. The
+# other groups are the exact versions of the development image
+# (docker/dev.Dockerfile).
+vllm = ["vllm==0.31.0"]
 test = [
     "pytest==9.1.1",
     "pytest-timeout==2.4.0",
@@ -60,10 +96,9 @@ include = ["pth_flash_attn*"]
 line-length = 88
 target-version = "py310"
 # Markdown: ruff 0.17 formats Python code blocks inside .md files (observed:
-# `ruff format --check` flagged docs/walkthrough). Docs quote upstream vLLM
-# source verbatim with its alignment and line numbers, so reformatting them
-# would misquote it.
-extend-exclude = ["docs/plan", "*.md"]
+# `ruff format --check` flagged the docs). Docs may quote source
+# verbatim with its alignment, so reformatting them would misquote it.
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = [
@@ -76,8 +111,8 @@ select = [
     "I",    # isort
     "G",    # flake8-logging-format
     "INP",  # flake8-no-pep420
-    # Project addition: pydocstyle with the Google convention. The user must be
-    # able to explain every public function, so the package requires docstrings
+    # Project addition: pydocstyle with the Google convention. Public functions
+    # are documented, so the package requires docstrings
     # (vLLM does not lint this; its review does).
     "D",
 ]
@@ -121,22 +156,22 @@ timeout = 600
 markers = [
     "slow: minutes-long CPU tests (e.g. Triton-interpreter writer equivalence)",
     "full: larger CPU matrices",
-    "gpu: needs a CUDA device; only run in a scheduled GPU session",
+    "gpu: needs a CUDA device",
     "attn: tests of the tensor-core kernel library (build/attn/libpth_attn.so)",
-    "backend: vLLM backend, plugin and production-op tests",
+    "backend: vLLM backend, plugin and op tests",
 ]
 
 # ---------------------------------------------------------------------------
 # typos (spell checker; vLLM runs it in pre-commit)
 # ---------------------------------------------------------------------------
 [tool.typos.files]
-# Agent logs (docs/handoff, docs/history) quote commit hashes and build ids
-# verbatim; they are records, not prose to spell-check.
-extend-exclude = ["docs/plan/*", "docs/handoff/*", "docs/history/*", "build/*", ".git/*", "results/*"]
+# Build outputs and recorded benchmark runs are generated text, not prose to
+# spell-check.
+extend-exclude = ["build/*", ".git/*", "results/*"]
 ignore-hidden = false
 
 [tool.typos.default]
-# Commit hashes quoted as code (`2ba629eed1`) in docs/upstream and elsewhere.
+# Commit hashes quoted as code (`2ba629eed1`) in the docs.
 extend-ignore-re = ["`[0-9a-f]{7,40}`"]
 
 [tool.typos.default.extend-identifiers]
@@ -148,7 +183,6 @@ sharedMemPerBlockOptin = "sharedMemPerBlockOptin"
 [tool.typos.default.extend-words]
 # Genuine domain words that typos would flag go here, one per line, each with
 # a comment saying where it occurs.
-# Compute sub-tile (ADR 0012, docs/adr/0012-tiles-stages-subtiles.md); vLLM
-# allows "subtile" the same way.
+# Compute sub-tile; vLLM allows "subtile" the same way.
 subtile = "subtile"
 subtiles = "subtiles"

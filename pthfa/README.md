@@ -1,6 +1,6 @@
 # pthfa: paged int8 per-token-head attention as a vLLM backend plugin
 
-`pthfa/` is the source of pth-flash-attn (Apache-2.0) at one pinned commit (`pthfa/PIN`, a commit id): a CUDA op library that reads vLLM's `int8_per_token_head` KV cache directly (no dequantize
+`pthfa/` is the source of [pth-flash-attn](https://github.com/noon-at-cgn/pth-flash-attn) (Apache-2.0) at one pinned commit (`pthfa/PIN`, a commit id; here the release v0.1.0): a CUDA op library that reads vLLM's `int8_per_token_head` KV cache directly (no dequantize
 pass) on sm_80/86/89, and a `vllm.general_plugins` entry point that registers it as the backend `CUSTOM`.
 `PTH_FA=1` (single-user, `SPEC=mtp CTX=long` or `SPEC=dflash2 CTX=long`) selects it for the target and
 the drafter (the MTP layer, or the DFlash2 drafter's sliding-window, non-causal layers), and so does the
@@ -19,7 +19,7 @@ the files at that commit, unchanged. `SHA256SUMS` lists all 32 files; the files 
 
 Source rather than a prebuilt `.so`: the same reasoning as #153, where a binary was declined in favour of a
 source port CI can check. `bash pthfa/check_vendor.sh` checks the files against `SHA256SUMS` and that nothing
-under `pthfa/` is unlisted; `--source <pth-flash-attn checkout>` re-exports `PIN`'s commit and diffs.
+under `pthfa/` is unlisted; `--source <pth-flash-attn checkout>` re-exports `PIN`'s commit and diffs (a clone of the repository above has the tag).
 
 ## How it is built and installed
 

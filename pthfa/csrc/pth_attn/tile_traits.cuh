@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright (c) 2026 noon-at-cgn
 //
-// Compile-time tile geometry of the attention kernel (ADR 0012, plan 3.2-3.3).
+// Compile-time tile geometry of the attention kernel.
 //
 // Everything here is a constant that follows from a few hardware limits and
 // three choices (load tile N = 64 tokens, 2 pipeline stages, 4 warps). The
-// derivations are written next to each constant; each value has a row in
-// docs/constants.d/T1.md. The static_asserts turn the plan's smem inequality,
-// the divisibility rules and the occupancy claims into compile errors, so an
-// edit that breaks them cannot build.
+// derivations are written next to each constant. The static_asserts turn the
+// shared-memory inequality, the divisibility rules and the occupancy claims
+// into compile errors, so an edit that breaks them cannot build.
 //
 // Header-only, depends on <cstdint> only, usable from host C++ (g++ test
 // tests/cpp/test_tile_traits.cpp) and device code.
@@ -22,7 +21,7 @@
 
 // Byte layout of Q and the stages (StageLayout, SmemLayout), the per-block
 // limit kSmemPerBlockLimit = 101376 and kScaleBytes / kF16Bytes come from
-// here (T3, ADR 0007); this header only chooses N, stages and warps.
+// here; this header only chooses N, stages and warps.
 #include "smem_layout.cuh"
 
 namespace pth_attn {
@@ -33,7 +32,7 @@ namespace pth_attn {
 // Capability": 99 KB opt-in shared memory per block (kSmemPerBlockLimit in
 // smem_layout.cuh), 100 KB per SM, 64 K 32-bit registers per SM, 255
 // registers per thread. The runtime reserves 1 KB of shared memory per
-// resident block (plan 3.3).
+// resident block.
 // ---------------------------------------------------------------------------
 inline constexpr int kSmemPerSm = 102400;  // 100 * 1024
 inline constexpr int kSmemReservedPerBlock = 1024;
@@ -52,13 +51,13 @@ inline constexpr int kWarpSize = 32;
 inline constexpr int kMmaM = 16;
 inline constexpr int kMmaN = 8;
 inline constexpr int kMmaK = 16;
-// The V path consumes d in groups of 32 (ADR 0009: n-tile j = 4a + b maps to
+// The V path consumes d in groups of 32 (n-tile j = 4a + b maps to
 // d = 32a + 4n + b), so D must be a multiple of 32.
 inline constexpr int kVGroupD = 32;
 inline constexpr int kAccElemBytes = 4;  // fp32 accumulators and partials
 
 // ---------------------------------------------------------------------------
-// The three choices (ADR 0012).
+// The three choices.
 // ---------------------------------------------------------------------------
 // Load tile: tokens per pipeline stage. Largest multiple of 16 * WN = 64 with
 // Q(64 rows) + 2 * N * (2D + 8) <= 101376 at D = 256, i.e. N <= 65.
@@ -69,19 +68,18 @@ inline constexpr int kStages = 2;
 inline constexpr int kWarps = 4;
 inline constexpr int kThreads = kWarps * kWarpSize;  // 128
 // Largest compute sub-tile per warp and step by head size. At D = 256 a
-// 64-token step spills in the real kernel (8 B at 255 registers on sm_86,
-// ADR 0012 Amendment 1; the plan's V2 saw the same, the register probe in
-// research/probe/ needed 224 registers against 208 at 32), so D = 256 steps
-// 32 tokens at a time.
+// 64-token step spills in the real kernel (8 B at 255 registers on sm_86; a
+// register probe saw the same: it needed 224 registers against 208 at 32), so
+// D = 256 steps 32 tokens at a time.
 constexpr int sub_tile_cap(int d) { return d == 256 ? 32 : 64; }
-// Resident CTAs per SM by head size (plan 3.3, 3.7): the planner's C_target
-// uses the same numbers (CTAS_PER_SM in docs/constants.d/T5.md).
+// Resident CTAs per SM by head size: the planner's
+// C_target uses the same numbers (CTAS_PER_SM in planner.py).
 constexpr int ctas_per_sm(int d) { return d == 256 ? 1 : (d == 128 ? 2 : 3); }
 
 // ---------------------------------------------------------------------------
 // Generic geometry: every derived number and every rule, for any candidate
-// (N, stages, SUB, CTAs). Traits below picks the shipped candidate; ADR 0012
-// and tests/cpp/test_tile_traits.cpp instantiate rejected ones to show why.
+// (N, stages, SUB, CTAs). Traits below picks the shipped candidate;
+// tests/cpp/test_tile_traits.cpp instantiates unsupported ones to show why.
 // ---------------------------------------------------------------------------
 template <int D, int WM, int N, int STAGES, int SUB, int CTAS>
 struct TileGeometry {
@@ -96,7 +94,7 @@ struct TileGeometry {
   static constexpr int kSubSteps = kTokensPerWarp / SUB;
   static constexpr int kCtasPerSm = CTAS;
 
-  // Shared memory (plan 3.3 table), from T3's layout: one stage holds, for N
+  // Shared memory, from smem_layout.cuh: one stage holds, for N
   // tokens of one KV head, K [N][D] int8, V [N][D] int8, ks [N] f32 and
   // vs [N] f32 = N * (2D + 8) B; Q is [rows][D] fp16. SmemLayout itself
   // asserts the 101376 B per-block limit and 128-B region alignment.
@@ -105,7 +103,7 @@ struct TileGeometry {
   static constexpr int kQBytes = Layout::kQBytes;
   static constexpr int kSmemBytes = Layout::kBytes;
 
-  // In-CTA merge of the WN token slices (plan 3.3, decode WN > 1): after the
+  // In-CTA merge of the WN token slices (decode WN > 1): after the
   // last tile the stage buffers are free; warps n = 1..WN-1 stage their fp32
   // O (16 rows x D) and their row max and sum (2 floats per row).
   static constexpr int kMergeBytes =

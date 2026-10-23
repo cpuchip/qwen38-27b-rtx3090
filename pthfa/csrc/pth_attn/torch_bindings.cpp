@@ -2,7 +2,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 noon-at-cgn
 //
 // Registers the pth_flash_attn op library through the libtorch stable ABI
-// (ADR 0003): only the C shim and header-only types are used, so the built
+//: only the C shim and header-only types are used, so the built
 // .so keeps working across torch releases >= TORCH_TARGET_VERSION (setup.py)
 // without a rebuild.
 //
@@ -13,9 +13,10 @@
 
 #include "ops.h"
 
-// Schema text is plan section 4.1 verbatim. `Tensor!` marks the three tensors
+// Schema text as specified in docs/api.md. `Tensor!` marks the three tensors
 // the op writes (out and the two workspace views); everything else is
-// read-only. In-tree this block becomes STABLE_TORCH_LIBRARY_FRAGMENT(_C, m).
+// read-only. In a library that already defines the `_C` namespace this block
+// would be STABLE_TORCH_LIBRARY_FRAGMENT(_C, m) instead.
 STABLE_TORCH_LIBRARY(pth_flash_attn, m) {
   m.def(
       "pth_flash_attn_fwd(Tensor! out, Tensor q, Tensor k_cache, "
@@ -30,7 +31,7 @@ STABLE_TORCH_LIBRARY_IMPL(pth_flash_attn, CUDA, m) {
 }
 
 // The CPU registration exists only so that argument validation is testable on
-// CPU-only CI (ADR 0003). The function never computes on CPU: after the checks
+// CPU-only CI. The function never computes on CPU: after the checks
 // it raises, so no caller mistakes a CPU call for a computed result.
 STABLE_TORCH_LIBRARY_IMPL(pth_flash_attn, CPU, m) {
   m.impl("pth_flash_attn_fwd", TORCH_BOX(&pth_attn::pth_flash_attn_fwd));

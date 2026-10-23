@@ -4,16 +4,16 @@
 // loader.cuh: global -> shared copy of one 64-token KV tile, and the two-stage
 // cp.async pipeline discipline around it.
 //
-// Two variants (plan C1, ADR-0006):
+// Two variants:
 //
 //   Separate streams (D = 64, 128, and any layout that is not an inline
 //   cell). K, V, k_scale and v_scale are four streams with their own views
 //   and their own cp.async width w in {16, 8, 4}, picked on the host from
 //   alignment (cache_geometry.cuh stream_width; vLLM's inline cell gives K 8,
 //   V 4, scales 4; #56164's decoupled layout K/V 16). Destination: the
-//   swizzled StageLayout of smem_layout.cuh (ADR-0007).
+//   swizzled StageLayout of smem_layout.cuh.
 //
-//   Whole cell (the shipped default at D = 256, ADR 0012 Amendment 1).
+//   Whole cell (the shipped default at D = 256).
 //   vLLM's inline cell [K D | ks | V D | vs] (2D + 8 B) is one contiguous run
 //   per (token, head), so one stream with one width (8 B for vLLM's layout:
 //   520 = 65 x 8) copies all four, into CellStageLayout (pitch 2D + 16). Only
@@ -43,8 +43,8 @@
 //
 // Tokens at or past `tok_end` (the CTA's KV range end) are zero-filled with
 // cp.async's src-size operand (0 bytes read, w zero bytes written), so stale
-// shared memory or a poisoned scale beyond the range never reaches the math
-// (error-budget K6). block_table is not read for them.
+// shared memory or a poisoned scale beyond the range never reaches the math.
+// block_table is not read for them.
 //
 // The windowed kernels also zero-fill the tokens below
 // `tok_begin` (the CTA's KV range begin; their first tile may start below
@@ -81,15 +81,16 @@ static_assert(2 * kLoaderTokensPerWarp == kWarpSize,
 static_assert(kWarps % 2 == 0, "warps pair up as w and w ^ 1");
 constexpr uint32_t kFullWarpMask = 0xFFFFFFFFu;
 
-// Unroll factor of the chunk loops (ADR-0006). Full unrolling lets ptxas
+// Unroll factor of the chunk loops. Full unrolling lets ptxas
 // hoist every iteration's shuffled row offset: 255 registers and a 204-B
 // spill at D = 256 in the test kernel, impossible next to the attention
-// math (R2). Static sm_86 SASS of the test kernels, registers and
+// math. Static sm_86 SASS of the test kernels, registers and
 // instructions per LDGSTS in the loop bodies:
 //   unroll 1: 38-40 regs, ~27 instr/LDGSTS;  unroll 2: 35-45 regs, ~21;
 //   unroll 4: 36-64 regs, ~18;  unroll 8: 40-127 regs;  full: 254-255 + spill.
 // 2 is the smallest register footprint with less loop overhead than 1. The
-// G2 register gate on the real kernel and its timing decide whether to move.
+// register gate of the real kernel (tools/ptxas_gate.py) and its timing decide
+// whether to move.
 constexpr int kLoaderUnroll = 2;
 // Spelled so that g++ -Wall does not warn about an unknown pragma.
 #if defined(__CUDACC__)
@@ -449,7 +450,7 @@ __device__ __forceinline__ void load_tile_cell(const KernelParams& p,
                           DeviceBcast{}, DeviceCopy{stage_smem});
 }
 
-// The two-stage pipeline over KV tiles [begin, end) (plan 3.4 step 3):
+// The two-stage pipeline over KV tiles [begin, end):
 //
 //   issue(begin -> stage 0); commit
 //   for i in [begin, end):

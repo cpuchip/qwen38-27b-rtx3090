@@ -1,20 +1,19 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-FileCopyrightText: Copyright (c) 2026 noon-at-cgn
 //
-// attn_kernel.cuh: the tensor-core attention kernel (plan section 3; build
-// ladder steps 12-19; owner T4 = P0InfraCI in Phase 3).
+// attn_kernel.cuh: the tensor-core attention kernel.
 //
 // One CTA of 128 threads computes one (q-tile x, KV head, split): the
-// planner's grid (ADR 0016), the same as the scalar reference kernel
+// planner's grid, the same as the scalar reference kernel
 // (reference_kernel.cu, the executable specification it is tested against).
 // Every address, row tile, causal limit and split range comes from
 // cache_geometry.cuh; the KV tiles come from loader.cuh (separate streams,
-// two-stage cp.async pipeline, ADR 0006); the fragment loops from tiling.cuh;
+// two-stage cp.async pipeline); the fragment loops from tiling.cuh;
 // the online softmax and P'' from softmax.cuh; the mask from mask.cuh.
 //
 //   prologue   find the row tile; issue the first KV tile; stage Q into
 //              shared memory as fp16 with the per-row 2^-e prescale and the
-//              K permutation pi (ADR 0008, 0010); per-row score factor
+//              K permutation pi; per-row score factor
 //              c_row = fp32(softmax_scale * log2 e) * 2^e.
 //   main loop  per KV tile of this split: wait, barrier, issue the next tile
 //              into the other stage, then per sub-tile of SUB tokens of the
@@ -24,8 +23,8 @@
 //   merge      WN > 1: warps n > 0 park (O, m, l, c) in the freed stages and
 //              warp n = 0 merges them (emulate.py `_merge_warps` order).
 //   epilogue   o = fp32(O / l) * 2^C (rcp.approx); S = 1: out in its dtype,
-//              16-B stores of 8 contiguous d (ADR 0009); S > 1: the fp32
-//              partial and lse = m + lg2(l) (log2 units, ADR 0016); an empty
+//              16-B stores of 8 contiguous d; S > 1: the fp32
+//              partial and lse = m + lg2(l) (log2 units); an empty
 //              row writes o = 0, lse = -inf.
 //
 // The arithmetic is python/pth_testing/emulate.py's, which the bound of
@@ -66,8 +65,8 @@ struct AttnParams {
   int32_t causal;      // windowed instantiations only: 1 causal, 0 not
 };
 
-// Shared memory of one instantiation: Q (T3's layout), two stages in the
-// loader's layout (separate streams: StageLayout; whole cell:
+// Shared memory of one instantiation: Q (laid out by smem_layout.cuh), two
+// stages in the loader's layout (separate streams: StageLayout; whole cell:
 // CellStageLayout), and the per-row score factors (one f32 per CTA row).
 // The factors get their own region at 1 CTA per SM (there is room, and the
 // producer warps may fill stage 1 early); with 2-3 CTAs per SM there is no
@@ -180,7 +179,7 @@ __device__ __forceinline__ void stage_q(const KernelParams& p,
   #pragma unroll
     for (int i = 0; i < kPairsPerLane; ++i) {
       const int d = 2 * (lane + i * kWarpSize);
-      // pi inside each 16-element chunk, then the Q swizzle (ADR 0007/0008);
+      // pi inside each 16-element chunk, then the Q swizzle;
       // d and d + 1 land in adjacent bytes, so the pair is one STS.32.
       *reinterpret_cast<uint32_t*>(smem_q + q_elem_offset(r, d, D)) =
           q_prescale_pack(v[i].x, v[i].y, e);
@@ -189,7 +188,7 @@ __device__ __forceinline__ void stage_q(const KernelParams& p,
   }
 }
 
-// Producer warps (ADR 0012 Amendment 1): at 1 CTA per SM (D = 256) four
+// Producer warps: at 1 CTA per SM (D = 256) four
 // extra warps only issue the KV copies, so the issue (throttled to the copy
 // rate) overlaps the math of the four compute warps. With 2-3 CTAs per SM
 // (D = 128, 64) the other CTAs provide that overlap, and 256 threads would
@@ -230,7 +229,7 @@ __device__ __forceinline__ void consumer_sync() {
 
 // Global loads that do not allocate in L1 (PTX ISA 9.7.9.8,
 // ld.global.L1::no_allocate): the KV stream is read once, and L1 shares its
-// SRAM with the shared-memory stages (ADR 0012 Amendment 1). 16 B for the
+// SRAM with the shared-memory stages. 16 B for the
 // aligned body of a cell, 8 B for its edge (produce_cells_regstaged).
 struct NoAllocLoad16 {
   __device__ static uint4 load(const char* g) {
@@ -256,8 +255,7 @@ struct NoAllocLoad8 {
 // map, CellStageLayout pitch 2D + 16) through registers: loads that skip L1,
 // then shared stores once the stage is free. Tokens at or past the range end
 // are zero-filled (as the cp.async loader's zfill). Measured against cp.async
-// of the same bytes in ADR 0012 Amendment 1, and 8-B against 16-B loads in
-// Amendment 2.
+// of the same bytes, and 8-B against 16-B loads.
 //
 // An 8-B aligned cell of 2D + 8 bytes is one 8-B edge plus 2D bytes of 16-B
 // aligned body. The edge is the cell's last 8 bytes if the cell
@@ -351,7 +349,7 @@ __device__ __forceinline__ void issue_tile_to(const AttnParams& ap,
   }
 }
 
-// Producer warp `pw` (0..3) of a warp-specialised CTA (ADR 0012 Amendment 1):
+// Producer warp `pw` (0..3) of a warp-specialised CTA:
 // it only copies, so the copy overlaps the consumers' math. Two stages; tile
 // j may be written as soon as tile j - 2 has been released by the consumers.
 // Shared by the 16-row-tile kernel (attn_fwd_body) and the decode kernel
@@ -625,7 +623,7 @@ __device__ __forceinline__ void attn_fwd_body(const AttnParams& ap) {
     }
   }
 
-  // ---- epilogue: 8 contiguous d per group a and row (ADR 0009) ----
+  // ---- epilogue: 8 contiguous d per group a and row ----
   const float c_unit = pow2_clamped(big_c);
   #pragma unroll
   for (int h = 0; h < 2; ++h) {
@@ -671,7 +669,7 @@ __device__ __forceinline__ void attn_fwd_body(const AttnParams& ap) {
 
 // __grid_constant__ keeps the parameters in the constant bank (no local copy
 // when a member's address is taken). __launch_bounds__(threads, CTAs/SM)
-// keeps ptxas within the occupancy register budget (ADR 0012).
+// keeps ptxas within the occupancy register budget.
 template <int D, int WM, int SUB, typename QT, bool kCell>
 __global__ void __launch_bounds__(kAttnThreads<D>, ctas_per_sm(D))
     attn_fwd_kernel(const __grid_constant__ AttnParams ap) {
@@ -704,7 +702,7 @@ struct AttnLaunch {
 // The whole-cell loader exists where it fits next to the kernel's
 // occupancy: D = 256 (1 CTA per SM). At D = 128 its pitch-272 stages break
 // 2 CTAs per SM (2 x (16384 + 34816 + 1024) > 102400); D = 64 would fit but
-// has 3 CTAs per SM to overlap copies already (ADR 0012 Amendment 1).
+// has 3 CTAs per SM to overlap copies already.
 template <int D>
 inline constexpr bool kAttnHasCell = D == 256;
 

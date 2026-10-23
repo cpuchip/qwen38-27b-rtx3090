@@ -93,7 +93,17 @@ all — batch ignores `SPEC` and says so on startup. Every knob, and what each c
 [single-user/README.md](single-user/README.md#if-you-are-the-only-user-do-this) ·
 [batch/README.md](batch/README.md).
 
-`SPEC=dflash2 CTX=long` runs on fp8 KV with the FlashAttention-2 plugin in `fa2/` by default (`FA2_FP8KV=1`) on an RTX 3090-class
+On a compute capability 8.6 GPU (RTX 3090-class), `SPEC=mtp CTX=long` and `SPEC=dflash2 CTX=long` run on an int8 KV cache read by the
+[pth-flash-attn](https://github.com/noon-at-cgn/pth-flash-attn) kernel by default (`PTH_FA=1`, source vendored in `pthfa/`): the target and the
+drafter on `--attention-backend CUSTOM --kv-cache-dtype int8_per_token_head`. That needs the package installed (the Docker image has it;
+`bash pthfa/install.sh` in a venv) and the measured setup ([docs/long-context.md](docs/long-context.md#int8-kv-on-the-pth-flash-attn-kernel-pth_fa1-specmtp-or-specdflash2-with-ctxlong)).
+Otherwise the arm keeps its own default, fp8 on FlashInfer on mtp and the FA2 arm below on dflash2, and `PTH_FA=0` restores it. Any other GPU,
+`CTX=fast`, `CTX=huge` and batch mode are unchanged. On the native RTX 3090 (TP=1, 250 W, vLLM 0.31.0, two boots per arm, [#345](https://github.com/syv-ai/HyperQwen/pull/345)),
+`SPEC=mtp CTX=long` decodes 84.7-84.8 tok/s at ~66k and 78.5 at ~100k against 75.5-75.6 and 68.8-68.9 with `PTH_FA=0` (+12.2% and +14.0%), with the same
+cold TTFT at ~66k and a 1.9% smaller KV pool; the ~95-100 tok/s of row D above is the fp8 + FlashInfer arm. Only compute capability 8.6 has been run on a GPU
+(3090 and 3080 here), on vLLM 0.31.0, and the kernel is forward only.
+
+Without the kernel (`PTH_FA=0`, or a launch outside its measured setup), `SPEC=dflash2 CTX=long` runs on fp8 KV with the FlashAttention-2 plugin in `fa2/` by default (`FA2_FP8KV=1`) on an RTX 3090-class
 GPU (compute capability 8.6); on any other GPU the default stays on int8 + Triton with a note, and `FA2_FP8KV=1` opts in on a 4090;
 `FA2_FP8KV=0` restores the int8 + Triton arm. Native installs need `bash fa2/install.sh` once, and the launcher refuses
 to start without it rather than fall back (the Docker image has it). `KV_OFFLOAD_GB` turns the default off with a note;
@@ -246,6 +256,7 @@ Everything that used to be in this README, in the folder it belongs to.
 | [drafter/](drafter/) | How the draft vocabulary, the int4 drafters and the DFlash2 requantization were built — including what did not work. |
 | [kvarn/](kvarn/) | The KVarN 4/2-bit KV cache port. |
 | [fa2/](fa2/) | The fp8-KV FlashAttention-2 source port (optional; `bash fa2/install.sh` builds it, `FA2_FP8KV=1` selects it). |
+| [pthfa/](pthfa/README.md) | The vendored source of [pth-flash-attn](https://github.com/noon-at-cgn/pth-flash-attn) v0.1.0, the int8-KV attention kernel (optional; `bash pthfa/install.sh` builds it, `PTH_FA=1` selects it, and it is the default for `SPEC=mtp CTX=long` and `SPEC=dflash2 CTX=long` on a compute capability 8.6 GPU). |
 
 ## License
 

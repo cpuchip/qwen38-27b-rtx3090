@@ -7,24 +7,23 @@
 //   qk_subtile   S[16 rows x SUB tokens] = Q~ . K_int^T   (fp32 accumulators)
 //   pv_subtile   O[16 rows x D]         += P'' . V_int     (fp32 accumulators)
 //
-// Both are the register probe's loops (research/probe/probe_tile.cu, ADR
-// 0012) made reusable: the kernel (attn_kernel.cuh) and the one-warp unit
-// test (attn_test_kernels.cu, pth_attn_test_warp_tile) call the same
+// Both are the loops of the register probe, made reusable: the kernel
+// (attn_kernel.cuh) and the one-warp unit test (attn_test_kernels.cu,
+// pth_attn_test_warp_tile) call the same
 // functions, so the unit test checks exactly the code the kernel runs.
 //
-// Warp layout (plan 3.2, ADR 0012): 4 warps as WM x WN. Warp w has
+// Warp layout: 4 warps as WM x WN. Warp w has
 // warp_m = w % WM (its 16 query rows are 16 warp_m .. 16 warp_m + 15 of the
 // CTA's row tile) and warp_n = w / WM (its tokens are slice warp_n of each
 // 64-token load tile, 64 / WN tokens, walked in steps of SUB).
 //
-// Fragment facts used below (PTX ISA 9.7.16.5.8, mma.m16n8k16 .f16, and the
-// T3 proofs in docs/walkthrough/06):
+// Fragment facts used below (PTX ISA 9.7.16.5.8, mma.m16n8k16 .f16):
 //   lane = 4 g + q;  A (16 x 16):  a0 = (row g, k 2q..2q+1), a1 = (row g+8,
 //   same k), a2 = (row g, k 2q+8..+9), a3 = (row g+8, k 2q+8..+9);
 //   B (16 x 8):  b0 = (k 2q..2q+1, col g), b1 = (k 2q+8..+9, col g);
 //   C (16 x 8):  c0,c1 = (row g, cols 2q, 2q+1), c2,c3 = (row g+8, same).
-//   QK: n = token, k = d (permuted by pi, ADR 0008); B comes from ldmatrix of
-//   int8 K + cvt4. PV: n = d (d-permuted, ADR 0009), k = token; A comes
+//   QK: n = token, k = d (permuted by pi); B comes from ldmatrix of
+//   int8 K + cvt4. PV: n = d (d-permuted), k = token; A comes
 //   straight from the S accumulators (FA2 register reuse), B from LDS.32 +
 //   byte pairing + cvt4.
 
@@ -40,8 +39,8 @@
 namespace pth_attn {
 
 // Smallest WM in {1, 2, 4} whose 16 * WM MMA rows hold `rows` rows (bq * G);
-// 0 if more than 64 rows (unsupported, plan C26). For the planner's bq =
-// floor(16 wm / G) this returns the planner's wm (ADR 0013).
+// 0 if more than 64 rows (unsupported). For the planner's bq =
+// floor(16 wm / G) this returns the planner's wm.
 PTH_HD int32_t attn_wm_for_rows(int32_t rows) {
   return rows <= kMmaM ? 1
                        : (rows <= 2 * kMmaM ? 2 : (rows <= 4 * kMmaM ? 4 : 0));
@@ -55,14 +54,13 @@ using AttnGeometry =
 
 // ---------------------------------------------------------------------------
 // Stage readers: where token t's K/V bytes and scales sit inside one stage.
-// Offsets are relative to the stage base. Two layouts (ADR 0006, ADR 0012
-// Amendment 1):
+// Offsets are relative to the stage base. Two layouts:
 //   SepStageReader   separate streams: StageLayout, K and V regions with
-//                    the XOR swizzles of ADR 0007, ks / vs arrays;
+//                    the XOR swizzles, ks / vs arrays;
 //   CellStageReader  whole inline cells [K | ks | V | vs] at pitch 2D + 16
 //                    (528 at D = 256), no swizzle: the odd number of 16-B
 //                    chunks per row is what makes K ldmatrix and V LDS.32
-//                    conflict-free (plan V4).
+//                    conflict-free.
 // ---------------------------------------------------------------------------
 template <int D>
 struct SepStageReader {
@@ -139,7 +137,8 @@ __device__ __forceinline__ void qk_subtile(float (&s)[SUB / kMmaN][4],
   for (int n = 0; n < kNt; ++n) s[n][0] = s[n][1] = s[n][2] = s[n][3] = 0.f;
   // ldmatrix.x4: matrix mi = lane / 8 covers token group tg0 + mi % kTg at
   // k-step ks0 + mi / kTg; the lane supplies the address of row lane % 8.
-  // For kTg = 4 this is T3's k_ldsm_x4_offset (one k-step, 4 n-tiles).
+  // For kTg = 4 this is smem_layout.cuh's k_ldsm_x4_offset: one
+  // k-step, 4 n-tiles.
   const int mi = lane >> 3;
   #pragma unroll
   for (int ks0 = 0; ks0 < kKSteps; ks0 += kKsPerLd) {
@@ -187,13 +186,13 @@ __device__ __forceinline__ void pv_subtile(float (&o)[D / kMmaN][4],
       uint32_t w[4];
   #pragma unroll
       for (int i = 0; i < 4; ++i) {  // tokens 2q, 2q+1, 2q+8, 2q+9
-        // = T3's v_lds32_offset for the separate layout.
+        // = smem_layout.cuh's v_lds32_offset for the separate layout.
         const int tok = t16 + 2 * q + v_token_offset(i);
         w[i] = *reinterpret_cast<const uint32_t*>(
             stage + R::v(tok, kVGroupD * grp + 4 * g));
       }
       uint32_t b[4][2];
-      v_b_fragments(w, b);  // 4 PRMT + 4 cvt4 (ADR 0009)
+      v_b_fragments(w, b);  // 4 PRMT + 4 cvt4
       // n-tile 4 grp + n_sub holds d = 32 grp + 4 n + n_sub at column n.
   #pragma unroll
       for (int n_sub = 0; n_sub < 4; ++n_sub) {

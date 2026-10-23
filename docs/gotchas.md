@@ -94,7 +94,7 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
    8192` inflates the profiled activation peak, which shrinks the cache pool,
    which caps concurrency. 2048 wins on this card.
 8. **`--language-model-only` drops the vision tower cleanly** (no weights
-   loaded), and it is the default in both start scripts. `VISION=1` keeps the
+   loaded), and it is the default in all three launchers. `VISION=1` keeps the
    tower for a client that sends images. The tower is **0.858 GiB**, not the
    2.7 GB this entry used to give: `model.visual.*` sums to 0.858 GiB of BF16 in both
    `Qwen3.8-27B-W4A16-AutoRound` and the `-fast` variant, and a runtime A/B
@@ -798,12 +798,13 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     virtual address twice, ~40 h uptime each) on that combination with MTP +
     prefix caching + chunked prefill at 28-34k context; cause unattributed
     between flashinfer's workspace and the async-scheduling window as of this
-    entry. If you hit it, the flashinfer-free fallback is the int8 tier:
-    `SPEC=dflash2 CTX=long` ships it with `FA2_FP8KV=0` (its default is now the fa2/ fp8 arm), and for `SPEC=mtp` it is
+    entry. If you hit it, the flashinfer-free fallback is the int8 tier: on a compute capability 8.6 GPU with `pthfa/` installed
+    `SPEC=mtp CTX=long` already defaults to it on the pth-flash-attn kernel (`PTH_FA`, item 63); otherwise
+    `SPEC=dflash2 CTX=long` ships it with `FA2_FP8KV=0` (its 8.6 default without `PTH_FA` is the fa2/ fp8 arm), and for `SPEC=mtp` it is
     `VLLM_SPEC_DECODE_ATTN=1 EXTRA_ARGS="--attention-backend=TRITON_ATTN
     --kv-cache-dtype=int8_per_token_head"`. Measured cost on the reference
     box: 17.9k in + 256 out takes 23.7 s against fp8/FlashInfer's 18.9
-    (~25% wall at that depth, mostly Triton prefill). The default stays
+    (~25% wall at that depth, mostly Triton prefill). Without the 8.6 `PTH_FA` default above the default stays
     fp8/FlashInfer: two faults on one box do not justify that tax on every
     other box, but you should know which combination you are running.
 

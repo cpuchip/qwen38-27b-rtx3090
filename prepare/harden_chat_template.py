@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Harden every chat_template.jinja under a models dir against clients that send
+"""Harden chat_template.jinja in each explicit model directory or an explicit Jinja file against clients that send
 tool-call arguments as a JSON array instead of an object.
 
 Some clients (JetBrains AI Assistant in particular) emit tool_calls like
@@ -20,7 +20,10 @@ to rendering non-mapping arguments as a single positional `arguments` parameter.
 Idempotent: a template that already contains the branch is left untouched.
 
 Usage:
-    venv/bin/python prepare/harden_chat_template.py [models_dir | jinja_file] [...]
+    venv/bin/python prepare/harden_chat_template.py [model_dir | jinja_file] [...]
+
+With no arguments, scan models/*/chat_template.jinja in this checkout. Explicit
+directories must directly contain chat_template.jinja; they are not model collections.
 
     # default: every models/*/chat_template.jinja under this repo
 """
@@ -59,7 +62,7 @@ MARKER = "tool_call.arguments is mapping"
 
 def harden(path: str) -> str:
     """Return 'hardened', 'ok' or 'unchanged'."""
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         src = f.read()
     if MARKER in src:
         return "unchanged"
@@ -72,11 +75,13 @@ def harden(path: str) -> str:
 
 
 def targets():
+    if any(arg in ("--help", "-h") for arg in sys.argv[1:]):
+        print(__doc__)
+        sys.exit(0)
     for arg in sys.argv[1:]:
-        if arg in ("--help", "-h"):
-            print(__doc__)
-            sys.exit(0)
         yield arg
+    if sys.argv[1:]:
+        return
     base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     models = os.path.join(base, "models")
     if os.path.isdir(models):
@@ -90,13 +95,15 @@ def main() -> int:
     rc = 0
     seen = set()
     for t in targets():
-        p = os.path.realpath(t)
+        p = os.path.join(t, "chat_template.jinja") if os.path.isdir(t) else t
+        p = os.path.realpath(p)  # resolve the final file, including HF snapshot symlinks
         if p in seen:
             continue
         seen.add(p)
-        if os.path.isdir(t):
-            p = os.path.join(t, "chat_template.jinja")
         if not os.path.isfile(p):
+            print(f"harden_chat_template: no template found for {t}; expected a model directory containing "
+                  "chat_template.jinja or a Jinja file", file=sys.stderr)
+            rc = 1
             continue
         try:
             res = harden(p)
