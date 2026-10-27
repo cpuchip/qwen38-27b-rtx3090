@@ -5,7 +5,7 @@ decoding and plans from seq_lens_cpu_upper_bound instead. With PP=2 under concur
 illegal memory access on PP0 (#328). GPU core dumps of three such crashes (two on 0.31.0, one on 0.32.0) all name
 flashinfer::PersistentVariableLengthMergeStatesKernel on device 0.
 
-Why, as read from the code (vllm #61239 and its two PRs; not measured here): the skipped call was also the host
+Why, as read from the code (vllm #61239 and #61612; not measured here): the skipped call was also the host
 barrier between steps. With async scheduling the CPU can then plan step N+1 while step N's plan is still being copied
 to the GPU: plan() writes every index array into one pinned host buffer per wrapper and enqueues a single
 cudaMemcpyAsync from it, so N+1's plan can overwrite those bytes before N's copy reads them, and the merge kernel reads
@@ -34,9 +34,11 @@ hunk is not part of this patch).
 Kind: fix
 What: with async scheduling on, FlashInfer's metadata builder takes the blocking seq_lens.cpu() again, the host
   barrier between steps that vllm #57214 dropped
-Upstream: vllm #61612 (open); #61622 (open) is a larger alternative; the regression is from vllm #57214
+Upstream: vllm #61612 (open); the regression is from vllm #57214. vllm #61622 (open, for #61621) makes the
+  blocking read wait on an event instead of holding the CUDA context lock, but leaves the shortcut as it is, so
+  without #61612 it does not fix this
 Cut-against: 0.31.0
-Retires-when: the pin that carries #61612 or #61622
+Retires-when: the pin that carries #61612, or another change that keeps the barrier under async scheduling
 
 --- exported from a95dced48 (vllm-pr61612-flashinfer-async-barrier); regenerate with scripts/export-patch.sh, do not edit ---
 
