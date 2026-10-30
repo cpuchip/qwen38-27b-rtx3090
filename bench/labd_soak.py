@@ -42,6 +42,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 import harness
+from labd_corpus import load_corpus
 
 CORPUS = os.path.expanduser("~/bench/labd_corpus.txt")
 
@@ -56,7 +57,7 @@ MAXTOK = arg("--max-tokens", 256)
 CTX = arg("--ctx", 20000)
 MINUTES = arg("--minutes", 0.0)
 
-doc = open(CORPUS).read()[: int(CTX * 3.6)]
+doc = load_corpus(CORPUS)[: int(CTX * 3.6)]
 TASKS = [
     ("copy", "Gengiv ordret de første 60 linjer af dokumentet. Ingen kommentarer, kun teksten."),
     ("summary", "Skriv en grundig, struktureret opsummering på dansk."),

@@ -21,10 +21,11 @@ check "$want" "$have" "QWEN_BOOL_KNOBS names every knob a patch reads as == \"1\
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
 (cd "$REPO" && tar --exclude=.git --exclude=./venv --exclude=docs/media --exclude=bench/demo --exclude=models -cf - .) | tar -xf - -C "$T"
 mkdir -p "$T/venv/bin"
-printf '#!/bin/sh\nprintf "%%s\\n" "$@"\n' > "$T/venv/bin/vllm"; chmod +x "$T/venv/bin/vllm"
+printf '#!/bin/sh\necho invoked >> "$QWEN_TEST_EXECUTED"\nprintf "%%s\\n" "$@"\n' > "$T/venv/bin/vllm"; chmod +x "$T/venv/bin/vllm"
 # rc_of <launcher> <env assignments...>: the launcher's exit code under PRINT_ARGV=1; stderr kept in $T/err.
 rc_of() { local sc=$1; shift
-  (cd "$T" && env -u PRINT_ARGV -u VLLM_DFLASH2_LOOKUP -u KVARN_FUSED_DECODE VLLM_API_KEY=k PRINT_ARGV=1 "$@" \
+  rm -f "$T/executed"
+  (cd "$T" && env -u PRINT_ARGV -u VLLM_DFLASH2_LOOKUP -u KVARN_FUSED_DECODE VLLM_API_KEY=k PRINT_ARGV=1 QWEN_TEST_EXECUTED="$T/executed" "$@" \
      bash "$sc" >/dev/null 2>"$T/err" </dev/null); echo $?; }
 for sc in single-user/start_qwen.sh batch/start_qwen.sh single-user/alternative.sh; do
   echo "== $sc"
@@ -35,5 +36,13 @@ for sc in single-user/start_qwen.sh batch/start_qwen.sh single-user/alternative.
   grep -q "VLLM_DFLASH2_LOOKUP=true" "$T/err" && check 1 1 "the refusal names the knob" || check 1 0 "the refusal names the knob"
   check 1 "$(rc_of "$sc" KVARN_FUSED_DECODE=yes)"                     "KVARN_FUSED_DECODE=yes: refused"
   check 1 "$(rc_of "$sc" FA2_FP8KV=true)"                             "FA2_FP8KV=true: refused"
+  for alias in SPEC_ATTN ASYNC_SCHED REQ_METRICS REQ_METRICS_DETAILED PRINT_ARGV; do
+    for value in 0 1 ''; do
+      check 0 "$(rc_of "$sc" "$alias=$value")" "$alias=$value: accepted"
+    done
+    check 1 "$(rc_of "$sc" "$alias=true")" "$alias=true: refused before invoking vllm"
+    grep -q "$alias=true" "$T/err" && check 1 1 "the refusal names $alias" || check 1 0 "the refusal names $alias"
+    [ ! -e "$T/executed" ] && check 1 1 "$alias=true never invokes vllm" || check 1 0 "$alias=true never invokes vllm"
+  done
 done
 echo; [ $FAILS = 0 ] && echo "all checks passed" || { echo "$FAILS checks FAILED"; exit 1; }

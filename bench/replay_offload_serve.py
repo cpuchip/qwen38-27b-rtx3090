@@ -56,7 +56,8 @@ def metrics():
 
 def ask(label, prompt, max_tokens=32):
     payload = {"messages": [{"role": "user", "content": prompt}],
-               "max_tokens": max_tokens, "temperature": 0, "stream": True, "stream_options": {"include_usage": True}}
+               "max_tokens": max_tokens, "temperature": 0, "stream": True, "stream_options": {"include_usage": True},
+               "chat_template_kwargs": {"enable_thinking": False}}
     t0 = time.perf_counter()
     first = None
     usage = None
@@ -65,7 +66,9 @@ def ask(label, prompt, max_tokens=32):
             first = time.perf_counter()
         if j.get("usage"):
             usage = j["usage"]
-    ttft = round((first or time.perf_counter()) - t0, 2)
+    if first is None:
+        raise ValueError(f"{label}: stream produced no content; TTFT is unavailable")
+    ttft = round(first - t0, 2)
     m = metrics()
     served = {re.sub(r'\{engine="0",model_name="[^"]*",', "{", k): v for k, v in m.items() if "total_bytes" in k or "load" in k or "store" in k or "usage_perc" in k or "skipped" in k or "lookup" in k or "prefix_cache" in k}
     rec = {"tag": TAG, "req": label, "ttft_s": ttft, "total_s": round(time.perf_counter() - t0, 1),

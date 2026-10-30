@@ -128,5 +128,18 @@ class LongCorpusTests(unittest.TestCase):
         self.assertIn(str(self.package.resolve()), result.stdout)
 
 
+    def test_blank_frozen_base_is_refused_without_overwriting_long_corpus(self):
+        for base in ("", " \t\n" * 70000, "\n" * 200000 + "nonblank tail"):
+            with self.subTest(size=len(base)):
+                (self.root / "bench/labd_corpus.txt").write_text(base, encoding="utf-8")
+                out = self.root / "bench/labd_corpus_long.txt"
+                original = b"existing frozen long document\r\n"
+                out.write_bytes(original)
+                with self.assertRaisesRegex(SystemExit, "is blank.*labd_bench.py"), \
+                        mock.patch.object(code_corpus, "source_files", side_effect=AssertionError("source discovery reached")):
+                    runpy.run_path(str(SCRIPT), run_name="__main__")
+                self.assertEqual(out.read_bytes(), original)
+
+
 if __name__ == "__main__":
     unittest.main()

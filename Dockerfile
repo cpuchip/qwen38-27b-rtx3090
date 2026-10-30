@@ -1,5 +1,5 @@
 # Same stack as the README's venv install, frozen: Python 3.12 venv at /app/venv,
-# vLLM 0.31.0 (torch 2.13 / cu130 / Triton 3.7.1), every compatible patch in
+# vLLM 0.32.0 (torch 2.13 / cu130 / Triton 3.7.1), every compatible patch in
 # patches/ applied,
 # the KVarN KV cache installed, the pth-flash-attn op library built (pthfa/, selected by
 # PTH_FA=1, the default on an 8.6 GPU for SPEC=mtp or dflash2 CTX=long), verify.sh --install and the scratch-pool test run at build time.
@@ -37,6 +37,10 @@ RUN PY=venv/bin/python bash pthfa/install.sh
 COPY fa2/ fa2/
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/* \
     && FA2_CACHE=/tmp/fa2-cache bash fa2/install.sh && rm -rf /tmp/fa2-cache
+# xgrammar from mlc-ai/xgrammar#989 plus the Qwen template-newline fix, over the release vLLM pins: a maxLength on a
+# tool's string parameter otherwise drops decode to ~7 tok/s under TOOL_STRICT=parameter (xgrammar/README.md).
+COPY xgrammar/ xgrammar/
+RUN bash xgrammar/install.sh
 
 COPY . .
 # patches/apply.sh reads the apply order from patches/series and applies it with --fuzz 0:
@@ -50,10 +54,16 @@ RUN set -e; SP=$(venv/bin/python -c 'import vllm, os; print(os.path.dirname(vllm
     bash patches/apply.sh "$SP"; \
     bash kvarn/install.sh; \
     bash verify.sh --install; \
+    venv/bin/python bench/test_dflash_context_capacity.py; \
     venv/bin/python bench/mq3d_scratch_pool_test.py; \
+    venv/bin/python bench/test_quant_scale_views.py; \
     CUDA_VISIBLE_DEVICES= venv/bin/python pthfa/tests/gate_test.py; \
     venv/bin/python fa2/tests/gate_test.py; \
-    venv/bin/python fa2/tests/check_mixed_prefill.py --device cpu
+    venv/bin/python fa2/tests/check_mixed_prefill.py --device cpu; \
+    CUDA_VISIBLE_DEVICES= venv/bin/python bench/test_async_mamba_kv_sizing.py; \
+    CUDA_VISIBLE_DEVICES= venv/bin/python bench/test_kv_cache_seat_budget.py; \
+    CUDA_VISIBLE_DEVICES= venv/bin/python bench/test_continuous_stream_usage.py; \
+    venv/bin/python bench/test_gdn_ba_lora.py
 
 # HOME is a volume: torch.compile cache (~/.cache/vllm), Triton (~/.triton),
 # FlashInfer JIT (~/.cache/flashinfer), HF hub cache.

@@ -34,6 +34,8 @@ if not os.path.exists(BASE):
 
 with open(BASE, encoding="utf-8", newline="") as f:
     base = f.read()
+if not base[:200000].strip():
+    sys.exit(f"{BASE} is blank in its frozen head -- delete it and run bench/labd_bench.py once to rebuild it")
 try:
     src, files = source_files("v1", recursive=True)
 except RuntimeError as exc:

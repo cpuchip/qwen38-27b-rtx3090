@@ -41,7 +41,7 @@ class PinTests(unittest.TestCase):
             git(fork, "add", ".")
             git(fork, "commit", "-qm", "old")
             git(fork, "tag", f"v{source_pin}")
-            fi = f"flashinfer-python=={old_cubin}\n" if python_only else "flashinfer-cubin==99.0.0\n"
+            fi = f"flashinfer-{'python' if python_only else 'cubin'}==99.0.0\n"
             (fork / "requirements/cuda.txt").write_text(fi, encoding="utf-8")
             (fork / "requirements/common.txt").write_text("huggingface_hub>=99.0.0\n" if bad_copin else "", encoding="utf-8")
             git(fork, "add", ".")
@@ -59,14 +59,14 @@ class PinTests(unittest.TestCase):
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("MISSING  docs/install.md", result.stdout)
         self.assertIn("nothing written", result.stdout)
-        self.assertEqual(before, after)
+        self.assertEqual([name for name in FILES if before[name] != after[name]], [])
 
     def test_copin_failure_does_not_leave_partial_edits(self):
         result, before, after = self.run_bump(bad_copin=True)
         self.assertEqual(result.returncode, 1, result.stderr)
         self.assertIn("CO-PIN", result.stdout)
         self.assertIn("nothing written", result.stdout)
-        self.assertEqual(before, after)
+        self.assertEqual([name for name in FILES if before[name] != after[name]], [])
 
     def test_valid_bump_writes_and_dry_run_does_not(self):
         for dry in (False, True):
@@ -76,17 +76,20 @@ class PinTests(unittest.TestCase):
                 self.assertEqual(before == after, dry)
                 if not dry:
                     self.assertIn(f"vllm=={NEW}".encode(), after["docker/requirements.txt"])
+                    self.assertIn(b"flashinfer-cubin==99.0.0", after["docs/install.md"])
                     self.assertTrue(all(before[name] != after[name] for name in FILES))
 
     def test_valid_fixture_remains_valid_after_the_repo_pin_changes(self):
         result, before, after = self.run_bump(source_pin="42.0.0")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(all(before[name] != after[name] for name in FILES))
+        self.assertIn(b"flashinfer-cubin==99.0.0", after["docs/install.md"])
 
     def test_new_release_can_pin_only_flashinfer_python(self):
         result, before, after = self.run_bump(python_only=True)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertTrue(all(before[name] != after[name] for name in FILES))
+        self.assertIn(b"flashinfer-cubin==99.0.0", after["docs/install.md"])
 
 
 if __name__ == "__main__":

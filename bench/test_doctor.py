@@ -22,7 +22,21 @@ class DoctorTests(unittest.TestCase):
             binary.mkdir()
             if env_key:
                 (root / ".env").write_text("VLLM_API_KEY=secret-from-env-file\n", encoding="utf-8")
-            curl = ('case "$*" in *"--connect-timeout 5 --max-time 10"*) ;; *) exit 99;; esac\n'
+            curl = ('''connect_timeout= max_time=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --connect-timeout|--max-time)
+            [ "$#" -ge 2 ] || exit 99
+            case "$1" in
+                --connect-timeout) connect_timeout=$2;;
+                --max-time) max_time=$2;;
+            esac
+            shift 2;;
+        *) shift;;
+    esac
+done
+[ "$connect_timeout" = 5 ] && [ "$max_time" = 10 ] || exit 99
+'''
                     + f'printf %s {code}; exit {status}')
             ss = "printf 'LISTEN 0 128 127.0.0.1:18020 0.0.0.0:*\\n'; printf '%0400000d\\n' 0"
             docker = ('case "$1" in ps) printf "hyperqwen-single-1\\n"; printf "%0400000d\\n" 0;; '

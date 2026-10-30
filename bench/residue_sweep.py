@@ -25,13 +25,14 @@ import hashlib, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from verbatim import classify, median, prefix_match, repeats  # noqa: E402
 import harness  # noqa: E402
+from labd_corpus import load_corpus  # noqa: E402
 
 LABEL = sys.argv[1]
 START = int(sys.argv[2]) if len(sys.argv) > 2 else 0
 COUNT = int(sys.argv[3]) if len(sys.argv) > 3 else 128
 HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(HERE)
 
-DOC = open(os.path.expanduser(os.environ.get("CORPUS", "~/bench/labd_corpus.txt"))).read()[:72000]
+DOC = load_corpus(os.path.expanduser(os.environ.get("CORPUS", "~/bench/labd_corpus.txt")))[:72000]
 from transformers import AutoTokenizer  # noqa: E402
 TOK = AutoTokenizer.from_pretrained(os.path.join(REPO, "models", "Qwen3.8-27B-W4A16-AutoRound-fast"))
 

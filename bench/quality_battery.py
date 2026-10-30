@@ -26,9 +26,28 @@ Set CODE_CORPUS_DIR to one fixed vllm package directory for all compared arms.
 PPL requires a source tree (explicit, checkout venv, or active install fallback).
 --gsm-only does not read the code corpus or require a local vLLM install.
 """
+import argparse
 import json, os, sys, glob, re, math, time, random
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+
+
+def positive_int(value):
+    number = int(value)
+    if number <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return number
+
+
+parser = argparse.ArgumentParser(description="Measure quality against the running server.", allow_abbrev=False)
+parser.add_argument("tag", help="label for result_<tag>.json, for example mycard; not a model name")
+mode = parser.add_mutually_exclusive_group()
+mode.add_argument("--ppl-only", action="store_true", help="measure perplexity only")
+mode.add_argument("--gsm-only", action="store_true", help="measure GSM8K only (no local vLLM source needed)")
+parser.add_argument("--gsm-n", type=positive_int, default=200, help="maximum GSM8K questions (default: 200)")
+args = parser.parse_args()
+
+# Parse help and invalid arguments before importing optional data dependencies.
 import pyarrow.parquet as pq
 
 import harness
@@ -37,9 +56,9 @@ from code_corpus import source_files
 HERE = os.path.dirname(os.path.abspath(__file__))
 # data dir: wikitext-2 test parquet, fineweb-2 dan_Latn test parquet, gsm8k test parquet (see README)
 Q = os.environ.get("QUALITY_DATA", os.path.join(HERE, "quality-data"))
-tag = sys.argv[1]
-ppl_only = "--ppl-only" in sys.argv; gsm_only = "--gsm-only" in sys.argv
-gsm_n = int(sys.argv[sys.argv.index("--gsm-n")+1]) if "--gsm-n" in sys.argv else 200
+tag = args.tag
+ppl_only = args.ppl_only; gsm_only = args.gsm_only
+gsm_n = args.gsm_n
 
 def docs():
     # Resolve before reading parquet: never silently omit the code cohort.
@@ -111,14 +130,17 @@ def gsm_one(row):
 def run_gsm():
     t = pq.read_table(f"{Q}/gsm8k/main/test-00000-of-00001.parquet")
     rows = list(zip(t.column("question").to_pylist(), t.column("answer").to_pylist()))[:gsm_n]
+    if not rows:
+        print("No GSM8K questions found; invalid quality run", file=sys.stderr)
+        sys.exit(2)
     with ThreadPoolExecutor(32) as ex: res = list(ex.map(gsm_one, rows))
     acc = sum(1 for ok,_ in res if ok)/len(res); toks = sum(n for _,n in res)/len(res)
-    return acc, toks
+    return acc, toks, len(res)
 
 t0=time.perf_counter(); result={"tag":tag}
 if not gsm_only:
     result["ppl"] = run_ppl(); print(tag, "PPL", {k:(round(v[0],4),v[1]) for k,v in result["ppl"].items()}, f"{time.perf_counter()-t0:.0f}s", flush=True)
 if not ppl_only:
-    t1=time.perf_counter(); acc, toks = run_gsm(); result["gsm8k"]={"n":gsm_n,"acc":acc,"mean_tokens":toks}
-    print(tag, f"GSM8K n={gsm_n} acc={acc:.3f} mean_tokens={toks:.0f} {time.perf_counter()-t1:.0f}s", flush=True)
+    t1=time.perf_counter(); acc, toks, n = run_gsm(); result["gsm8k"]={"n":n,"acc":acc,"mean_tokens":toks}
+    print(tag, f"GSM8K n={n} acc={acc:.3f} mean_tokens={toks:.0f} {time.perf_counter()-t1:.0f}s", flush=True)
 with open(os.path.join(Q, f"result_{tag}.json"),"w") as f: json.dump(result,f)

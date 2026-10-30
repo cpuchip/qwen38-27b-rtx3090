@@ -344,6 +344,15 @@ Greedy, 256-token generations, median of three:
   778,942 to 844,852 tokens (2.97x to 3.22x concurrency at 262k) against
   581,403 (2.22x) at TP=2, a 32K prefill takes 15.9 s against 23.7 s at TP=2,
   and async scheduling with four slots reaches 134 tok/s aggregate.
+- **PP=2 + `SPEC=off` on 0.31 and 0.32, FlashInfer, async scheduling on**
+  dies under concurrent load with an illegal memory access on the first
+  pipeline stage ([#328](https://github.com/syv-ai/HyperQwen/issues/328)). The
+  cause is upstream (vllm #57214, tracked in
+  [vllm-project/vllm#61239](https://github.com/vllm-project/vllm/issues/61239)),
+  and the `vllm-pr61612-flashinfer-async-barrier` patch carries the upstream fix.
+  On a rented pair of 3090s at #328's settings, 0.31.0 without it crashed at 8 and
+  27 minutes of a 24-conversation load and ran 60 minutes clean with it; the
+  patch's header has the conditions.
 
 On the 0.28 int4-KV stack, PP=2 with `SPEC=off` was the way to get a large pool
 from two unequal cards; on 0.29 with fp8 KV, TP=2 with MTP was better on every

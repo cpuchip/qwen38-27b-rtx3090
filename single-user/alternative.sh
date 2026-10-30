@@ -92,8 +92,15 @@ case "$SPEC" in
   *) echo "SPEC=$SPEC is not a mode here: dflash2 (default) or off." >&2; exit 1 ;;
 esac
 PORT=${PORT:-18020}
-GPU_UTIL=${GPU_UTIL:-0.95}   # 0.93 on WSL2 or with a desktop compositor on the card
-MAX_LEN=${MAX_LEN:-256000}   # 256000 needs the full 0.95; drop MAX_LEN before GPU_UTIL
+# Under WSL2 vLLM sees less than the nominal 24 GiB (22.75 GiB free on a 3090, #401), so 0.95 asks for more
+# than exists and the profile fails to start; 0.93 boots and holds the 256k window (446,128-token pool).
+# An explicit GPU_UTIL always wins; with a desktop compositor on the card, lower it yourself.
+if [ -z "${GPU_UTIL:-}" ] && { grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null || [ -n "${WSL_DISTRO_NAME:-}" ]; }; then
+  GPU_UTIL=0.93
+  echo "WSL detected: GPU_UTIL=0.93 (0.95 exceeds the free memory WSL2 reports; set GPU_UTIL to override)"
+fi
+GPU_UTIL=${GPU_UTIL:-0.95}
+MAX_LEN=${MAX_LEN:-256000}   # 256000 needs the full 0.95 on native Linux; drop MAX_LEN before GPU_UTIL
 ATTN_ARGS="--attention-backend TRITON_ATTN --kv-cache-dtype int4_per_token_head"
 VISION=${VISION:-0}
 ENABLE_THINKING=${ENABLE_THINKING:-false}

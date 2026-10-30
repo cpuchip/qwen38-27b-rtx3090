@@ -88,6 +88,23 @@ check none "$(arg_of $R $SU CTX=fast SPEC=mtp EXTRA_ARGS=$OFF)"                 
 check 0     "$(adaptive_of $SU CTX=huge SPEC=dflash2 DFLASH_TOKENS=15 DRAFT="$T/draft")"                "CTX=huge dflash2 DFLASH_TOKENS=15: VLLM_DFLASH2_LOOKUP_ADAPTIVE"
 check unset "$(adaptive_of $SU CTX=huge SPEC=dflash2 DFLASH_TOKENS=15 DRAFT="$T/draft" PREFIX_CACHE=0)" "CTX=huge dflash2 DFLASH_TOKENS=15 PREFIX_CACHE=0: VLLM_DFLASH2_LOOKUP_ADAPTIVE"
 check unset "$(adaptive_of $SU CTX=huge SPEC=dflash2 DFLASH_TOKENS=15 DRAFT="$T/draft" EXTRA_ARGS=$OFF)" "CTX=huge dflash2 DFLASH_TOKENS=15, $OFF in EXTRA_ARGS: VLLM_DFLASH2_LOOKUP_ADAPTIVE"
+echo "== $SU, explicit adaptive lookup control"
+check 0 "$(adaptive_of $SU CTX=huge SPEC=dflash2 DFLASH_TOKENS=15 DRAFT="$T/draft" LOOKUP_ADAPTIVE=0)" \
+  "LOOKUP_ADAPTIVE=0 keeps the huge-context safety pin"
+check 1 "$(adaptive_of $SU CTX=huge SPEC=dflash2 DFLASH_TOKENS=15 DRAFT="$T/draft" LOOKUP_ADAPTIVE=1)" \
+  "LOOKUP_ADAPTIVE=1 explicitly opts in"
+check 0 "$(adaptive_of $SU CTX=fast SPEC=dflash2 DRAFT="$T/draft" LOOKUP_ADAPTIVE=0)" \
+  "LOOKUP_ADAPTIVE=0 is passed outside the safety-pin profile"
+check 0 "$(adaptive_of $SU CTX=fast SPEC=dflash2 DRAFT="$T/draft" LOOKUP_ADAPTIVE=0 VLLM_DFLASH2_LOOKUP_ADAPTIVE=1)" \
+  "explicit launcher control overrides the inherited engine knob"
+check 1 "$(adaptive_of $SU CTX=fast SPEC=dflash2 DRAFT="$T/draft" LOOKUP_ADAPTIVE=1 VLLM_DFLASH2_LOOKUP_ADAPTIVE=0)" \
+  "explicit opt-in overrides the inherited engine knob"
+check 0 "$(adaptive_of $SU CTX=fast SPEC=dflash2 DRAFT="$T/draft" VLLM_DFLASH2_LOOKUP_ADAPTIVE=0)" \
+  "without the alias, an inherited setting outside the safety pin is preserved"
+for invalid in true 2; do
+  run $SU CTX=huge SPEC=dflash2 DRAFT="$T/draft" LOOKUP_ADAPTIVE="$invalid" >/dev/null
+  check 1 "$?" "LOOKUP_ADAPTIVE=$invalid is refused"
+done
 AL=single-user/alternative.sh
 echo "== $AL (SPEC=dflash2, its default), retention interval"
 check 0    "$(arg_of $R $AL)"                                  "PREFIX_CACHE unset: retention interval"

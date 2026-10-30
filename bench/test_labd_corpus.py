@@ -112,6 +112,35 @@ class CorpusTests(unittest.TestCase):
             post.assert_not_called()
             self.assertFalse(corpus.exists())
 
+    def test_long_corpus_with_blank_frozen_head_is_refused_before_requests(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            corpus = Path(tmp) / "labd_corpus_long.txt"
+            original = b"\n" * 200000 + DOCUMENT.encode("utf-8") * 2000
+            corpus.write_bytes(original)
+            with mock.patch.object(sys, "argv", ["labd_bench.py", "blank-head", "--corpus", str(corpus)]), \
+                    mock.patch.object(harness, "post", side_effect=AssertionError("server reached")) as post:
+                with self.assertRaisesRegex(ValueError, "blank.*make_long_corpus.py"):
+                    runpy.run_path(str(BENCH / "labd_bench.py"), run_name="__main__")
+            post.assert_not_called()
+            self.assertEqual(corpus.read_bytes(), original)
+
+    def test_soak_and_sweeps_refuse_blank_corpus_before_tokenizer_or_requests(self):
+        for script in ("labd_soak.py", "residue_sweep.py", "bugb_sweep.py"):
+            with self.subTest(script=script), tempfile.TemporaryDirectory() as tmp:
+                home = Path(tmp)
+                corpus = home / "bench/labd_corpus.txt"
+                corpus.parent.mkdir()
+                original = b" \t\n" * 70000
+                corpus.write_bytes(original)
+                with mock.patch.dict(os.environ, HOME=tmp, USERPROFILE=tmp, CORPUS=str(corpus)), \
+                        mock.patch.object(sys, "argv", [script, "blank-test"]), \
+                        mock.patch.object(harness, "post", side_effect=AssertionError("server reached")) as post, \
+                        mock.patch.dict(sys.modules, {"transformers": None}):
+                    with self.assertRaisesRegex(ValueError, "is blank.*labd_bench.py"):
+                        runpy.run_path(str(BENCH / script), run_name="__main__")
+                post.assert_not_called()
+                self.assertEqual(corpus.read_bytes(), original)
+
     def test_relative_corpus_path(self):
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)

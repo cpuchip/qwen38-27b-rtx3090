@@ -423,7 +423,10 @@ if [ "$SPEC" = "dflash2" ]; then
   # Pinning the length is not a sacrifice here: 14.71 tok/step is the FASTEST number in the
   # series, above the adaptive path's own 14.29 cold. Root cause still open; this is a
   # correct and fast setting, not a workaround with a cost.
-  if [ -z "${LOOKUP_ADAPTIVE:-}" ] && [ "$VLLM_DFLASH2_LOOKUP" = "1" ] && [ "$DRAFT_TOKENS" -gt 7 ] \
+  if [ -n "${LOOKUP_ADAPTIVE:-}" ]; then
+    export VLLM_DFLASH2_LOOKUP_ADAPTIVE=$LOOKUP_ADAPTIVE
+  fi
+  if [ "${LOOKUP_ADAPTIVE:-0}" != 1 ] && [ "$VLLM_DFLASH2_LOOKUP" = "1" ] && [ "$DRAFT_TOKENS" -gt 7 ] \
      && [ "$CTX" = "huge" ] && [ "$PREFIX_CACHE_ON" = 1 ]; then
     echo "DFLASH_TOKENS>7 + CTX=huge + prefix caching: pinning the verify block to" >&2
     echo "$((DRAFT_TOKENS + 1)) tokens (VLLM_DFLASH2_LOOKUP_ADAPTIVE=0). The adaptive length" >&2

@@ -1471,6 +1471,32 @@ Things that each cost us hours, in rough order of pain. Worth skimming before yo
     run with `--ids`. Numbers and caveats: gotcha 61 above, and the
     syv-ai/HyperQwen#196 thread.
 
+    **Cyrillic is the same gap, measured on 0.32** ([#411](https://github.com/syv-ai/HyperQwen/issues/411)).
+    The same eight prompts in Russian and English at T=0.7 (thinking off, up to 700
+    tokens, one request at a time, tok/step from the server's own counters), 3090,
+    `SPEC=mtp CTX=long`, k=3, `-fast` checkpoint with its int4 head:
+
+    | draft head | rows | RU tok/step | RU tok/s | EN tok/step | EN tok/s |
+    |---|---:|---:|---:|---:|---:|
+    | shipped list | 40,960 | 1.38 / 1.45 | 55.2 / 57.5 | 2.69 / 2.85 | 107.1 / 112.4 |
+    | full head (`MTP_DRAFT_VOCAB=0`) | 248,320 | 2.69 / 2.70 | 102.8 / 100.7 | 2.74 / 2.96 | 105.1 / 110.2 |
+    | shipped + whole Cyrillic script (`--add-scripts cyrillic --script-budget 20000`) | 59,539 | 2.60 | 101.5 | 2.71 | 101.9 |
+
+    (First figure: the reporter's box, one pass per arm; second: the maintainer's
+    3090, two boots per arm, which agreed to 0.2%.) The shipped list costs about 45%
+    of Russian throughput. On English the full head was inside the +-5% spread on
+    the reporter's box, and a consistent 2% slower on the maintainer's (109.9-110.2
+    against 112.4-112.5 tok/s, both boots), so it is not free for English-only
+    traffic, though it gives the largest KV pool, since there is no second head
+    tensor. The Cyrillic variant
+    recovers the full head's Russian figure for +47.6 MB of int4 head. So for
+    Russian output, `MTP_DRAFT_VOCAB=0` is the simplest fix and the variant list the
+    smaller one. How much it matters depends on the mix: in the reporter's agent
+    traffic reasoning (64% of output) and tool calls (26%) are almost all English and
+    only the final answer (10%, one third Cyrillic) is Russian, so the variant is
+    worth about +80% on the part a person reads and a few percent overall. The
+    default list is unchanged.
+
 62. **A KV offload tier larger than `/dev/shm` allows fails at boot, and there
     are two limits, not one: the tmpfs size and a per-user quota.** vLLM backs
     the CPU tier (`KV_OFFLOAD_GB`, `--kv-offloading-size`) with a file,

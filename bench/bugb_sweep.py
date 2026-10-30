@@ -26,8 +26,9 @@ HERE = os.path.dirname(os.path.abspath(__file__)); REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 from verbatim import classify, median, prefix_match, repeats  # noqa: E402
 import harness  # noqa: E402
+from labd_corpus import load_corpus  # noqa: E402
 
-DOC = open(os.path.expanduser(os.environ.get("CORPUS", "~/bench/labd_corpus.txt"))).read()
+DOC = load_corpus(os.path.expanduser(os.environ.get("CORPUS", "~/bench/labd_corpus.txt")))
 
 from transformers import AutoTokenizer
 TOK = AutoTokenizer.from_pretrained(os.path.join(REPO, "models", "Qwen3.8-27B-W4A16-AutoRound-fast"))

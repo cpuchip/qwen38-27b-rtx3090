@@ -77,7 +77,14 @@ body:
     attributes:
       label: Quality check
       description: |
-        `python bench/quality_battery.py <tag> --gsm-only` (about 5 minutes).
+        With the server running, use
+        `docker compose exec single venv/bin/python bench/quality_battery.py mycard --gsm-only`
+        (about 5 minutes). For a venv install use
+        `venv/bin/python bench/quality_battery.py mycard --gsm-only`.
+        Replace `mycard` with any label for this run, such as `rtx3090-250w`;
+        it names the result file, not a model. Use your Compose service name
+        if it is not `single`. Download the GSM8K data first using the
+        [README commands](https://github.com/syv-ai/HyperQwen#field-tests-wanted).
         A fast server that emits garbage is worth nothing, and a quantization
         or kernel bug on new hardware shows up here first. Every shipped config
         reads 95.0-96.5% on this harness.

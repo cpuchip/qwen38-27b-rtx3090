@@ -50,7 +50,6 @@ topk-honour-flashinfer-sampler-switch.patch
 memory-profile-after-warmup.patch
 cudagraph-memory-from-allocator.patch
 bench-probe-errors.patch
-serve-404-served-names.patch
 serve-model-path-match.patch
 tokenize-v1-route.patch
 marlin-int8-asym-zp.patch
@@ -65,3 +64,9 @@ qwen3_5-embed-uva.patch
 vllm-pr40371-prompt-progress.patch
 vllm-pr61050-lru-running-prefix.patch
 kv-cache-seat-budget.patch
+gdn-ba-pad-small-m.patch
+vllm-pr61612-flashinfer-async-barrier.patch
+quant-scale-view-preserve-pages.patch
+dflash-context-capacity.patch
+async-mamba-kv-sizing.patch
+continuous-stream-usage.patch

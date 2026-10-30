@@ -23,7 +23,8 @@ class Output(io.StringIO):
 
 class ReplayTests(unittest.TestCase):
     def run_replay(self, growth, missing=False, legacy=False, slow=False,
-                   appears=False, evict_growth=0, error=None, alias=True):
+                   appears=False, evict_growth=0, error=None, alias=True,
+                   require_thinking_off=False, reasoning_only=False, empty=False):
         requests = 0
 
         def stream(*args, **kwargs):
@@ -31,7 +32,12 @@ class ReplayTests(unittest.TestCase):
             requests += 1
             if requests == 3 and error is not None:
                 raise error
-            yield {"choices": [{"delta": {"content": "ok"}}]}
+            if require_thinking_off:
+                self.assertIs(args[1]["chat_template_kwargs"]["enable_thinking"], False)
+            if reasoning_only:
+                yield {"choices": [{"delta": {"reasoning_content": "still thinking"}}]}
+            elif not empty:
+                yield {"choices": [{"delta": {"content": "ok"}}]}
             yield {"choices": [], "usage": {"prompt_tokens": 10, "completion_tokens": 2}}
 
         def samples():
@@ -64,6 +70,19 @@ class ReplayTests(unittest.TestCase):
                 with self.assertRaises(SystemExit) as result:
                     runpy.run_path(str(SCRIPT), run_name="__main__")
             return result.exception.code, json.loads(out.getvalue().splitlines()[-1])
+
+    def test_replay_requests_disable_thinking(self):
+        code, result = self.run_replay(1000, require_thinking_off=True)
+        self.assertEqual((code, result["verdict"]), (0, "SERVED"))
+
+    def test_reasoning_only_stream_is_not_a_content_ttft_measurement(self):
+        code, result = self.run_replay(1000, reasoning_only=True)
+        self.assertEqual((code, result["verdict"]), (2, "INVALID-REQUEST"))
+        self.assertIn("TTFT is unavailable", result["error"])
+
+    def test_empty_stream_has_no_ttft_verdict(self):
+        code, result = self.run_replay(1000, empty=True)
+        self.assertEqual((code, result["verdict"]), (2, "INVALID-REQUEST"))
 
     def test_fast_gpu_hit_is_not_evidence_of_cpu_offload(self):
         code, result = self.run_replay(0)

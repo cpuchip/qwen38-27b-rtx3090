@@ -8,7 +8,7 @@
 #
 #   docker build -f Dockerfile.fork -t qwen38-27b-rtx3090:fork-0.31 .
 #   docker build -f Dockerfile.fork --build-arg VLLM_FORK_COMMIT=<sha> .
-FROM nvidia/cuda:13.0.1-base-ubuntu24.04
+FROM nvidia/cuda:13.0.3-base-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive PIP_NO_CACHE_DIR=1 PYTHONUNBUFFERED=1
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -30,11 +30,14 @@ COPY pthfa/ pthfa/
 RUN PY=venv/bin/python bash pthfa/install.sh
 COPY fa2/ fa2/
 RUN FA2_CACHE=/tmp/fa2-cache bash fa2/install.sh && rm -rf /tmp/fa2-cache
+# xgrammar from source (mlc-ai/xgrammar#989 and the Qwen framing fix), as Dockerfile builds it.
+COPY xgrammar/ xgrammar/
+RUN bash xgrammar/install.sh
 
 # The fork: pinned by commit, built as a wheel over the release wheel's compiled parts.
 ARG VLLM_FORK_REPO=https://github.com/cpuchip/vllm
-ARG VLLM_FORK_COMMIT=0ac3e6a607e66d4725b1c879109c597f3d689ec7
-ARG VLLM_VERSION=0.31.0
+ARG VLLM_FORK_COMMIT=33e35f268d813de931265f097224c4f344aa06d7
+ARG VLLM_VERSION=0.32.0
 RUN set -e; \
     venv/bin/pip install "setuptools>=77" setuptools_scm setuptools-rust wheel; \
     venv/bin/pip download "vllm==${VLLM_VERSION}" --no-deps -d /tmp/wheel; \
@@ -51,7 +54,8 @@ RUN set -e; \
 
 COPY . .
 # bench/mq3d_scratch_pool_test.py imports the patched triton_attn.py and runs on CPU tensors, as in Dockerfile.
-RUN bash verify.sh --install && venv/bin/python bench/mq3d_scratch_pool_test.py
+# The same post-install tests Dockerfile runs after applying the series.
+RUN set -e; bash verify.sh --install; \n    venv/bin/python bench/test_dflash_context_capacity.py; \n    venv/bin/python bench/mq3d_scratch_pool_test.py; \n    venv/bin/python bench/test_quant_scale_views.py; \n    CUDA_VISIBLE_DEVICES= venv/bin/python pthfa/tests/gate_test.py; \n    venv/bin/python fa2/tests/gate_test.py; \n    venv/bin/python fa2/tests/check_mixed_prefill.py --device cpu; \n    CUDA_VISIBLE_DEVICES= venv/bin/python bench/test_async_mamba_kv_sizing.py; \n    CUDA_VISIBLE_DEVICES= venv/bin/python bench/test_kv_cache_seat_budget.py; \n    CUDA_VISIBLE_DEVICES= venv/bin/python bench/test_continuous_stream_usage.py; \n    venv/bin/python bench/test_gdn_ba_lora.py
 
 # HOME is a volume: torch.compile cache (~/.cache/vllm), Triton (~/.triton),
 # FlashInfer JIT (~/.cache/flashinfer), HF hub cache.
