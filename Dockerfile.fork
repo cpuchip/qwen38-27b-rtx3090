@@ -33,10 +33,13 @@ RUN FA2_CACHE=/tmp/fa2-cache bash fa2/install.sh && rm -rf /tmp/fa2-cache
 # xgrammar from source (mlc-ai/xgrammar#989 and the Qwen framing fix), as Dockerfile builds it.
 COPY xgrammar/ xgrammar/
 RUN bash xgrammar/install.sh
+# The LSA plugin (lsa/, optional: LSA=1), as Dockerfile installs it; the distilled map comes from docker/prepare.sh.
+COPY lsa/ lsa/
+RUN PY=venv/bin/python bash lsa/install.sh --no-map
 
 # The fork: pinned by commit, built as a wheel over the release wheel's compiled parts.
 ARG VLLM_FORK_REPO=https://github.com/cpuchip/vllm
-ARG VLLM_FORK_COMMIT=33e35f268d813de931265f097224c4f344aa06d7
+ARG VLLM_FORK_COMMIT=6d3fd56a4bc92e379e8a578305b2e273c735521e
 ARG VLLM_VERSION=0.32.0
 RUN set -e; \
     venv/bin/pip install "setuptools>=77" setuptools_scm setuptools-rust wheel; \
@@ -57,6 +60,7 @@ COPY . .
 # The same post-install tests Dockerfile runs after applying the series.
 RUN set -e; \
     bash verify.sh --install; \
+    venv/bin/python bench/test_offload_mamba_swa_boundaries.py; \
     venv/bin/python bench/test_dflash_context_capacity.py; \
     venv/bin/python bench/mq3d_scratch_pool_test.py; \
     venv/bin/python bench/test_quant_scale_views.py; \
@@ -66,7 +70,8 @@ RUN set -e; \
     CUDA_VISIBLE_DEVICES= venv/bin/python bench/test_async_mamba_kv_sizing.py; \
     CUDA_VISIBLE_DEVICES= venv/bin/python bench/test_kv_cache_seat_budget.py; \
     CUDA_VISIBLE_DEVICES= venv/bin/python bench/test_continuous_stream_usage.py; \
-    venv/bin/python bench/test_gdn_ba_lora.py
+    venv/bin/python bench/test_gdn_ba_lora.py; \
+    CUDA_VISIBLE_DEVICES= venv/bin/python lsa/tests/gate_test.py
 
 # HOME is a volume: torch.compile cache (~/.cache/vllm), Triton (~/.triton),
 # FlashInfer JIT (~/.cache/flashinfer), HF hub cache.
