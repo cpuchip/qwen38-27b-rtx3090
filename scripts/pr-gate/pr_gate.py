@@ -151,12 +151,20 @@ def main():
     for l in open(os.path.join(HERE, "retracted.txt"), encoding="utf-8"):
         if l.strip() and not l.startswith("#"):
             phrases.append(l.split("\t")[0].strip())
+    # A patch's own "-" lines after its export marker are upstream text the patch deletes, not a claim of ours.
+    deleted_upstream = {}
+    for f, sec in patch_sections.items():
+        after = False
+        for p, l in sec:
+            after = after or l.startswith("--- exported from ")
+            if after and p == "+" and l.startswith("-") and not l.startswith("---"):
+                deleted_upstream.setdefault(f, set()).add(l)
     hits = []
     for ph in phrases:
         if ph.lower() in text_all.lower():
             hits.append(f"body/commit: '{ph}'")
         for f, lines in added_lines.items():
-            if any(ph.lower() in l.lower() for l in lines):
+            if any(ph.lower() in l.lower() for l in lines if l not in deleted_upstream.get(f, ())):
                 hits.append(f"{f}: '{ph}'")
     report("FAIL" if hits else "OK", "retracted", "; ".join(hits) if hits else f"{len(phrases)} retracted phrases absent")
 
