@@ -18,7 +18,7 @@ CLAUDE_COAUTHOR = re.compile(r"^co-authored-by:\s*claude\b.*$", re.I | re.M)
 # The harness writes "Claude <model> (1M context)"; the ruled form is "Co-authored-by: Claude <noreply@anthropic.com>".
 MODEL_FORM = re.compile(r"^co-authored-by:\s*claude\s+(opus|sonnet|haiku|fable)\b|^co-authored-by:.*\(\d+[mk] context\)", re.I | re.M)
 SESSION = re.compile(r"claude\.ai/code|Claude-Session", re.I)
-DISCLOSURE = re.compile(r"\bAI[- ](assisted|generated)\b|\bassisted by (an )?AI\b|\bAI tools?\b|\bClaude\b|\bCopilot\b", re.I)
+DISCLOSURE = re.compile(r"\bAI[- ](assisted|generated|assistance)\b|\bassisted by (an )?AI\b|\bAI tools?\b|\bClaude\b|\bCopilot\b", re.I)
 results = []
 
 

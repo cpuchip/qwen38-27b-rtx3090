@@ -11,6 +11,7 @@ ME="Michael Stufflebeam"; MAIL="cpuchip@gmail.com"; SOB="Signed-off-by: $ME <$MA
 printf 'A fix.\n\nThis PR is AI-assisted: Claude wrote the first draft, and I reviewed and tested every line.\n' > "$T/good.md"
 printf 'A fix.\n\nTested on an RTX 3090.\n' > "$T/silent.md"
 printf 'A fix, AI-assisted.\n\nhttps://claude.ai/code/session_x\n' > "$T/session.md"
+printf 'A fix.\n\n- [x] AI assistance was used during the creation of this PR.\n' > "$T/template.md"
 FAILS=0; n=0
 # case <want exit> <check that must FAIL, or -> <label> <author name> <author email> <body file> <message> [gate flags...]
 case_() { local want=$1 check=$2 label=$3 an=$4 ae=$5 bodyf=$6 msg=$7; shift 7; n=$((n+1))
@@ -27,5 +28,6 @@ case_ 1 subject "a [qwen38] subject"                             "$ME" "$MAIL" "
 case_ 1 disclosure "no disclosure in the body"                      "$ME" "$MAIL" "$T/silent.md"  "$(printf '[Bugfix] x\n\nWhy.\n\n%s\n%s\n' "$CO" "$SOB")"
 case_ 1 dco "signed off by someone other than the author"   "Mads Henrichsen" "mads@syv.ai" "$T/good.md" "$(printf '[Bugfix] x\n\nWhy.\n\n%s\n%s\n' "$CO" "$SOB")"
 case_ 1 session "a session URL in the body"                      "$ME" "$MAIL" "$T/session.md" "$(printf '[Bugfix] x\n\nWhy.\n\n%s\n%s\n' "$CO" "$SOB")"
+case_ 0 - "disclosure in vLLM's own template wording"     "$ME" "$MAIL" "$T/template.md" "$(printf '[Bugfix] x\n\nWhy.\n\n%s\n%s\n' "$CO" "$SOB")"
 case_ 0 - "--no-ai: sign-off only, no disclosure"          "$ME" "$MAIL" "$T/silent.md"  "$(printf '[Bugfix] x\n\nWhy.\n\n%s\n' "$SOB")" --no-ai
 echo; [ $FAILS = 0 ] && echo "up_gate self-test: all $n cases as expected" || { echo "up_gate self-test: $FAILS of $n cases wrong"; exit 1; }
