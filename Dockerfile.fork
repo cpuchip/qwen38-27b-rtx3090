@@ -39,8 +39,8 @@ RUN PY=venv/bin/python bash lsa/install.sh --no-map
 
 # The fork: pinned by commit, built as a wheel over the release wheel's compiled parts.
 ARG VLLM_FORK_REPO=https://github.com/cpuchip/vllm
-ARG VLLM_FORK_COMMIT=c713ee236d500d72261ae4c0091823376fefe69b
-ARG VLLM_VERSION=0.33.0
+ARG VLLM_FORK_COMMIT=8bb9096af3da297db31da7486f9a305a1f4b8c1e
+ARG VLLM_VERSION=0.34.0
 RUN set -e; \
     venv/bin/pip install "setuptools>=77" setuptools_scm setuptools-rust wheel; \
     venv/bin/pip download "vllm==${VLLM_VERSION}" --no-deps -d /tmp/wheel; \
@@ -60,6 +60,10 @@ COPY . .
 # The same post-install tests Dockerfile runs after applying the series.
 RUN set -e; \
     bash verify.sh --install; \
+    venv/bin/python bench/test_draft_vocab_stats.py; \
+    venv/bin/python bench/test_gdn_checkpoint_safety.py; \
+    venv/bin/python bench/test_gdn_multi_checkpoint.py; \
+    venv/bin/python bench/test_gdn_checkpoint_export.py; \
     venv/bin/python bench/test_offload_mamba_swa_boundaries.py; \
     venv/bin/python bench/test_dflash_context_capacity.py; \
     venv/bin/python bench/mq3d_scratch_pool_test.py; \
