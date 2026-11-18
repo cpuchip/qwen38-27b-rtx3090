@@ -8,11 +8,10 @@
 #    request; fp16 halves that AND halves the state traffic per decode step.
 #    That is what lets all 64 requests actually run at once (fp32: only 37).
 #    Perplexity is unchanged (8.045 vs 8.046 on our en/da/code check).
-#  - VLLM_MARLIN_INPUT_DTYPE=int8: int8 tensor-core (W4A8) Marlin path for the
-#    MLP GEMMs, weights stay int4. Roughly +35% aggregate on top of the state
-#    change for +2.2% perplexity. Needs both marlin patches from patches/.
-#    INT8_LAYERS=gate_up is the gentler variant (+0.9% PPL, ~+15%);
-#    INT8_ACT= (empty) turns it off entirely (pure W4A16, quality-neutral).
+#  - W4A16 on vLLM 0.34. Up to 0.33 this mode defaulted to int8 activations on
+#    the MLP GEMMs (W4A8 Marlin, roughly +35% aggregate on top of the state change
+#    for +2.2% perplexity); vLLM 0.34 removed that kernel path (vllm #65542), so
+#    INT8_ACT must stay empty (launcher_common.sh refuses anything else).
 #  - --language-model-only skips the vision tower entirely (0.858 GiB on this
 #    checkpoint); VISION=1 keeps it for a client that sends images
 #  - expandable_segments is required: the DeltaNet prefill kernels allocate
@@ -57,7 +56,9 @@ if [ -z "${CUDA_HOME:-}" ]; then
   for CU13 in "$REPO"/venv/lib/python3*/site-packages/nvidia/cu13; do
     if [ -x "$CU13/bin/nvcc" ] && [ "${NVCC_MAJOR:-0}" -lt 13 ]; then
       export CUDA_HOME=$CU13
-      echo "[start_qwen] nvcc on PATH is ${NVCC_MAJOR:-missing}, older than the CUDA 13 FlashInfer JIT needs: CUDA_HOME=$CUDA_HOME (set CUDA_HOME to override)"
+      # A note, not a problem: first-time users read the old wording as an error (#455).
+      if [ -n "${NVCC_MAJOR:-}" ]; then HAVE="CUDA $NVCC_MAJOR"; else HAVE="none"; fi
+      echo "[start_qwen] note: using the venv's CUDA 13 nvcc for FlashInfer's JIT (nvcc on PATH: $HAVE). Nothing to install; CUDA_HOME=$CUDA_HOME (set CUDA_HOME to override)"
     fi
     break
   done
@@ -155,9 +156,8 @@ else
   GPU_UTIL=${GPU_UTIL:-0.94}
   KV_ARGS="--kv-cache-dtype fp8"
 fi
-# int8 activations: "int8" (default) or empty for W4A16; layers: regex on the
-# layer name, "mlp" (default: gate_up_proj + down_proj) or "gate_up"
-INT8_ACT=${INT8_ACT-int8}
+# int8 activations: empty (W4A16) is the only value vLLM 0.34 serves; see above.
+INT8_ACT=${INT8_ACT-}
 INT8_LAYERS=${INT8_LAYERS-mlp}
 
 # Prefix caching (PREFIX_CACHE=1, the default; 0 turns it off; qwen_prefix_cache passes the
@@ -202,17 +202,7 @@ TOOL_ARGS=()
 # Not with --disable-log-stats (the timing fields need the engine-stats path).
 # Array, not $( [ ] && echo ): the command substitution exits 1 when the test
 # is false, which under `set -e` killed this script silently (#59).
-METRICS_ARGS=()
-if [ "${REQ_METRICS:-0}" = 1 ]; then
-  # vLLM 0.29.0: per-request speculative-decoding acceptance metrics ride in the response under
-  # metrics.speculative_decoding (n == 1 only; the field is experimental, shape as of v0.29.0). summary
-  # is mean acceptance length, draft acceptance rate and the step histogram; REQ_METRICS_DETAILED=1
-  # adds the ordered per-step accepted/proposed arrays, which upstream says is not free, so it is a
-  # separate opt-in and off in every profile anyone benchmarks (#66, #75, gotcha 53).
-  SPEC_METRICS=summary; [ "${REQ_METRICS_DETAILED:-0}" = 1 ] && SPEC_METRICS=detailed
-  METRICS_ARGS=(--enable-per-request-metrics --enable-force-include-usage
-                --per-request-spec-decode-metrics "$SPEC_METRICS")
-fi
+qwen_request_metrics_args off
 
 # Shared image limits and tower placement, including the 24 GB offload default.
 # launcher_common.sh: qwen_vision_args; measurements in docs/gotchas.md 8.

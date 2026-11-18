@@ -13,20 +13,14 @@
 #                       0.0.0.0, since a published port cannot reach a loopback
 #                       bind; there the port mapping is what limits exposure.
 #
-#   qwen_int8_exports   <act> <layers>, where the launcher sets INT8_ACT and INT8_LAYERS
-#                       (each launcher keeps its own defaults). Exports
-#                       VLLM_MARLIN_INPUT_DTYPE=<act> and, only with it,
-#                       VLLM_MARLIN_INT8_INCLUDE_RE=<layers>. The engine reads the
-#                       regex only when the dtype is set
-#                       (patches/marlin-int8-layer-select.patch); alone it only
-#                       changes vLLM's compile cache key. "Off" for these is UNSET,
-#                       not empty. vllm/envs.py registers VLLM_MARLIN_INPUT_DTYPE
-#                       through env_with_choices(..., None, ["int8", "fp8"]), which
-#                       rejects "" outright -- `ValueError: Invalid value '' ...
-#                       Valid options: ['int8', 'fp8']` -- so exporting the empty
-#                       string killed the engine at startup instead of turning the
-#                       feature off. That is the documented way to disable it
-#                       (issue #20), so export only when non-empty.
+#   qwen_int8_exports   <act> <layers>, where the launcher sets INT8_ACT and INT8_LAYERS.
+#                       vLLM 0.34.0 removed Marlin's 8-bit activations (vllm #65542):
+#                       the kernels are gone, and setting VLLM_MARLIN_INPUT_DTYPE is a
+#                       startup error. So INT8_ACT must be empty (W4A16, every launcher's
+#                       default now), and any other value is refused here with the reason,
+#                       rather than served at W4A16 under a name that says int8. Upstream's
+#                       route to W4A8 is `--quantization humming`; it is not wired into
+#                       these launchers yet.
 #
 #   qwen_check_bool_knobs  refuses to start when one of the series' boolean knobs is set
 #                       to anything but 0 or 1 (empty counts as unset). The patches read them
@@ -124,8 +118,9 @@ resolve_bind_host() {
 # && list fails returns 1 and stops the launcher.
 qwen_int8_exports() {
   if [ -n "$1" ]; then
-    export VLLM_MARLIN_INPUT_DTYPE=$1
-    if [ -n "$2" ]; then export VLLM_MARLIN_INT8_INCLUDE_RE=$2; fi
+    echo "[start_qwen] INT8_ACT=$1: vLLM 0.34 removed Marlin's int8/fp8 activations (vllm #65542)." >&2
+    echo "  Leave INT8_ACT empty to serve W4A16, the default on this pin (docs/vllm-0.34.md)." >&2
+    exit 2
   fi
 }
 
@@ -134,6 +129,14 @@ qwen_exec() {
     printf '%s\n' "$@"
     exit 0
   fi
+  # A checkout without the venv install (or one run from the wrong directory) otherwise
+  # dies on "venv/bin/vllm: No such file or directory", which names neither fix (#455).
+  if ! command -v "$1" >/dev/null 2>&1; then
+    echo "[start_qwen] $1 not found: this checkout has no venv install." >&2
+    echo "  Either serve from the container (README, Quick start: docker compose --profile single up -d)" >&2
+    echo "  or build the venv first (docs/install.md), then run this launcher from the repo root." >&2
+    exit 1
+  fi
   exec "$@"
 }
 
@@ -141,8 +144,9 @@ QWEN_BOOL_KNOBS="KVARN_DBG_LAYERS KVARN_FAST_FLUSH KVARN_FP16_DEQUANT KVARN_FUSE
   KVARN_FUSED_VERIFY KVARN_POW2_SLOT KVARN_QUANT_SLIDING KVARN_SHARED_VERIFY KVARN_SPEC_DEBUG \
   VLLM_DFLASH2_CHAIN VLLM_DFLASH2_CHAIN_GREEDY_ONLY VLLM_DFLASH2_DRAFT_TOPK_TOPP \
   VLLM_DFLASH2_GRAPH_BOTH VLLM_DFLASH2_LOOKUP VLLM_DFLASH2_LOOKUP_ADAPTIVE VLLM_DRAFT_TOPK_TOPP \
-  VLLM_EMBED_UVA VLLM_INT4_MQ_3D VLLM_INT4_MQ_3D_DEBUG VLLM_MAMBA_ALIGN_KEEP_CHECKPOINTS \
-  VLLM_MARLIN_TUNE VLLM_SPEC_ATTN_DEBUG VLLM_SPEC_DECODE_ATTN FA2_FP8KV"
+  VLLM_EMBED_UVA VLLM_FLASHINFER_NATIVE_SPEC_GRAPHS VLLM_FLASHINFER_SM75 VLLM_GDN_SM75 \
+  VLLM_INT4_MQ_3D VLLM_INT4_MQ_3D_DEBUG VLLM_MAMBA_ALIGN_KEEP_CHECKPOINTS \
+  VLLM_MARLIN_TUNE VLLM_SPEC_ATTN_DEBUG VLLM_SPEC_DECODE_ATTN VLLM_TERMINAL_PROGRESS FA2_FP8KV"
 
 qwen_check_bool_knobs() {
   local k v bad=0
@@ -246,6 +250,20 @@ qwen_normalize_extra_args() {
 qwen_gpu_name() {
   nvidia-smi ${CUDA_VISIBLE_DEVICES:+-i "${CUDA_VISIBLE_DEVICES%%,*}"} --query-gpu=name --format=csv,noheader 2>/dev/null \
     | tr -d '\r' | sort -u | sed -n '1{$p;}'
+}
+
+qwen_request_metrics_args() {
+  # Batch and SPEC=off still support timing/usage metrics. Spec acceptance
+  # metrics require an actual speculative profile or vLLM refuses to boot.
+  METRICS_ARGS=()
+  if [ "${REQ_METRICS:-0}" = 1 ]; then
+    METRICS_ARGS=(--enable-per-request-metrics --enable-force-include-usage)
+    if [ "$1" != off ]; then
+      local level=summary
+      [ "${REQ_METRICS_DETAILED:-0}" = 1 ] && level=detailed
+      METRICS_ARGS+=(--per-request-spec-decode-metrics "$level")
+    fi
+  fi
 }
 
 qwen_tp_size() {

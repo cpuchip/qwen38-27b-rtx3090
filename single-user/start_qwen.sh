@@ -59,7 +59,7 @@
 # k+1 recurrent-state slots), and past a handful of concurrent users you
 # should be running batch mode anyway. Int8 activations buy nothing at
 # batch size 1 *decode* (memory-bound) — but prefill is compute-bound at any
-# concurrency, so INT8_ACT below borrows batch mode's W4A8 path for the
+# concurrency, so INT8_ACT below borrowed batch mode's W4A8 path (up to vLLM 0.33) for the
 # prompt-side win; see "Prefill" in ../batch/README.md.
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -96,7 +96,9 @@ if [ -z "${CUDA_HOME:-}" ]; then
   for CU13 in "$REPO"/venv/lib/python3*/site-packages/nvidia/cu13; do
     if [ -x "$CU13/bin/nvcc" ] && [ "${NVCC_MAJOR:-0}" -lt 13 ]; then
       export CUDA_HOME=$CU13
-      echo "[start_qwen] nvcc on PATH is ${NVCC_MAJOR:-missing}, older than the CUDA 13 FlashInfer JIT needs: CUDA_HOME=$CUDA_HOME (set CUDA_HOME to override)"
+      # A note, not a problem: first-time users read the old wording as an error (#455).
+      if [ -n "${NVCC_MAJOR:-}" ]; then HAVE="CUDA $NVCC_MAJOR"; else HAVE="none"; fi
+      echo "[start_qwen] note: using the venv's CUDA 13 nvcc for FlashInfer's JIT (nvcc on PATH: $HAVE). Nothing to install; CUDA_HOME=$CUDA_HOME (set CUDA_HOME to override)"
     fi
     break
   done
@@ -129,7 +131,9 @@ MAX_SEQS=${MAX_SEQS:-}
 # the flag entirely, which is what a vLLM tree WITHOUT patches/sse-keep-alive.patch
 # applied needs — the flag does not exist there, and the deploy tree drifts.
 SSE_KEEP_ALIVE=${SSE_KEEP_ALIVE-30}   # no colon: SSE_KEEP_ALIVE= keeps the empty value
-# INT8_ACT=int8 turns on the W4A8 Marlin path (weights stay int4, activations
+# vLLM 0.34 removed this path (vllm #65542): launcher_common.sh refuses INT8_ACT=int8 there.
+# The text and numbers below are 0.33's, kept for the record.
+# INT8_ACT=int8 turned on the W4A8 Marlin path (weights stay int4, activations
 # quantized per token to int8, int8 tensor cores) for the layers INT8_LAYERS
 # selects — the same knob batch mode ships on by default. At batch size 1 it
 # does nothing for decode (memory-bound; C1 122±5 vs 121 tok/s over repeats,
@@ -554,10 +558,17 @@ if [ "$SPEC" = "dflash2" ]; then
     # (the hunk that did retired with the port), so the pinned KV_MEM is the only budget here.
   elif [ "$CTX" = "long" ]; then
     # int8 KV: measured 136,429 tokens of pool at DFLASH_TOKENS=7 with prefix caching on
-    # (138,696 without), against bf16's 69,758 in the same pinned 5.2 GiB. DFLASH_TOKENS>7
-    # at this context is untested -- the graphs and the state pages both grow.
+    # (138,696 without), against bf16's 69,758 in the same pinned 5.2 GiB.
     MAX_SEQS=${MAX_SEQS:-4}
-    MAX_LEN=${DFLASH_MAX_LEN:-${USER_MAX_LEN:-131072}}
+    # Above 7 drafts the aligned state pages grow and one request at 131072 needs 5.6 GiB
+    # of KV against the 5.19 GiB pin, so the server refused to start ("estimated maximum
+    # model length is 117120", #454). 114688 = 896 x 128 leaves ~2% margin, the same trade
+    # CTX=fast (57344) and CTX=huge (221184) make at DFLASH_TOKENS>7.
+    if [ "$DRAFT_TOKENS" -gt 7 ]; then
+      MAX_LEN=${DFLASH_MAX_LEN:-${USER_MAX_LEN:-114688}}
+    else
+      MAX_LEN=${DFLASH_MAX_LEN:-${USER_MAX_LEN:-131072}}
+    fi
     KV_MEM=${KV_MEM-5583457484}
   elif [ "$DRAFT_TOKENS" -gt 7 ]; then
     # 4 slots and 56k instead of 8 and 64k: the aligned state pages and the bigger decode
@@ -633,13 +644,13 @@ if [ "$SPEC" = "dflash2" ]; then
   #     16 * ceil(state / (16 * attention bytes per token)) (vllm/platforms/interface.py);
   #   - one pool page is 8 layers (the hybrid-kv-groups group size) at that block, in the widest
   #     per-token layout -- the drafter's sliding-window layers on int8 (2,112 B against 2,080);
-  #   - a request holds 6 GDN groups x (2 + k) state pages (align mode), plus 2 full-attention
-  #     groups x ceil(ctx / block) pages of context. vLLM 0.31.0 turns prefix caching on, and
-  #     with it align mode, by default for this model whether or not PREFIX_CACHE=1 adds the flags
-  #     ("Mamba cache mode is set to 'align' ... by default when prefix caching is enabled"), so
-  #     PREFIX_CACHE=0 measured the same 54 pages at k=7 as PREFIX_CACHE=1.
-  # bench/test_resident_print.sh checks this against eight measured boots: block and pool exact,
-  # resident counts inside the ~1k range, exact at 61k, and exact at 32k where it was measured.
+  #   - align mode holds 6 GDN groups x (1 + async depth + k) state pages: the current
+  #     async-mamba-kv-sizing patch reserves three in-flight states at depth two, not
+  #     the two states used by the old 0.31 measurements;
+  #   - add 2 full-attention groups x ceil(ctx / block), plus the drafter's sliding-window
+  #     admission cap: ceil(min(ctx, 2048 - 1 + depth * 2048) / block) + 1.
+  # bench/test_kv_cache_seat_budget.py compares this prediction with the installed engine's
+  # own spec classes. Historical short-request peaks are not worst-case admission bounds.
   # fp8 (the FA2_FP8KV=1 arm) has no seat count yet: its block 880 and pool 387 are the one pair
   # that gives the 140,902-token pool the #153 boot logged.
   # At ~1k the engine charges fewer attention pages than the formula (none on int8), which is
@@ -668,7 +679,11 @@ if [ "$SPEC" = "dflash2" ]; then
   RESIDENT_MODE=$(printf %s "$RESIDENT_ARGS" | sed -En 's/.* --mamba-cache-mode[= ]([^ ]+) .*/\1/p')
   case "$RESIDENT_MODE" in ""|align) ;; *) RESIDENT_OK=0 ;; esac
   case "$RESIDENT_ARGS" in *" --no-enable-prefix-caching "*) RESIDENT_OK=0 ;; esac
-  RESIDENT_PER_GROUP=$(( DRAFT_TOKENS + 2 ))
+  # EXTRA_ARGS may override the two controls used by the in-flight cap below.
+  case "$RESIDENT_ARGS" in *" --max-num-batched-tokens"*|*" --no-async-scheduling"*|*" --async-scheduling"*) RESIDENT_OK=0 ;; esac
+  RESIDENT_DEPTH=2
+  [ "${ASYNC_SCHED:-1}" = 1 ] || RESIDENT_DEPTH=1
+  RESIDENT_PER_GROUP=$(( DRAFT_TOKENS + 1 + RESIDENT_DEPTH ))
   if [ "$RESIDENT_OK" = 1 ]; then
     RESIDENT_STATE_B=$(( 20480 * (3 + DRAFT_TOKENS) + 48 * 128 * 128 * RESIDENT_SSM_B ))
     RESIDENT_BLOCK=$(( 16 * ((RESIDENT_STATE_B + 16 * RESIDENT_TGT - 1) / (16 * RESIDENT_TGT)) ))
@@ -677,8 +692,11 @@ if [ "$SPEC" = "dflash2" ]; then
     RESIDENT_STATE=$(( 6 * RESIDENT_PER_GROUP ))
     # One page of the pool is the engine's null block, hence POOL - 1.
     RESIDENT_HI=$(( (RESIDENT_POOL - 1) / RESIDENT_STATE ))
-    RESIDENT_LO=$(( (RESIDENT_POOL - 1) / (RESIDENT_STATE + 2 * ((1024 + RESIDENT_BLOCK - 1) / RESIDENT_BLOCK)) ))
-    RESIDENT_LEN=$(( (RESIDENT_POOL - 1) / (RESIDENT_STATE + 2 * ((MAX_LEN + RESIDENT_BLOCK - 1) / RESIDENT_BLOCK)) ))
+    RESIDENT_WINDOW=$(( 2048 - 1 + RESIDENT_DEPTH * 2048 ))
+    RESIDENT_SHORT_WINDOW=$(( RESIDENT_WINDOW < 1024 ? RESIDENT_WINDOW : 1024 ))
+    RESIDENT_LONG_WINDOW=$(( RESIDENT_WINDOW < MAX_LEN ? RESIDENT_WINDOW : MAX_LEN ))
+    RESIDENT_LO=$(( (RESIDENT_POOL - 1) / (RESIDENT_STATE + 2 * ((1024 + RESIDENT_BLOCK - 1) / RESIDENT_BLOCK) + (RESIDENT_SHORT_WINDOW + RESIDENT_BLOCK - 1) / RESIDENT_BLOCK + 1) ))
+    RESIDENT_LEN=$(( (RESIDENT_POOL - 1) / (RESIDENT_STATE + 2 * ((MAX_LEN + RESIDENT_BLOCK - 1) / RESIDENT_BLOCK) + (RESIDENT_LONG_WINDOW + RESIDENT_BLOCK - 1) / RESIDENT_BLOCK + 1) ))
     if [ "$MAX_SEQS" -gt "$RESIDENT_HI" ]; then
       if [ "$RESIDENT_LO" -eq "$RESIDENT_HI" ]; then RESIDENT_RANGE="$RESIDENT_HI"; else RESIDENT_RANGE="$RESIDENT_LO to $RESIDENT_HI"; fi
       echo "[start_qwen] note: the pool holds about $RESIDENT_RANGE resident requests on ~1k-token prompts" \
@@ -944,20 +962,10 @@ TOOL_ARGS=()
 # issue #51; llama-swap reads them). Off by default only because the timing
 # fields ride on the engine-stats path, so it cannot be paired with
 # --disable-log-stats in EXTRA_ARGS. --enable-prompt-tokens-details is always
-# on. The per-request spec-decode summary is in 0.29.0 and rides with REQ_METRICS=1.
+# on. Spec acceptance metrics are added only when speculation is enabled.
 # Array, not $( [ ] && echo ): that substitution exits 1 when the test is
 # false, which kills a launcher running under `set -e` silently (#59).
-METRICS_ARGS=()
-if [ "${REQ_METRICS:-0}" = 1 ]; then
-  # vLLM 0.29.0: per-request speculative-decoding acceptance metrics ride in the response under
-  # metrics.speculative_decoding (n == 1 only; the field is experimental, shape as of v0.29.0). summary
-  # is mean acceptance length, draft acceptance rate and the step histogram; REQ_METRICS_DETAILED=1
-  # adds the ordered per-step accepted/proposed arrays, which upstream says is not free, so it is a
-  # separate opt-in and off in every profile anyone benchmarks (#66, #75, gotcha 53).
-  SPEC_METRICS=summary; [ "${REQ_METRICS_DETAILED:-0}" = 1 ] && SPEC_METRICS=detailed
-  METRICS_ARGS=(--enable-per-request-metrics --enable-force-include-usage
-                --per-request-spec-decode-metrics "$SPEC_METRICS")
-fi
+qwen_request_metrics_args "$SPEC"
 
 # Shared image limits and tower placement, including the 24 GB offload default.
 # launcher_common.sh: qwen_vision_args; measurements in docs/gotchas.md 8.
@@ -989,10 +997,12 @@ qwen_vision_args
 # the escape hatch -- a limitation of these kernels, not of any checkpoint.
 case " ${EXTRA_ARGS:-} " in
   *" --dtype float16 "*|*" --dtype=float16 "*|*" --dtype fp16 "*|*" --dtype=fp16 "*|*" --dtype half "*|*" --dtype=half "*)
-    if [ "$SPEC" != "none" ] && [ "$SPEC" != "off" ]; then
+    if [ "$SPEC" != "none" ] && [ "$SPEC" != "off" ] && [ "${FP16_SPEC_OK:-0}" != 1 ]; then
       echo "--dtype float16 needs SPEC=off: this repo's speculative path is bf16-only." >&2
       echo "  the split-KV verify attention casts to tl.bfloat16 (patches/spec-decode-attn.patch)," >&2
       echo "  so it fails to compile at the first attention. See issue #27." >&2
+      echo "  FP16_SPEC_OK=1 overrides this (Turing/sm75 needs it, with SPEC_ATTN=0 so that" >&2
+      echo "  kernel is never called); it is untested upstream, not a supported setting." >&2
       exit 1
     fi ;;
 esac
