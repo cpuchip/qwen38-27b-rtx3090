@@ -17,7 +17,7 @@ if [ -f "$OUT" ] && grep -q '^--- exported from ' "$OUT"; then
 else
   # A whole diff pasted into the message is not a stray line: dropping its header lines (below) leaves the hunk
   # bodies in the preamble (triton-spec-attn-fp8-kv shipped 218 such lines until 2026-09-22). Fix the message.
-  if $G log -1 --format='%b' "$COMMIT" | grep -q '^diff --git '; then
+  if "${G[@]}" log -1 --format='%b' "$COMMIT" | grep -q '^diff --git '; then
     echo "commit $COMMIT's message contains a diff; reword it to prose before exporting"; exit 1
   fi
   # The body is prose. A commit imported from an old patch file can carry a stray diff line (a new-file
