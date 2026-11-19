@@ -39,7 +39,7 @@ RUN PY=venv/bin/python bash lsa/install.sh --no-map
 
 # The fork: pinned by commit, built as a wheel over the release wheel's compiled parts.
 ARG VLLM_FORK_REPO=https://github.com/cpuchip/vllm
-ARG VLLM_FORK_COMMIT=f9d3fa628b6331b9d8de47e7bc234f7f49a40891
+ARG VLLM_FORK_COMMIT=48b28188e7b8ab97f36b76ccd97000985b48ef07
 ARG VLLM_VERSION=0.34.0
 RUN set -e; \
     venv/bin/pip install "setuptools>=77" setuptools_scm setuptools-rust wheel; \
