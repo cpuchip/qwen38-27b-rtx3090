@@ -129,6 +129,9 @@ elif [ "$KV" = "kvarn" ]; then
   export KVARN_POOL_MEM_FRAC=${KVARN_POOL_MEM_FRAC:-0.25}
 else
   MAX_LEN=${MAX_LEN:-150000}
+  # 0.93 on 0.34, with the extensible KV cache off. At 0.94 the forced 64-prompt step (below) cleared by 131 MiB
+  # on a native 3090, under 0.31's ~174; at 0.93 it clears by 393 MiB with 64 seats running and the burst at 0.33's
+  # speed (875 against 867 tok/s), for 277 KV blocks against 287 (one boot each, 11-19).
   # 0.94 on 0.31, not 0.30's 0.95. The profiling run skips the GDN layers, so the
   # worst prefill step is never budgeted: 64 new short prompts in one step (one
   # /v1/completions request carrying 64 prompts forces it) needed ~624 MiB over rest
@@ -147,13 +150,9 @@ else
   # boot and serve with VISION=0 and 1, 0.972 does not. 0.95 keeps one 0.01 step
   # below the highest value that passed, boots cold to the same pool as warm
   # (219,587 tokens with the tower), and holds at least the pool 0.28 had at 0.972.
-  # A native RTX 4090 at 0.94 serves the step with 26 MiB left (vLLM 0.31 and 0.32, 24,078 MiB usable), so a single
-  # 4090 defaults to 0.93: 286 MiB left after the same step and the burst, for a pool of 211,082 tokens (-3.5%).
-  if [ -z "${GPU_UTIL:-}" ] && [ "$WSL" = 0 ] && [ "$(qwen_tp_size)" = 1 ]; then
-    case "$(qwen_gpu_name)" in *"RTX 4090"*)
-      GPU_UTIL=0.93; echo "[start_qwen] RTX 4090: GPU_UTIL=0.93 (0.94 leaves 26 MiB after the forced 64-prompt step here)" >&2 ;; esac
-  fi
-  GPU_UTIL=${GPU_UTIL:-0.94}
+  # A native RTX 4090 at 0.94 served the step with 26 MiB left on vLLM 0.31 and 0.32 (24,078 MiB usable) and 286 MiB
+  # at 0.93, so it had its own 0.93 default until 0.34 made 0.93 every card's.
+  GPU_UTIL=${GPU_UTIL:-0.93}
   KV_ARGS="--kv-cache-dtype fp8"
 fi
 # int8 activations: empty (W4A16) is the only value vLLM 0.34 serves; see above.
@@ -262,6 +261,7 @@ source "$REPO/resolve_api_key.sh" \
   || { echo "start_qwen: cannot source $REPO/resolve_api_key.sh - refusing to boot with an unknown key" >&2; exit 1; }
 resolve_vllm_key
 resolve_bind_host
+qwen_extensible_kv_args
 
 qwen_exec venv/bin/vllm serve "$MODEL" \
   --served-model-name qwen3.8-27b \
@@ -280,4 +280,5 @@ qwen_exec venv/bin/vllm serve "$MODEL" \
   --enable-prompt-tokens-details \
   "${METRICS_ARGS[@]}" \
   "${TOOL_ARGS[@]}" \
+  $EKV_ARGS \
   ${EXTRA_ARGS}

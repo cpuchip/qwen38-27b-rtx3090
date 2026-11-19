@@ -3,7 +3,8 @@
 # qwen_gpu_name). Every launcher arm is run against a stub nvidia-smi that reports an RTX 4090 and one that reports
 # another compute capability 8.9 card (an L4), and the two argv and VLLM_* environments may differ only where the
 # 4090 defaults apply: --kv-cache-memory and --max-model-len on SPEC=dflash2 CTX=huge (any DFLASH_TOKENS) and on
-# SPEC=dflash2 DFLASH_TOKENS=15, --gpu-memory-utilization on native batch KV=fp8. An explicit KV_MEM, DFLASH_MAX_LEN or
+# SPEC=dflash2 DFLASH_TOKENS=15 (batch KV=fp8's 0.93 was a 4090 default until vLLM 0.34 made it every card's). An
+# explicit KV_MEM, DFLASH_MAX_LEN or
 # GPU_UTIL wins on the 4090, an explicit KV_MEM keeps the 24 GiB MAX_LEN, TP>1 and two different GPUs change nothing,
 # and the L4 stub gives the argv, environment and stderr of a host with no nvidia-smi answer. Copies the checkout
 # without its venv to a temp dir and runs the launchers against a stub vllm (prints its argv, then "@@ENV" and its
@@ -67,7 +68,7 @@ ARMS=("$SU|SPEC=mtp CTX=fast" "$SU|SPEC=mtp CTX=long" "$SU|SPEC=mtp CTX=huge" "$
       "$SU|SPEC=dflash2 CTX=long" "$SU|SPEC=dflash2 CTX=huge" "$SU|SPEC=dflash2 CTX=fast DFLASH_TOKENS=15"
       "$SU|SPEC=dflash2 CTX=huge DFLASH_TOKENS=15" "$SU|SPEC=off CTX=long" "$BA|KV=fp8" "$BA|KV=kvarn" "$BA|KV=int4pth"
       "$AL|SPEC=dflash2")
-CHANGED=("$SU|SPEC=dflash2 CTX=huge" "$SU|SPEC=dflash2 CTX=fast DFLASH_TOKENS=15" "$SU|SPEC=dflash2 CTX=huge DFLASH_TOKENS=15" "$BA|KV=fp8")
+CHANGED=("$SU|SPEC=dflash2 CTX=huge" "$SU|SPEC=dflash2 CTX=fast DFLASH_TOKENS=15" "$SU|SPEC=dflash2 CTX=huge DFLASH_TOKENS=15")
 
 echo "== an L4 (8.9, not a 4090) gives the argv, environment and stderr of no nvidia-smi answer, on every arm"
 echo "   (stderr apart from the lines naming the compute capability)"
@@ -100,7 +101,7 @@ check "4348444672 174336" "$(kvm < "$T/a") $(after --max-model-len < "$T/a")" "C
 run "$T/new" "$S4090" $SU SPEC=dflash2 DFLASH_TOKENS=15 > "$T/a"
 check "4833935360 43008" "$(kvm < "$T/a") $(after --max-model-len < "$T/a")" "CTX=fast k15"
 run "$T/new" "$S4090" $BA > "$T/a"
-check "0.93" "$(after --gpu-memory-utilization < "$T/a")" "batch KV=fp8"
+check "0.93" "$(after --gpu-memory-utilization < "$T/a")" "batch KV=fp8 (every card's default since vLLM 0.34)"
 
 echo "== explicit values win on the 4090"
 run "$T/new" "$S4090" $SU SPEC=dflash2 CTX=huge KV_MEM=4000000000 > "$T/a"
