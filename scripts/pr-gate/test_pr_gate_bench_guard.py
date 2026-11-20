@@ -20,6 +20,8 @@ CASES = [
     ("the word capability, no guard", "major, _ = torch.cuda.get_device_capability()\n".replace("get_device_capability", "device_capability"), True),
     ("CUDA graph without a guard", "g = torch.cuda.CUDAGraph()  # cuda graph capture\n", True),
     ("fp8 kernel with a skip", "if not ok:\n    raise unittest.SkipTest('needs sm89')\nx = torch.float8_e4m3fn\n", False),
+    ("an FP8 launcher knob name", 'env = dict(PTH_FA="0", FA2_FP8KV="0")\n', False),
+    ("upper-case FP8 with no underscore", "if FP8:\n    run()\n", True),
     ("no hardware words", "assert 1 + 1 == 2\n", False),
 ]
 

@@ -18,9 +18,10 @@ CONFIG_TOKENS = re.compile(r"(k=\d|CTX=|MAX_LEN|3090|4090|5060|WSL2|native|n=\d|
 NUMBER_LINE = re.compile(r"(\d+(\.\d+)?\s*(tok/s|%|ms|s\b|GiB|GB|x\b))")
 HW_WORDS = re.compile(r"(fp8|e4m3|sm89|sm90|sm86|capability|cuda\s*graph|flashinfer)", re.I)
 GUARD_WORDS = re.compile(r"(get_device_capability|SKIP|skip\(|pytest\.skip|by design)", re.I)
-# A KV-cache dtype named as a quoted string ("fp8", 'fp8_e4m3') is a launcher or config value, not a hardware need:
-# bench/test_kv_cache_seat_budget.py runs on CPU and names "fp8" as one of the dtypes it sizes pages for.
-KV_DTYPE_STRING = re.compile(r"([\"'])fp8(_e4m3|_e5m2)?\1")
+# A KV-cache dtype named as a quoted string ("fp8", 'fp8_e4m3') or a launcher knob whose name holds FP8
+# (FA2_FP8KV) is configuration, not a hardware need: bench/test_kv_cache_seat_budget.py runs on CPU, names "fp8"
+# as one of the dtypes it sizes pages for, and sets FA2_FP8KV="0".
+KV_DTYPE_STRING = re.compile(r"([\"'])fp8(_e4m3|_e5m2)?\1|\b(?=[A-Z0-9_]*_)[A-Z0-9_]*FP8[A-Z0-9_]*\b")
 
 
 def needs_hw_guard(src):
