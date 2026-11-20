@@ -18,6 +18,14 @@ CONFIG_TOKENS = re.compile(r"(k=\d|CTX=|MAX_LEN|3090|4090|5060|WSL2|native|n=\d|
 NUMBER_LINE = re.compile(r"(\d+(\.\d+)?\s*(tok/s|%|ms|s\b|GiB|GB|x\b))")
 HW_WORDS = re.compile(r"(fp8|e4m3|sm89|sm90|sm86|capability|cuda\s*graph|flashinfer)", re.I)
 GUARD_WORDS = re.compile(r"(get_device_capability|SKIP|skip\(|pytest\.skip|by design)", re.I)
+# A KV-cache dtype named as a quoted string ("fp8", 'fp8_e4m3') is a launcher or config value, not a hardware need:
+# bench/test_kv_cache_seat_budget.py runs on CPU and names "fp8" as one of the dtypes it sizes pages for.
+KV_DTYPE_STRING = re.compile(r"([\"'])fp8(_e4m3|_e5m2)?\1")
+
+
+def needs_hw_guard(src):
+    """True when a bench test mentions hardware it would need and has no capability check or skip."""
+    return bool(HW_WORDS.search(KV_DTYPE_STRING.sub("", src))) and not GUARD_WORDS.search(src)
 # Any spelling of a raw read: os.environ.get / os.getenv / os.environ[...], an aliased `_os`, and
 # `__import__("os").environ.get`; the 09-14 census missed the last two and left eight raw reads in the 0.29 tree.
 ENV_READ = re.compile(r"(?:os|__import__\(\s*[\"']os[\"']\s*\))\.(?:environ\.get|getenv|environ)\s*[\(\[]\s*[\"'](VLLM_[A-Z0-9_]+)")
@@ -172,9 +180,9 @@ def main():
     for f in files:
         if f.startswith("bench/test_") and f.endswith(".py"):
             src = head_tree(f)
-            if HW_WORDS.search(src) and not GUARD_WORDS.search(src):
+            if needs_hw_guard(src):
                 report("FAIL", "bench-guard", f"{f} needs hardware it does not guard for (no capability check or skip)")
-            elif HW_WORDS.search(src):
+            elif HW_WORDS.search(KV_DTYPE_STRING.sub("", src)):
                 report("OK", "bench-guard", f"{f} guards its hardware need")
 
     # 6. sibling launchers
