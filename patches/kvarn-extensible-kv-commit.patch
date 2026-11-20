@@ -3,7 +3,7 @@ physical pages as warmup needs them, and sizes the pool after warmup and CUDA-gr
 writes int4 tiles into the pool from the metadata builder, outside the model's forward, and a warmup step's dummy
 blocks lie past what the cache has committed by then. So every KVarN profile without a --kv-cache-memory pin
 (SPEC=off CTX=huge, SPEC=mtp CTX=huge, batch KV=kvarn) died in capture with an illegal memory access in
-_batched_flush (threadchip's S2 boots on an RTX 3090, 11-19).
+_batched_flush (boots of every documented launcher default on an RTX 3090, 11-19).
 
 The flush now commits what it writes first, as upstream's own warmups do with ensure_kv_cache_blocks. A KVarN block
 id is a kernel block (one tile), several to a cache block, so the cache block each write needs comes from its
@@ -12,8 +12,8 @@ the cache is sized it commits nothing, and a write past the committed count (onl
 scheduler never hands those blocks out) is dropped while the caller still frees its slot. Without an extensible
 cache both helpers return None and nothing changes.
 
-Measured with the cache on, against the same profiles with it off (threadchip's 3090, main-034-b2faaf5 plus these
-files, units p034kf2 and p034kf4): all three profiles boot and print the cache-off texts; the 128-residue sweep on
+Measured with the cache on, against the same profiles with it off (an RTX 3090, the 0.34 image with
+these files laid over it): all three profiles boot and print the cache-off texts; the 128-residue sweep on
 SPEC=mtp CTX=huge PREFIX_CACHE=1 has 0 broken, with the same answer as cache off; a DEBUG boot logs no commit after
 the extension, and warmup peaks at 105 of 206 blocks. The pool is 6.9-13.5% smaller than with the cache off. That
 is the cache's own sizing margin, the same as on the non-KVarN profiles.
@@ -31,7 +31,7 @@ Upstream: none
 Cut-against: 0.34.0
 Retires-when: rides with KVarN
 
---- exported from 48b28188e7 (kvarn-extensible-kv-commit); regenerate with scripts/export-patch.sh, do not edit ---
+--- exported from 3d551db924 (kvarn-extensible-kv-commit); regenerate with scripts/export-patch.sh, do not edit ---
 
 diff --git a/v1/worker/extensible_kv_cache.py b/v1/worker/extensible_kv_cache.py
 index df7645f144..65244d2ec0 100644
